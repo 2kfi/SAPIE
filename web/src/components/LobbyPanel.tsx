@@ -50,15 +50,16 @@ export default function LobbyPanel({ session, onNotice }: Props) {
     const form = event.currentTarget
     const data = new FormData(form)
     const appid = Number(String(data.get('appid') ?? '').trim())
-    const type = String(data.get('type') ?? '').trim()
+    const typeText = String(data.get('type') ?? '').trim()
+    const type = typeText === '' ? NaN : Number(typeText)
     const memberLimit = Number(String(data.get('member_limit') ?? '').trim())
 
     if (!Number.isInteger(appid) || appid < 1) {
       setFormError('App ID must be a whole number above zero.')
       return
     }
-    if (!type) {
-      setFormError('Lobby type is required.')
+    if (!Number.isInteger(type) || type < 0) {
+      setFormError('Lobby type must be a whole number of 0 or more.')
       return
     }
     if (!Number.isInteger(memberLimit) || memberLimit < 1) {
@@ -90,13 +91,14 @@ export default function LobbyPanel({ session, onNotice }: Props) {
 
   async function handleJoin(lobby: Lobby) {
     if (joiningId) return
-    setJoiningId(lobby.lobby_id)
+    const id = String(lobby.lobby_id)
+    setJoiningId(id)
     try {
       await joinLobby(session.server, session.token, lobby.lobby_id)
-      onNotice(`Joined lobby ${lobby.lobby_id}.`)
+      onNotice(`Joined lobby ${id}.`)
       await load()
     } catch (reason) {
-      onNotice(`Could not join lobby ${lobby.lobby_id}: ${messageOf(reason)}`)
+      onNotice(`Could not join lobby ${id}: ${messageOf(reason)}`)
     } finally {
       setJoiningId(null)
     }
@@ -123,10 +125,10 @@ export default function LobbyPanel({ session, onNotice }: Props) {
           <input
             id="lobby-type"
             name="type"
-            type="text"
+            type="number"
+            min="0"
+            step="1"
             placeholder="Lobby type"
-            autoComplete="off"
-            spellCheck={false}
             required
           />
         </div>
@@ -156,38 +158,41 @@ export default function LobbyPanel({ session, onNotice }: Props) {
 
       {lobbies.length > 0 && (
         <ul className="lobby-list">
-          {lobbies.map((lobby) => (
-            <li className="lobby" key={lobby.lobby_id}>
-              <div className="friend__head">
-                <span className="mono">Lobby {lobby.lobby_id}</span>
-                <span className="badge">{lobby.joinable ? 'Joinable' : 'Closed'}</span>
-              </div>
-              <div className="lobby__meta">
-                <span>Owner {lobby.owner}</span>
-                <span>App {lobby.appid}</span>
-                <span>Type {lobby.type}</span>
-                <span>{lobby.members.length} of {lobby.member_limit} members</span>
-              </div>
-              <ul className="member-list" aria-label={`Members of lobby ${lobby.lobby_id}`}>
-                {lobby.members.length > 0 ? (
-                  lobby.members.map((member) => <li className="mono" key={member}>{member}</li>)
-                ) : (
-                  <li className="muted">No members reported.</li>
-                )}
-              </ul>
-              <div className="detail__actions">
-                <button
-                  type="button"
-                  className="btn btn--quiet"
-                  disabled={!lobby.joinable || joiningId === lobby.lobby_id}
-                  onClick={() => void handleJoin(lobby)}
-                >
-                  Join
-                </button>
-                {!lobby.joinable ? <p className="muted">This lobby is closed to new members.</p> : null}
-              </div>
-            </li>
-          ))}
+          {lobbies.map((lobby) => {
+            const id = String(lobby.lobby_id)
+            return (
+              <li className="lobby" key={id}>
+                <div className="friend__head">
+                  <span className="mono">Lobby {id}</span>
+                  <span className="badge">{lobby.joinable ? 'Joinable' : 'Closed'}</span>
+                </div>
+                <div className="lobby__meta">
+                  <span>Owner {lobby.owner}</span>
+                  <span>App {lobby.appid}</span>
+                  <span>Type {lobby.type}</span>
+                  <span>{lobby.members.length} of {lobby.member_limit} members</span>
+                </div>
+                <ul className="member-list" aria-label={`Members of lobby ${id}`}>
+                  {lobby.members.length > 0 ? (
+                    lobby.members.map((member) => <li className="mono" key={String(member)}>{member}</li>)
+                  ) : (
+                    <li className="muted">No members reported.</li>
+                  )}
+                </ul>
+                <div className="detail__actions">
+                  <button
+                    type="button"
+                    className="btn btn--quiet"
+                    disabled={!lobby.joinable || joiningId === id}
+                    onClick={() => void handleJoin(lobby)}
+                  >
+                    Join
+                  </button>
+                  {!lobby.joinable ? <p className="muted">This lobby is closed to new members.</p> : null}
+                </div>
+              </li>
+            )
+          })}
         </ul>
       )}
     </section>

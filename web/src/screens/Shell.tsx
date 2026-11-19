@@ -161,7 +161,7 @@ function DetailPane({
 export default function Shell({ route, session, onNavigate, onNotice }: Props) {
   const [friends, setFriends] = useState<Friend[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const selectedFriend = friends.find((friend) => friend.steam_id === selectedId) ?? null
+  const selectedFriend = friends.find((friend) => String(friend.steam_id) === selectedId) ?? null
 
   const connectFriend = useCallback(async (friend: Friend) => {
     if (!session || !friend.lobby_id) return
@@ -228,7 +228,7 @@ export default function Shell({ route, session, onNavigate, onNotice }: Props) {
                 session={session}
                 onNotice={onNotice}
                 onJoinFriend={(friend) => void connectFriend(friend)}
-                onSelectFriend={(friend) => setSelectedId(friend.steam_id)}
+                onSelectFriend={(friend) => setSelectedId(String(friend.steam_id))}
                 onFriendsChange={setFriends}
               />
             )}

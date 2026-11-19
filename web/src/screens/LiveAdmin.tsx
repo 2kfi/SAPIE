@@ -39,8 +39,7 @@ export default function LiveAdmin({ session, onNotice }: Props) {
     if (adminToken) {
       setUsersError(null)
       try {
-        const data = await getAdminUsers(session.server, adminToken)
-        setUsers(Array.isArray(data?.users) ? data.users : [])
+        setUsers(await getAdminUsers(session.server, adminToken))
       } catch (reason) {
         setUsers([])
         setUsersError(reason instanceof ApiError && reason.status === 401
