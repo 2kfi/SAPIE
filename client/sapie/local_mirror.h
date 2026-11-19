@@ -17,8 +17,8 @@
 
 namespace sapie {
 
-inline const char kPersonaStateKey[] = "sapie_persona_state";
-inline const char kConnectStrKey[] = "sapie_connect_str";
+inline const char kPersonaStateKey[] = "persona_state";
+inline const char kConnectStrKey[] = "connect_str";
 
 class LocalMirror;
 LocalMirror &local_mirror();
