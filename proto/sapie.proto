@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package sapie;
+
+import "net.proto";
+
+option go_package = "github.com/sapie/sapie/server/internal/protocol;protocol";
+option optimize_for = LITE_RUNTIME;
+
+message FriendSnapshot {
+  uint64 steam_id = 1;
+  bytes persona_name = 2;
+  uint32 appid = 3;
+  uint64 lobby_id = 4;
+  map<string, bytes> rich_presence = 5;
+}
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+  uint32 appid = 3;
+  string client_version = 4;
+}
+
+message LoginResponse {
+  enum Status {
+    OK = 0;
+    BAD_CREDENTIALS = 1;
+    BANNED = 2;
+    SERVER_FULL = 3;
+    VERSION_MISMATCH = 4;
+  }
+  Status status = 1;
+  uint64 steam_id = 2;
+  bytes persona_name = 3;
+  bytes session_token = 4;
+  repeated FriendSnapshot friends = 5;
+}
+
+message TicketRequest {
+  uint32 appid = 1;
+  bytes data = 2;
+}
+
+message TicketResponse {
+  bytes ticket = 1;
+  uint32 number = 2;
+}
+
+message StatValue {
+  string name = 1;
+  bytes value = 2;
+}
+
+message AchievementState {
+  string name = 1;
+  bool achieved = 2;
+  uint32 unlock_time = 3;
+}
+
+message StatsGet {
+  uint32 appid = 1;
+  repeated string names = 2;
+}
+
+message StatsSet {
+  uint32 appid = 1;
+  repeated StatValue stats = 2;
+  repeated AchievementState achievements = 3;
+}
+
+message StatsResponse {
+  repeated StatValue stats = 1;
+  repeated AchievementState achievements = 2;
+}
+
+message Frame {
+  oneof payload {
+    LoginRequest login = 1;
+    LoginResponse login_response = 2;
+    Common_Message steam = 3;
+    TicketRequest ticket_request = 4;
+    TicketResponse ticket_response = 5;
+    StatsGet stats_get = 6;
+    StatsSet stats_set = 7;
+    StatsResponse stats_response = 8;
+    bool ping = 9;
+    bool pong = 10;
+  }
+}
