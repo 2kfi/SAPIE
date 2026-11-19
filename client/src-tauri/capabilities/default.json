@@ -6,8 +6,11 @@
   "permissions": [
     "core:default",
     "allow-pick-executable",
+    "allow-detect-game",
+    "allow-unpack-steamstub",
     "allow-copy-dll",
     "allow-set-ld-preload",
+    "allow-configure-server",
     "allow-launch-game"
   ]
 }
