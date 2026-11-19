@@ -188,6 +188,11 @@ fn era_from_interfaces(interfaces: &[String]) -> String {
 
 fn find_original_steam_api(dir: &Path) -> Option<PathBuf> {
     for name in ["steam_api.dll", "steam_api64.dll", "libsteam_api.so"] {
+        // Prefer the preserved original: the current DLL may be our own copy.
+        let backup = dir.join(format!("{name}.sapie-original.bak"));
+        if backup.is_file() {
+            return Some(backup);
+        }
         let path = dir.join(name);
         if path.is_file() {
             return Some(path);
@@ -549,6 +554,18 @@ mod tests {
 
         let legacy = scan_interfaces(b"SteamUser016\0SteamFriends015\0");
         assert_eq!(era_from_interfaces(&legacy), "legacy");
+    }
+
+    #[test]
+    fn prefers_original_backup_over_installed_dll() {
+        let dir = std::env::temp_dir().join(format!("sapie-detect-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("steam_api.dll"), b"ours").unwrap();
+        let backup = dir.join("steam_api.dll.sapie-original.bak");
+        fs::write(&backup, b"original").unwrap();
+        assert_eq!(find_original_steam_api(&dir), Some(backup));
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
