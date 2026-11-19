@@ -119,6 +119,7 @@ class Networking {
     std::recursive_mutex mutex;
 
     struct Network_Callback_Container callbacks[CALLBACK_IDS_MAX];
+    class SteamCallBacks *steam_callbacks;
     std::vector<Common_Message> local_send;
     std::unique_ptr<Server_Connection> server_connection;
 
@@ -129,13 +130,15 @@ class Networking {
     void run_callbacks(Callback_Ids id, Common_Message *msg);
     void run_callback_user(CSteamID steam_id, bool online, uint32 appid);
     void do_callbacks_message(Common_Message *msg);
+    void fire_achievement_callbacks(uint64 steam_id, const std::string &def_id);
+    void fire_stats_callbacks(uint64 steam_id, bool stored);
 
     Common_Message create_announce(bool request);
 public:
     //NOTE: for all functions ips/ports are passed/returned in host byte order
     //ex: 127.0.0.1 should be passed as 0x7F000001
     static std::set<IP_PORT> resolve_ip(std::string dns);
-    Networking(CSteamID id, uint32 appid, uint16 port, std::set<IP_PORT> *custom_broadcasts, bool disable_sockets);
+    Networking(CSteamID id, uint32 appid, uint16 port, std::set<IP_PORT> *custom_broadcasts, bool disable_sockets, class SteamCallBacks *steam_callbacks);
     ~Networking();
     void connect_to_server(Settings *settings);
     void addListenId(CSteamID id);
@@ -144,6 +147,7 @@ public:
     bool sendTo(Common_Message *msg, bool reliable, Connection *conn = NULL);
     bool sendToAllIndividuals(Common_Message *msg, bool reliable);
     bool send_steam(Common_Message *msg, bool reliable, bool all = false);
+    bool send_frame(const google::protobuf::MessageLite &message);
     bool sendToAll(Common_Message *msg, bool reliable);
     bool sendToIPPort(Common_Message *msg, uint32 ip, uint16 port, bool reliable);
 
@@ -168,6 +172,7 @@ public:
     ~Server_Connection();
     bool connect_and_login();
     bool connected() const;
+    bool send_frame(const google::protobuf::MessageLite &message);
     bool send_steam(Common_Message *msg);
     void pump();
 };

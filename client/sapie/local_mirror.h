@@ -29,6 +29,8 @@ class LocalMirror {
     std::vector<Lobby> lobby_msgs;
     std::map<uint64, int> persona_states;
     std::map<uint64, std::string> connect_strs;
+    std::map<std::pair<uint64, std::string>, int64> achievement_unlocks;
+    bool stats_store_pending = false;
 
     static void extract_meta(Friend &f, uint64 id)
     {
@@ -181,6 +183,64 @@ public:
                 break;
             }
         }
+    }
+
+    bool set_achievement_unlock(uint64 steam_id, const std::string &name, int64 unlock_time)
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex);
+        if (!steam_id || name.empty() || unlock_time <= 0) return false;
+
+        auto key = std::make_pair(steam_id, name);
+        auto it = achievement_unlocks.find(key);
+        if (it != achievement_unlocks.end() && it->second >= unlock_time) return false;
+        achievement_unlocks[key] = unlock_time;
+        return true;
+    }
+
+    bool apply_achievement_unlock(const AchievementUnlock &unlock, uint64 fallback_id = 0)
+    {
+        if (!unlock.has_def() || unlock.def().id().empty()) return false;
+        uint64 steam_id = unlock.steam_id() ? unlock.steam_id() : fallback_id;
+        return set_achievement_unlock(steam_id, unlock.def().id(), unlock.unlock_time());
+    }
+
+    bool apply_stats_response(const sapie::StatsResponse &response)
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex);
+        bool added = false;
+        for (const auto &achievement : response.achievements()) {
+            if (achievement.achieved()
+                && set_achievement_unlock(response.steam_id(), achievement.name(), achievement.unlock_time_unix())) {
+                added = true;
+            }
+        }
+        return added;
+    }
+
+    bool achievement_unlocked(uint64 steam_id, const std::string &name) const
+    {
+        return achievement_unlock_time(steam_id, name) > 0;
+    }
+
+    int64 achievement_unlock_time(uint64 steam_id, const std::string &name) const
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex);
+        auto it = achievement_unlocks.find(std::make_pair(steam_id, name));
+        return it == achievement_unlocks.end() ? 0 : it->second;
+    }
+
+    void note_stats_store()
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex);
+        stats_store_pending = true;
+    }
+
+    bool consume_stats_store()
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex);
+        bool pending = stats_store_pending;
+        stats_store_pending = false;
+        return pending;
     }
 
     std::vector<std::pair<uint64, uint64>> friend_lobbies() const
