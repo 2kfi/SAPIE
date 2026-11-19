@@ -5,3 +5,4 @@ out/
 *.log
 .sapie-state/
 node_modules/
+third_party/
