@@ -70,10 +70,22 @@ if(SAPIE_PROTOBUF_INCLUDE_DIR)
   target_include_directories(steam_api PRIVATE "${SAPIE_PROTOBUF_INCLUDE_DIR}")
 endif()
 
-# Native builds use the system protobuf-lite CMake target; cross builds use the
-# static lib installed by tools/build-protobuf.sh (see SAPIE_PROTOBUF_ROOT).
-if(NOT CMAKE_CROSSCOMPILING)
+# Cross builds use the static lib installed by tools/build-protobuf.sh. Its
+# exported CMake target carries the absl/utf8_range deps that plain
+# -lprotobuf-lite would omit.
+if(SAPIE_PROTOBUF_ROOT)
+  list(PREPEND CMAKE_PREFIX_PATH "${SAPIE_PROTOBUF_ROOT}")
+  find_package(Protobuf CONFIG QUIET)
+endif()
+if(NOT TARGET protobuf::libprotobuf-lite AND NOT CMAKE_CROSSCOMPILING)
   find_package(Protobuf QUIET)
+endif()
+if(WIN32 AND TARGET absl::base)
+  # absl's exported target bakes the host's librt path into its interface libs;
+  # MinGW has no rt library and the flag is not needed on Windows.
+  get_target_property(_sapie_absl_base_libs absl::base INTERFACE_LINK_LIBRARIES)
+  string(REGEX REPLACE "\\$<LINK_ONLY:[^;]*-lrt[^;]*>" "" _sapie_absl_base_libs "${_sapie_absl_base_libs}")
+  set_property(TARGET absl::base PROPERTY INTERFACE_LINK_LIBRARIES "${_sapie_absl_base_libs}")
 endif()
 if(TARGET protobuf::libprotobuf-lite)
   set(SAPIE_PROTOBUF_LIBRARY protobuf::libprotobuf-lite)

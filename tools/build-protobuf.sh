@@ -38,6 +38,7 @@ cmake -S "$tmp/src" -B "$tmp/build" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_CXX_STANDARD=17 \
   -DCMAKE_INSTALL_LIBDIR=lib \
+  -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
   -DBUILD_SHARED_LIBS=OFF \
   -Dprotobuf_BUILD_SHARED_LIBS=OFF \
   -Dprotobuf_BUILD_PROTOBUF_BINARIES=ON \
@@ -53,8 +54,10 @@ cmake -S "$tmp/src" -B "$tmp/build" -G Ninja \
   -Dprotobuf_INSTALL=ON \
   || { echo "error: protobuf configure for $target failed" >&2; exit 1; }
 
-cmake --build "$tmp/build" --target libprotobuf-lite --parallel \
-  || { echo "error: protobuf-lite build for $target failed" >&2; exit 1; }
+# Build all fetched dependencies too: protobuf's install rule expects every
+# absl archive to exist, not just the ones libprotobuf-lite links directly.
+cmake --build "$tmp/build" --parallel \
+  || { echo "error: protobuf build for $target failed" >&2; exit 1; }
 cmake --install "$tmp/build" \
   || { echo "error: protobuf-lite install for $target failed" >&2; exit 1; }
 
