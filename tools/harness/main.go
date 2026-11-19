@@ -87,6 +87,7 @@ func run() error {
 		return fmt.Errorf("login IDs %d/%d differ from admin records %d/%d",
 			aliceLogin.SteamId, bobLogin.SteamId, alice.SteamID, bob.SteamID)
 	}
+	fmt.Println("PASS login SteamIDs match admin records")
 	if aliceLogin.SteamId == bobLogin.SteamId {
 		return fmt.Errorf("duplicate SteamID %d", aliceLogin.SteamId)
 	}
@@ -94,6 +95,16 @@ func run() error {
 		return fmt.Errorf("missing session tokens")
 	}
 	fmt.Println("PASS distinct SteamIDs")
+
+	ticket, err := requestTicket(aliceConn, 480)
+	if err != nil {
+		return err
+	}
+	if len(ticket.Ticket) == 0 || ticket.Number == 0 {
+		return fmt.Errorf("bad ticket response: %v", ticket)
+	}
+	fmt.Printf("PASS ticket issued steam_id=%d appid=480 number=%d bytes=%d\n",
+		aliceLogin.SteamId, ticket.Number, len(ticket.Ticket))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, adminURL+"/api/v1/accounts", nil)
 	if err != nil {
@@ -163,6 +174,25 @@ func createAccount(client *http.Client, base, username, password, persona string
 		return state.Account{}, err
 	}
 	return account, nil
+}
+
+func requestTicket(conn net.Conn, appid uint32) (*protocol.TicketResponse, error) {
+	frame := &protocol.Frame{Payload: &protocol.Frame_TicketRequest{TicketRequest: &protocol.TicketRequest{
+		Appid: appid, Data: []byte("harness-ticket-request"),
+	}}}
+	if err := protocol.WriteFrame(conn, frame); err != nil {
+		return nil, fmt.Errorf("send ticket request: %w", err)
+	}
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	response, err := protocol.ReadFrame(conn)
+	if err != nil {
+		return nil, fmt.Errorf("read ticket response: %w", err)
+	}
+	result, ok := response.Payload.(*protocol.Frame_TicketResponse)
+	if !ok {
+		return nil, fmt.Errorf("got %T, want TicketResponse", response.Payload)
+	}
+	return result.TicketResponse, nil
 }
 
 func login(addr, username, password string) (net.Conn, *protocol.LoginResponse, error) {

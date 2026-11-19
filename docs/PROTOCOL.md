@@ -34,6 +34,14 @@ are never emitted in M0.
 authenticated connection's server-assigned SteamID. Client-supplied identity is
 never trusted. SteamIDs are `76561197960265728 + monotonic counter`.
 
+## App tickets
+
+After login a client may send `TicketRequest{appid, data}`; the server replies
+`TicketResponse{ticket, number}`. `ticket` is 32 opaque bytes derived from a
+fresh random nonce plus the authenticated SteamID and requested appid; `number`
+is a per-session counter starting at 1. No ticket record is kept, so tickets
+cannot be verified or redeemed yet.
+
 ## Supported frames in M0
 
 | Client → server | Server behaviour |
@@ -41,16 +49,17 @@ never trusted. SteamIDs are `76561197960265728 + monotonic counter`.
 | `LoginRequest` | Authenticate; reply `LoginResponse` |
 | `ping` | Reply `pong` |
 | `Common_Message` | `source_id` stamped, logged and dropped (routing seam) |
-| `TicketRequest`, `StatsGet`, `StatsSet`, other variants | Logged and ignored (no-op acknowledgement in M0) |
+| `TicketRequest` | Reply `TicketResponse` (see App tickets) |
+| `StatsGet`, `StatsSet`, other variants | Logged and ignored (no-op acknowledgement in M0) |
 
 The server sends a `ping` every 30 s and closes a connection with no frame read
 for 90 s.
 
 ## Not supported yet
 
-Friend delivery, presence, lobby create/join, invites, tickets, achievements and
-stats are acknowledged no-ops until M2–M4. There is no P2P game-traffic relay in
-v1.
+Friend delivery, presence, lobby create/join, invites, achievements and stats are
+acknowledged no-ops until M2–M4. Tickets are issued but not verified or redeemed.
+There is no P2P game-traffic relay in v1.
 
 ## Admin API
 
