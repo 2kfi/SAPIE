@@ -1,0 +1,7 @@
+intial-repo/
+.venv/
+build/
+out/
+*.log
+.sapie-state/
+node_modules/
