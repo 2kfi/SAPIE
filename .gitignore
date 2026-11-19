@@ -6,3 +6,20 @@ out/
 .sapie-state/
 node_modules/
 third_party/
+
+# Runtime files written next to games or by the DLL
+STEAM_LOG.txt
+sapie_server.txt
+steam_interfaces.txt
+*.sapie-original.bak
+*.unpacked.exe
+
+# Local secrets
+.env
+.env.local
+
+# In-source CMake output
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
