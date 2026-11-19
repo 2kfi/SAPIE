@@ -1660,6 +1660,150 @@ type Steam_Messages_Message struct {
 
 func (*Steam_Messages_Message) isSteam_Messages_MessageData() {}
 
+type AchievementDef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Hidden        bool                   `protobuf:"varint,4,opt,name=hidden,proto3" json:"hidden,omitempty"`
+	Icon          string                 `protobuf:"bytes,5,opt,name=icon,proto3" json:"icon,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AchievementDef) Reset() {
+	*x = AchievementDef{}
+	mi := &file_net_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AchievementDef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AchievementDef) ProtoMessage() {}
+
+func (x *AchievementDef) ProtoReflect() protoreflect.Message {
+	mi := &file_net_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AchievementDef.ProtoReflect.Descriptor instead.
+func (*AchievementDef) Descriptor() ([]byte, []int) {
+	return file_net_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *AchievementDef) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AchievementDef) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *AchievementDef) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *AchievementDef) GetHidden() bool {
+	if x != nil {
+		return x.Hidden
+	}
+	return false
+}
+
+func (x *AchievementDef) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
+}
+
+type AchievementUnlock struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"`
+	Appid         uint32                 `protobuf:"varint,2,opt,name=appid,proto3" json:"appid,omitempty"`
+	Def           *AchievementDef        `protobuf:"bytes,3,opt,name=def,proto3" json:"def,omitempty"`
+	UnlockTime    int64                  `protobuf:"varint,4,opt,name=unlock_time,json=unlockTime,proto3" json:"unlock_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AchievementUnlock) Reset() {
+	*x = AchievementUnlock{}
+	mi := &file_net_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AchievementUnlock) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AchievementUnlock) ProtoMessage() {}
+
+func (x *AchievementUnlock) ProtoReflect() protoreflect.Message {
+	mi := &file_net_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AchievementUnlock.ProtoReflect.Descriptor instead.
+func (*AchievementUnlock) Descriptor() ([]byte, []int) {
+	return file_net_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AchievementUnlock) GetSteamId() uint64 {
+	if x != nil {
+		return x.SteamId
+	}
+	return 0
+}
+
+func (x *AchievementUnlock) GetAppid() uint32 {
+	if x != nil {
+		return x.Appid
+	}
+	return 0
+}
+
+func (x *AchievementUnlock) GetDef() *AchievementDef {
+	if x != nil {
+		return x.Def
+	}
+	return nil
+}
+
+func (x *AchievementUnlock) GetUnlockTime() int64 {
+	if x != nil {
+		return x.UnlockTime
+	}
+	return 0
+}
+
 type Common_Message struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	SourceId uint64                 `protobuf:"varint,1,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
@@ -1679,6 +1823,7 @@ type Common_Message struct {
 	//	*Common_Message_NetworkingSockets
 	//	*Common_Message_SteamMessages
 	//	*Common_Message_NetworkingMessages
+	//	*Common_Message_AchievementUnlock
 	Messages      isCommon_Message_Messages `protobuf_oneof:"messages"`
 	SourceIp      uint32                    `protobuf:"varint,128,opt,name=source_ip,json=sourceIp,proto3" json:"source_ip,omitempty"`
 	SourcePort    uint32                    `protobuf:"varint,129,opt,name=source_port,json=sourcePort,proto3" json:"source_port,omitempty"`
@@ -1688,7 +1833,7 @@ type Common_Message struct {
 
 func (x *Common_Message) Reset() {
 	*x = Common_Message{}
-	mi := &file_net_proto_msgTypes[13]
+	mi := &file_net_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1700,7 +1845,7 @@ func (x *Common_Message) String() string {
 func (*Common_Message) ProtoMessage() {}
 
 func (x *Common_Message) ProtoReflect() protoreflect.Message {
-	mi := &file_net_proto_msgTypes[13]
+	mi := &file_net_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1713,7 +1858,7 @@ func (x *Common_Message) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Common_Message.ProtoReflect.Descriptor instead.
 func (*Common_Message) Descriptor() ([]byte, []int) {
-	return file_net_proto_rawDescGZIP(), []int{13}
+	return file_net_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Common_Message) GetSourceId() uint64 {
@@ -1854,6 +1999,15 @@ func (x *Common_Message) GetNetworkingMessages() *Networking_Messages {
 	return nil
 }
 
+func (x *Common_Message) GetAchievementUnlock() *AchievementUnlock {
+	if x != nil {
+		if x, ok := x.Messages.(*Common_Message_AchievementUnlock); ok {
+			return x.AchievementUnlock
+		}
+	}
+	return nil
+}
+
 func (x *Common_Message) GetSourceIp() uint32 {
 	if x != nil {
 		return x.SourceIp
@@ -1924,6 +2078,10 @@ type Common_Message_NetworkingMessages struct {
 	NetworkingMessages *Networking_Messages `protobuf:"bytes,15,opt,name=networking_messages,json=networkingMessages,proto3,oneof"`
 }
 
+type Common_Message_AchievementUnlock struct {
+	AchievementUnlock *AchievementUnlock `protobuf:"bytes,16,opt,name=achievement_unlock,json=achievementUnlock,proto3,oneof"`
+}
+
 func (*Common_Message_Announce) isCommon_Message_Messages() {}
 
 func (*Common_Message_LowLevel) isCommon_Message_Messages() {}
@@ -1950,6 +2108,8 @@ func (*Common_Message_SteamMessages) isCommon_Message_Messages() {}
 
 func (*Common_Message_NetworkingMessages) isCommon_Message_Messages() {}
 
+func (*Common_Message_AchievementUnlock) isCommon_Message_Messages() {}
+
 type SteamAppTicketPb struct {
 	state                         protoimpl.MessageState `protogen:"open.v1"`
 	TicketVersionNo               uint32                 `protobuf:"varint,1,opt,name=ticket_version_no,json=ticketVersionNo,proto3" json:"ticket_version_no,omitempty"`
@@ -1963,7 +2123,7 @@ type SteamAppTicketPb struct {
 
 func (x *SteamAppTicketPb) Reset() {
 	*x = SteamAppTicketPb{}
-	mi := &file_net_proto_msgTypes[14]
+	mi := &file_net_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1975,7 +2135,7 @@ func (x *SteamAppTicketPb) String() string {
 func (*SteamAppTicketPb) ProtoMessage() {}
 
 func (x *SteamAppTicketPb) ProtoReflect() protoreflect.Message {
-	mi := &file_net_proto_msgTypes[14]
+	mi := &file_net_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1988,7 +2148,7 @@ func (x *SteamAppTicketPb) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SteamAppTicketPb.ProtoReflect.Descriptor instead.
 func (*SteamAppTicketPb) Descriptor() ([]byte, []int) {
-	return file_net_proto_rawDescGZIP(), []int{14}
+	return file_net_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *SteamAppTicketPb) GetTicketVersionNo() uint32 {
@@ -2038,7 +2198,7 @@ type Announce_Other_Peers struct {
 
 func (x *Announce_Other_Peers) Reset() {
 	*x = Announce_Other_Peers{}
-	mi := &file_net_proto_msgTypes[15]
+	mi := &file_net_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2050,7 +2210,7 @@ func (x *Announce_Other_Peers) String() string {
 func (*Announce_Other_Peers) ProtoMessage() {}
 
 func (x *Announce_Other_Peers) ProtoReflect() protoreflect.Message {
-	mi := &file_net_proto_msgTypes[15]
+	mi := &file_net_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2104,7 +2264,7 @@ type Lobby_Member struct {
 
 func (x *Lobby_Member) Reset() {
 	*x = Lobby_Member{}
-	mi := &file_net_proto_msgTypes[17]
+	mi := &file_net_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2116,7 +2276,7 @@ func (x *Lobby_Member) String() string {
 func (*Lobby_Member) ProtoMessage() {}
 
 func (x *Lobby_Member) ProtoReflect() protoreflect.Message {
-	mi := &file_net_proto_msgTypes[17]
+	mi := &file_net_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2158,7 +2318,7 @@ type Lobby_Gameserver struct {
 
 func (x *Lobby_Gameserver) Reset() {
 	*x = Lobby_Gameserver{}
-	mi := &file_net_proto_msgTypes[18]
+	mi := &file_net_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2170,7 +2330,7 @@ func (x *Lobby_Gameserver) String() string {
 func (*Lobby_Gameserver) ProtoMessage() {}
 
 func (x *Lobby_Gameserver) ProtoReflect() protoreflect.Message {
-	mi := &file_net_proto_msgTypes[18]
+	mi := &file_net_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2392,7 +2552,19 @@ const file_net_proto_rawDesc = "" +
 	"\amessage\x18\x02 \x01(\fH\x00R\amessage\"\x18\n" +
 	"\x05Types\x12\x0f\n" +
 	"\vFRIEND_CHAT\x10\x00B\x0e\n" +
-	"\fmessage_data\"\xa3\x06\n" +
+	"\fmessage_data\"\x91\x01\n" +
+	"\x0eAchievementDef\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x16\n" +
+	"\x06hidden\x18\x04 \x01(\bR\x06hidden\x12\x12\n" +
+	"\x04icon\x18\x05 \x01(\tR\x04icon\"\x88\x01\n" +
+	"\x11AchievementUnlock\x12\x19\n" +
+	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\x12\x14\n" +
+	"\x05appid\x18\x02 \x01(\rR\x05appid\x12!\n" +
+	"\x03def\x18\x03 \x01(\v2\x0f.AchievementDefR\x03def\x12\x1f\n" +
+	"\vunlock_time\x18\x04 \x01(\x03R\n" +
+	"unlockTime\"\xe8\x06\n" +
 	"\x0eCommon_Message\x12\x1b\n" +
 	"\tsource_id\x18\x01 \x01(\x04R\bsourceId\x12\x17\n" +
 	"\adest_id\x18\x02 \x01(\x04R\x06destId\x12'\n" +
@@ -2414,7 +2586,8 @@ const file_net_proto_rawDesc = "" +
 	"networkOld\x12D\n" +
 	"\x12networking_sockets\x18\r \x01(\v2\x13.Networking_SocketsH\x00R\x11networkingSockets\x128\n" +
 	"\x0esteam_messages\x18\x0e \x01(\v2\x0f.Steam_MessagesH\x00R\rsteamMessages\x12G\n" +
-	"\x13networking_messages\x18\x0f \x01(\v2\x14.Networking_MessagesH\x00R\x12networkingMessages\x12\x1c\n" +
+	"\x13networking_messages\x18\x0f \x01(\v2\x14.Networking_MessagesH\x00R\x12networkingMessages\x12C\n" +
+	"\x12achievement_unlock\x18\x10 \x01(\v2\x12.AchievementUnlockH\x00R\x11achievementUnlock\x12\x1c\n" +
 	"\tsource_ip\x18\x80\x01 \x01(\rR\bsourceIp\x12 \n" +
 	"\vsource_port\x18\x81\x01 \x01(\rR\n" +
 	"sourcePortB\n" +
@@ -2425,7 +2598,7 @@ const file_net_proto_rawDesc = "" +
 	"\x13crc_encryptedticket\x18\x02 \x01(\rR\x12crcEncryptedticket\x121\n" +
 	"\x14cb_encrypteduserdata\x18\x03 \x01(\rR\x13cbEncrypteduserdata\x12F\n" +
 	"\x1fcb_encrypted_appownershipticket\x18\x04 \x01(\rR\x1dcbEncryptedAppownershipticket\x12)\n" +
-	"\x10encrypted_ticket\x18\x05 \x01(\fR\x0fencryptedTicketB\x02H\x03b\x06proto3"
+	"\x10encrypted_ticket\x18\x05 \x01(\fR\x0fencryptedTicketB<H\x03Z8github.com/sapie/sapie/server/internal/protocol;protocolb\x06proto3"
 
 var (
 	file_net_proto_rawDescOnce sync.Once
@@ -2440,7 +2613,7 @@ func file_net_proto_rawDescGZIP() []byte {
 }
 
 var file_net_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
-var file_net_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_net_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_net_proto_goTypes = []any{
 	(Announce_Types)(0),            // 0: Announce.Types
 	(Lobby_Messages_Types)(0),      // 1: Lobby_Messages.Types
@@ -2465,54 +2638,58 @@ var file_net_proto_goTypes = []any{
 	(*Auth_Ticket)(nil),            // 20: Auth_Ticket
 	(*Friend_Messages)(nil),        // 21: Friend_Messages
 	(*Steam_Messages)(nil),         // 22: Steam_Messages
-	(*Common_Message)(nil),         // 23: Common_Message
-	(*SteamAppTicketPb)(nil),       // 24: SteamAppTicket_pb
-	(*Announce_Other_Peers)(nil),   // 25: Announce.Other_Peers
-	nil,                            // 26: Lobby.ValuesEntry
-	(*Lobby_Member)(nil),           // 27: Lobby.Member
-	(*Lobby_Gameserver)(nil),       // 28: Lobby.Gameserver
-	nil,                            // 29: Lobby.Member.ValuesEntry
-	nil,                            // 30: Lobby_Messages.MapEntry
-	nil,                            // 31: Gameserver.ValuesEntry
-	nil,                            // 32: Friend.RichPresenceEntry
+	(*AchievementDef)(nil),         // 23: AchievementDef
+	(*AchievementUnlock)(nil),      // 24: AchievementUnlock
+	(*Common_Message)(nil),         // 25: Common_Message
+	(*SteamAppTicketPb)(nil),       // 26: SteamAppTicket_pb
+	(*Announce_Other_Peers)(nil),   // 27: Announce.Other_Peers
+	nil,                            // 28: Lobby.ValuesEntry
+	(*Lobby_Member)(nil),           // 29: Lobby.Member
+	(*Lobby_Gameserver)(nil),       // 30: Lobby.Gameserver
+	nil,                            // 31: Lobby.Member.ValuesEntry
+	nil,                            // 32: Lobby_Messages.MapEntry
+	nil,                            // 33: Gameserver.ValuesEntry
+	nil,                            // 34: Friend.RichPresenceEntry
 }
 var file_net_proto_depIdxs = []int32{
 	0,  // 0: Announce.type:type_name -> Announce.Types
-	25, // 1: Announce.peers:type_name -> Announce.Other_Peers
-	26, // 2: Lobby.values:type_name -> Lobby.ValuesEntry
-	27, // 3: Lobby.members:type_name -> Lobby.Member
-	28, // 4: Lobby.gameserver:type_name -> Lobby.Gameserver
+	27, // 1: Announce.peers:type_name -> Announce.Other_Peers
+	28, // 2: Lobby.values:type_name -> Lobby.ValuesEntry
+	29, // 3: Lobby.members:type_name -> Lobby.Member
+	30, // 4: Lobby.gameserver:type_name -> Lobby.Gameserver
 	1,  // 5: Lobby_Messages.type:type_name -> Lobby_Messages.Types
-	30, // 6: Lobby_Messages.map:type_name -> Lobby_Messages.MapEntry
+	32, // 6: Lobby_Messages.map:type_name -> Lobby_Messages.MapEntry
 	2,  // 7: Low_Level.type:type_name -> Low_Level.Types
 	3,  // 8: Network_pb.type:type_name -> Network_pb.Types
 	4,  // 9: Network_Old.type:type_name -> Network_Old.Types
 	5,  // 10: Networking_Sockets.type:type_name -> Networking_Sockets.Types
 	6,  // 11: Networking_Messages.type:type_name -> Networking_Messages.Types
-	31, // 12: Gameserver.values:type_name -> Gameserver.ValuesEntry
-	32, // 13: Friend.rich_presence:type_name -> Friend.RichPresenceEntry
+	33, // 12: Gameserver.values:type_name -> Gameserver.ValuesEntry
+	34, // 13: Friend.rich_presence:type_name -> Friend.RichPresenceEntry
 	7,  // 14: Auth_Ticket.type:type_name -> Auth_Ticket.Types
 	8,  // 15: Friend_Messages.type:type_name -> Friend_Messages.Types
 	9,  // 16: Steam_Messages.type:type_name -> Steam_Messages.Types
-	10, // 17: Common_Message.announce:type_name -> Announce
-	13, // 18: Common_Message.low_level:type_name -> Low_Level
-	11, // 19: Common_Message.lobby:type_name -> Lobby
-	12, // 20: Common_Message.lobby_messages:type_name -> Lobby_Messages
-	14, // 21: Common_Message.network:type_name -> Network_pb
-	18, // 22: Common_Message.gameserver:type_name -> Gameserver
-	19, // 23: Common_Message.friend:type_name -> Friend
-	20, // 24: Common_Message.auth_ticket:type_name -> Auth_Ticket
-	21, // 25: Common_Message.friend_messages:type_name -> Friend_Messages
-	15, // 26: Common_Message.network_old:type_name -> Network_Old
-	16, // 27: Common_Message.networking_sockets:type_name -> Networking_Sockets
-	22, // 28: Common_Message.steam_messages:type_name -> Steam_Messages
-	17, // 29: Common_Message.networking_messages:type_name -> Networking_Messages
-	29, // 30: Lobby.Member.values:type_name -> Lobby.Member.ValuesEntry
-	31, // [31:31] is the sub-list for method output_type
-	31, // [31:31] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	23, // 17: AchievementUnlock.def:type_name -> AchievementDef
+	10, // 18: Common_Message.announce:type_name -> Announce
+	13, // 19: Common_Message.low_level:type_name -> Low_Level
+	11, // 20: Common_Message.lobby:type_name -> Lobby
+	12, // 21: Common_Message.lobby_messages:type_name -> Lobby_Messages
+	14, // 22: Common_Message.network:type_name -> Network_pb
+	18, // 23: Common_Message.gameserver:type_name -> Gameserver
+	19, // 24: Common_Message.friend:type_name -> Friend
+	20, // 25: Common_Message.auth_ticket:type_name -> Auth_Ticket
+	21, // 26: Common_Message.friend_messages:type_name -> Friend_Messages
+	15, // 27: Common_Message.network_old:type_name -> Network_Old
+	16, // 28: Common_Message.networking_sockets:type_name -> Networking_Sockets
+	22, // 29: Common_Message.steam_messages:type_name -> Steam_Messages
+	17, // 30: Common_Message.networking_messages:type_name -> Networking_Messages
+	24, // 31: Common_Message.achievement_unlock:type_name -> AchievementUnlock
+	31, // 32: Lobby.Member.values:type_name -> Lobby.Member.ValuesEntry
+	33, // [33:33] is the sub-list for method output_type
+	33, // [33:33] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_net_proto_init() }
@@ -2527,7 +2704,7 @@ func file_net_proto_init() {
 	file_net_proto_msgTypes[12].OneofWrappers = []any{
 		(*Steam_Messages_Message)(nil),
 	}
-	file_net_proto_msgTypes[13].OneofWrappers = []any{
+	file_net_proto_msgTypes[15].OneofWrappers = []any{
 		(*Common_Message_Announce)(nil),
 		(*Common_Message_LowLevel)(nil),
 		(*Common_Message_Lobby)(nil),
@@ -2541,6 +2718,7 @@ func file_net_proto_init() {
 		(*Common_Message_NetworkingSockets)(nil),
 		(*Common_Message_SteamMessages)(nil),
 		(*Common_Message_NetworkingMessages)(nil),
+		(*Common_Message_AchievementUnlock)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2548,7 +2726,7 @@ func file_net_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_net_proto_rawDesc), len(file_net_proto_rawDesc)),
 			NumEnums:      10,
-			NumMessages:   23,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

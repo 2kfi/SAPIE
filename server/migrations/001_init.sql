@@ -53,6 +53,10 @@ CREATE TABLE IF NOT EXISTS achievements (
     name        TEXT NOT NULL,
     achieved    INTEGER NOT NULL DEFAULT 0,
     unlock_time INTEGER NOT NULL DEFAULT 0,
+    display_name TEXT NOT NULL DEFAULT '',
+    description  TEXT NOT NULL DEFAULT '',
+    hidden       INTEGER NOT NULL DEFAULT 0,
+    icon         TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (steam_id, appid, name)
 );
 

@@ -453,12 +453,13 @@ func (x *StatValue) GetValue() []byte {
 }
 
 type AchievementState struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Achieved      bool                   `protobuf:"varint,2,opt,name=achieved,proto3" json:"achieved,omitempty"`
-	UnlockTime    uint32                 `protobuf:"varint,3,opt,name=unlock_time,json=unlockTime,proto3" json:"unlock_time,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Achieved       bool                   `protobuf:"varint,2,opt,name=achieved,proto3" json:"achieved,omitempty"`
+	UnlockTime     uint32                 `protobuf:"varint,3,opt,name=unlock_time,json=unlockTime,proto3" json:"unlock_time,omitempty"`
+	UnlockTimeUnix int64                  `protobuf:"varint,4,opt,name=unlock_time_unix,json=unlockTimeUnix,proto3" json:"unlock_time_unix,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AchievementState) Reset() {
@@ -512,10 +513,18 @@ func (x *AchievementState) GetUnlockTime() uint32 {
 	return 0
 }
 
+func (x *AchievementState) GetUnlockTimeUnix() int64 {
+	if x != nil {
+		return x.UnlockTimeUnix
+	}
+	return 0
+}
+
 type StatsGet struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Appid         uint32                 `protobuf:"varint,1,opt,name=appid,proto3" json:"appid,omitempty"`
 	Names         []string               `protobuf:"bytes,2,rep,name=names,proto3" json:"names,omitempty"`
+	SteamId       uint64                 `protobuf:"varint,3,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -562,6 +571,13 @@ func (x *StatsGet) GetNames() []string {
 		return x.Names
 	}
 	return nil
+}
+
+func (x *StatsGet) GetSteamId() uint64 {
+	if x != nil {
+		return x.SteamId
+	}
+	return 0
 }
 
 type StatsSet struct {
@@ -628,6 +644,7 @@ type StatsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Stats         []*StatValue           `protobuf:"bytes,1,rep,name=stats,proto3" json:"stats,omitempty"`
 	Achievements  []*AchievementState    `protobuf:"bytes,2,rep,name=achievements,proto3" json:"achievements,omitempty"`
+	SteamId       uint64                 `protobuf:"varint,3,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -676,6 +693,13 @@ func (x *StatsResponse) GetAchievements() []*AchievementState {
 	return nil
 }
 
+func (x *StatsResponse) GetSteamId() uint64 {
+	if x != nil {
+		return x.SteamId
+	}
+	return 0
+}
+
 type Frame struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
@@ -690,6 +714,7 @@ type Frame struct {
 	//	*Frame_StatsResponse
 	//	*Frame_Ping
 	//	*Frame_Pong
+	//	*Frame_AchievementUnlock
 	Payload       isFrame_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -822,6 +847,15 @@ func (x *Frame) GetPong() bool {
 	return false
 }
 
+func (x *Frame) GetAchievementUnlock() *AchievementUnlock {
+	if x != nil {
+		if x, ok := x.Payload.(*Frame_AchievementUnlock); ok {
+			return x.AchievementUnlock
+		}
+	}
+	return nil
+}
+
 type isFrame_Payload interface {
 	isFrame_Payload()
 }
@@ -866,6 +900,10 @@ type Frame_Pong struct {
 	Pong bool `protobuf:"varint,10,opt,name=pong,proto3,oneof"`
 }
 
+type Frame_AchievementUnlock struct {
+	AchievementUnlock *AchievementUnlock `protobuf:"bytes,11,opt,name=achievement_unlock,json=achievementUnlock,proto3,oneof"`
+}
+
 func (*Frame_Login) isFrame_Payload() {}
 
 func (*Frame_LoginResponse) isFrame_Payload() {}
@@ -885,6 +923,8 @@ func (*Frame_StatsResponse) isFrame_Payload() {}
 func (*Frame_Ping) isFrame_Payload() {}
 
 func (*Frame_Pong) isFrame_Payload() {}
+
+func (*Frame_AchievementUnlock) isFrame_Payload() {}
 
 var File_sapie_proto protoreflect.FileDescriptor
 
@@ -926,22 +966,25 @@ const file_sapie_proto_rawDesc = "" +
 	"\x06number\x18\x02 \x01(\rR\x06number\"5\n" +
 	"\tStatValue\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value\"c\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\"\x8d\x01\n" +
 	"\x10AchievementState\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\bachieved\x18\x02 \x01(\bR\bachieved\x12\x1f\n" +
 	"\vunlock_time\x18\x03 \x01(\rR\n" +
-	"unlockTime\"6\n" +
+	"unlockTime\x12(\n" +
+	"\x10unlock_time_unix\x18\x04 \x01(\x03R\x0eunlockTimeUnix\"Q\n" +
 	"\bStatsGet\x12\x14\n" +
 	"\x05appid\x18\x01 \x01(\rR\x05appid\x12\x14\n" +
-	"\x05names\x18\x02 \x03(\tR\x05names\"\x85\x01\n" +
+	"\x05names\x18\x02 \x03(\tR\x05names\x12\x19\n" +
+	"\bsteam_id\x18\x03 \x01(\x04R\asteamId\"\x85\x01\n" +
 	"\bStatsSet\x12\x14\n" +
 	"\x05appid\x18\x01 \x01(\rR\x05appid\x12&\n" +
 	"\x05stats\x18\x02 \x03(\v2\x10.sapie.StatValueR\x05stats\x12;\n" +
-	"\fachievements\x18\x03 \x03(\v2\x17.sapie.AchievementStateR\fachievements\"t\n" +
+	"\fachievements\x18\x03 \x03(\v2\x17.sapie.AchievementStateR\fachievements\"\x8f\x01\n" +
 	"\rStatsResponse\x12&\n" +
 	"\x05stats\x18\x01 \x03(\v2\x10.sapie.StatValueR\x05stats\x12;\n" +
-	"\fachievements\x18\x02 \x03(\v2\x17.sapie.AchievementStateR\fachievements\"\xf3\x03\n" +
+	"\fachievements\x18\x02 \x03(\v2\x17.sapie.AchievementStateR\fachievements\x12\x19\n" +
+	"\bsteam_id\x18\x03 \x01(\x04R\asteamId\"\xb8\x04\n" +
 	"\x05Frame\x12+\n" +
 	"\x05login\x18\x01 \x01(\v2\x13.sapie.LoginRequestH\x00R\x05login\x12=\n" +
 	"\x0elogin_response\x18\x02 \x01(\v2\x14.sapie.LoginResponseH\x00R\rloginResponse\x12'\n" +
@@ -953,7 +996,8 @@ const file_sapie_proto_rawDesc = "" +
 	"\x0estats_response\x18\b \x01(\v2\x14.sapie.StatsResponseH\x00R\rstatsResponse\x12\x14\n" +
 	"\x04ping\x18\t \x01(\bH\x00R\x04ping\x12\x14\n" +
 	"\x04pong\x18\n" +
-	" \x01(\bH\x00R\x04pongB\t\n" +
+	" \x01(\bH\x00R\x04pong\x12C\n" +
+	"\x12achievement_unlock\x18\v \x01(\v2\x12.AchievementUnlockH\x00R\x11achievementUnlockB\t\n" +
 	"\apayloadB<H\x03Z8github.com/sapie/sapie/server/internal/protocol;protocolb\x06proto3"
 
 var (
@@ -985,6 +1029,7 @@ var file_sapie_proto_goTypes = []any{
 	(*Frame)(nil),             // 11: sapie.Frame
 	nil,                       // 12: sapie.FriendSnapshot.RichPresenceEntry
 	(*Common_Message)(nil),    // 13: Common_Message
+	(*AchievementUnlock)(nil), // 14: AchievementUnlock
 }
 var file_sapie_proto_depIdxs = []int32{
 	12, // 0: sapie.FriendSnapshot.rich_presence:type_name -> sapie.FriendSnapshot.RichPresenceEntry
@@ -1002,11 +1047,12 @@ var file_sapie_proto_depIdxs = []int32{
 	8,  // 12: sapie.Frame.stats_get:type_name -> sapie.StatsGet
 	9,  // 13: sapie.Frame.stats_set:type_name -> sapie.StatsSet
 	10, // 14: sapie.Frame.stats_response:type_name -> sapie.StatsResponse
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	14, // 15: sapie.Frame.achievement_unlock:type_name -> AchievementUnlock
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_sapie_proto_init() }
@@ -1026,6 +1072,7 @@ func file_sapie_proto_init() {
 		(*Frame_StatsResponse)(nil),
 		(*Frame_Ping)(nil),
 		(*Frame_Pong)(nil),
+		(*Frame_AchievementUnlock)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

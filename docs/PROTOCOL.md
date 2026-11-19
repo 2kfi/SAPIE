@@ -1,4 +1,4 @@
-# SAPIE wire protocol (v1, M3)
+# SAPIE wire protocol (v1, M4)
 
 The game client talks to `cmd/sapie-server` over TCP (default `:47584`). Optional TLS
 is enabled by passing both `--tls-cert` and `--tls-key`.
@@ -54,7 +54,9 @@ cannot be verified or redeemed yet.
 | `Common_Message{Lobby}`, `{Lobby_Messages}` | Fan out to the lobby's members |
 | Other `Common_Message` variants | `source_id` stamped, logged and dropped |
 | `TicketRequest` | Reply `TicketResponse` (see App tickets) |
-| `StatsGet`, `StatsSet`, other variants | Logged and ignored (no-op acknowledgement) |
+| `StatsGet` | Reply `StatsResponse` for `steam_id` (0 means self) |
+| `AchievementUnlock` | Persist the unlock and push it to friends and lobby mates |
+| `StatsSet`, other variants | Logged and ignored (no-op acknowledgement) |
 
 Server pushes use `Common_Message` frames: presence is a `Friend` with a
 `persona_state` rich-presence key (`1` online, `0` offline), invites are
@@ -62,10 +64,29 @@ Server pushes use `Common_Message` frames: presence is a `Friend` with a
 disconnect push presence to friends. The server sends a `ping` every 30 s and
 closes a connection with no frame read for 90 s.
 
+## Achievements and stats
+
+`AchievementUnlock{appid, def}` is sent by the unlocking client. `def` carries
+`id`, `display_name`, `description`, `hidden` and `icon`. The server ignores any
+client clock: it stamps one canonical `unlock_time` (Unix seconds, `int64`)
+from the database when the record is first created. Repeat unlocks keep that
+first timestamp and only refresh the definition fields.
+
+Observers are the union of the unlocker's friends and the members of every
+lobby the unlocker has joined. Each receives a `Common_Message` with
+`achievement_unlock` set; `source_id` is the unlocker and `steam_id` inside the
+message is the same value. The `unlock_time` in the push is the exact integer
+stored in the database and returned by the admin API.
+
+`StatsGet{appid, names, steam_id}` queries another user by `steam_id`; zero
+means the caller. The reply is `StatsResponse{stats, achievements, steam_id}`.
+Each achievement has both the legacy `unlock_time` (`uint32`) and the canonical
+`unlock_time_unix` (`int64`). Use the latter for new clients.
+
 ## Not supported yet
 
-Achievements and stats are acknowledged no-ops until M4. Tickets are issued but
-not verified or redeemed. There is no P2P game-traffic relay in v1.
+Tickets are issued but not verified or redeemed. There is no P2P game-traffic
+relay in v1.
 
 ## HTTP API
 
@@ -83,9 +104,13 @@ origins over http, https or tauri.
 | `POST /lobbies` | user | 201 `{lobby_id}`; body `{appid,type,member_limit}` |
 | `POST /lobbies/{lobby_id}/join` | user | 200, pushes a `Lobby` update to members |
 | `GET /users` | admin | All accounts with presence; no password hashes or tokens |
+| `GET /users/{steam_id}/stats` | admin, or the matching user | `{steam_id, stats:[{name,value}], achievements:[{steam_id,appid,id,display_name,description,hidden,icon,achieved,unlock_time}]}` |
 | `GET /accounts`, `POST /accounts`, `DELETE /accounts/{id}` | admin | Account management; create accepts `Idempotency-Key` |
 
-`rich_presence` values are byte maps, so JSON encodes them as base64 strings.
+`rich_presence` values and stat `value` fields are byte maps, so JSON encodes
+them as base64 strings. `unlock_time` is Unix seconds as a JSON number, the
+same integer sent in the `AchievementUnlock` push. A user token can only read
+its own stats path; any other user returns 401.
 `connect_str` is stored in the inviter's presence and exposed to friends.
 `persona_state` is `1` when the user holds a live game session, `0` otherwise.
 `GET /healthz` is public. All responses omit password hashes and session tokens

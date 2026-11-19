@@ -61,6 +61,24 @@ func Open(path string) (*Store, error) {
 			return nil, err
 		}
 	}
+	// Databases created before M4 lack the achievement definition columns.
+	for _, col := range []struct{ name, ddl string }{
+		{"display_name", `ALTER TABLE achievements ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`},
+		{"description", `ALTER TABLE achievements ADD COLUMN description TEXT NOT NULL DEFAULT ''`},
+		{"hidden", `ALTER TABLE achievements ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`},
+		{"icon", `ALTER TABLE achievements ADD COLUMN icon TEXT NOT NULL DEFAULT ''`},
+	} {
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('achievements') WHERE name = ?`, col.name).Scan(&columns); err != nil {
+			db.Close()
+			return nil, err
+		}
+		if columns == 0 {
+			if _, err := db.Exec(col.ddl); err != nil {
+				db.Close()
+				return nil, err
+			}
+		}
+	}
 	var max sql.NullInt64
 	if err := db.QueryRow(`SELECT MAX(steam_id) FROM accounts`).Scan(&max); err != nil {
 		db.Close()
@@ -397,6 +415,124 @@ func (s *Store) Lobbies() ([]Lobby, error) {
 		}
 	}
 	return lobbies, nil
+}
+
+type Achievement struct {
+	SteamID     uint64 `json:"steam_id"`
+	Appid       uint32 `json:"appid"`
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description"`
+	Hidden      bool   `json:"hidden"`
+	Icon        string `json:"icon"`
+	Achieved    bool   `json:"achieved"`
+	UnlockTime  int64  `json:"unlock_time"`
+}
+
+type Stat struct {
+	Name  string `json:"name"`
+	Value []byte `json:"value"`
+}
+
+type UserStats struct {
+	SteamID      uint64        `json:"steam_id"`
+	Stats        []Stat        `json:"stats"`
+	Achievements []Achievement `json:"achievements"`
+}
+
+// UnlockAchievement stores the first unlock time; later reports only refresh metadata.
+func (s *Store) UnlockAchievement(steamID uint64, a Achievement) (Achievement, error) {
+	hidden := 0
+	if a.Hidden {
+		hidden = 1
+	}
+	_, err := s.db.Exec(`INSERT INTO achievements
+		(steam_id, appid, name, achieved, unlock_time, display_name, description, hidden, icon)
+		VALUES (?, ?, ?, 1, CAST(strftime('%s', 'now') AS INTEGER), ?, ?, ?, ?)
+		ON CONFLICT(steam_id, appid, name) DO UPDATE SET achieved = 1,
+		display_name = excluded.display_name, description = excluded.description,
+		hidden = excluded.hidden, icon = excluded.icon`,
+		steamID, a.Appid, a.ID, a.DisplayName, a.Description, hidden, a.Icon)
+	if err != nil {
+		return Achievement{}, err
+	}
+	return s.AchievementOf(steamID, a.Appid, a.ID)
+}
+
+func (s *Store) AchievementOf(steamID uint64, appid uint32, name string) (Achievement, error) {
+	var a Achievement
+	var achieved, hidden int
+	err := s.db.QueryRow(`SELECT steam_id, appid, name, achieved, unlock_time,
+		display_name, description, hidden, icon
+		FROM achievements WHERE steam_id = ? AND appid = ? AND name = ?`, steamID, appid, name).
+		Scan(&a.SteamID, &a.Appid, &a.ID, &achieved, &a.UnlockTime,
+			&a.DisplayName, &a.Description, &hidden, &a.Icon)
+	if err != nil {
+		return Achievement{}, err
+	}
+	a.Achieved = achieved != 0
+	a.Hidden = hidden != 0
+	return a, nil
+}
+
+func (s *Store) StatsOf(steamID uint64) (UserStats, error) {
+	result := UserStats{SteamID: steamID, Stats: []Stat{}, Achievements: []Achievement{}}
+	rows, err := s.db.Query(`SELECT name, value FROM stats WHERE steam_id = ? ORDER BY name`, steamID)
+	if err != nil {
+		return UserStats{}, err
+	}
+	for rows.Next() {
+		var stat Stat
+		var value []byte
+		if err := rows.Scan(&stat.Name, &value); err != nil {
+			rows.Close()
+			return UserStats{}, err
+		}
+		stat.Value = append([]byte(nil), value...)
+		result.Stats = append(result.Stats, stat)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return UserStats{}, err
+	}
+	rows.Close()
+
+	rows, err = s.db.Query(`SELECT steam_id, appid, name, achieved, unlock_time,
+		display_name, description, hidden, icon FROM achievements
+		WHERE steam_id = ? ORDER BY appid, name`, steamID)
+	if err != nil {
+		return UserStats{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a Achievement
+		var achieved, hidden int
+		if err := rows.Scan(&a.SteamID, &a.Appid, &a.ID, &achieved, &a.UnlockTime,
+			&a.DisplayName, &a.Description, &hidden, &a.Icon); err != nil {
+			return UserStats{}, err
+		}
+		a.Achieved = achieved != 0
+		a.Hidden = hidden != 0
+		result.Achievements = append(result.Achievements, a)
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) LobbiesOf(steamID uint64) ([]uint64, error) {
+	rows, err := s.db.Query(`SELECT lobby_id FROM lobby_members WHERE steam_id = ? ORDER BY lobby_id`, steamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []uint64{}
+	for rows.Next() {
+		var id uint64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func IsNotFound(err error) bool {

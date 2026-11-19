@@ -3,6 +3,7 @@ package state
 import (
 	"database/sql"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,118 @@ func TestAccounts(t *testing.T) {
 	}
 	if sessions != 0 {
 		t.Fatalf("session survived account deletion: %d", sessions)
+	}
+}
+
+func TestAchievementStore(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	alice, err := store.CreateAccount("alice", "h1", "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := store.CreateAccount("bob", "h2", "Bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Achievement{
+		Appid: 480, ID: "first_kill", DisplayName: "First Kill",
+		Description: "Kill one opponent", Hidden: true, Icon: "first.png",
+	}
+	first, err := store.UnlockAchievement(alice, want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.UnlockTime <= 0 || !first.Achieved || first.DisplayName != want.DisplayName ||
+		first.Description != want.Description || !first.Hidden || first.Icon != want.Icon {
+		t.Fatalf("stored unlock = %+v", first)
+	}
+
+	if _, err := store.db.Exec(`UPDATE achievements SET unlock_time = 1000 WHERE steam_id = ?`, alice); err != nil {
+		t.Fatal(err)
+	}
+	changed := want
+	changed.DisplayName = "Renamed"
+	changed.UnlockTime = 9999
+	again, err := store.UnlockAchievement(alice, changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.UnlockTime != 1000 || again.DisplayName != "Renamed" {
+		t.Fatalf("repeat unlock = %+v", again)
+	}
+
+	stats, err := store.StatsOf(alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.SteamID != alice || len(stats.Achievements) != 1 ||
+		stats.Achievements[0].UnlockTime != 1000 || stats.Achievements[0].ID != "first_kill" {
+		t.Fatalf("stats = %+v", stats)
+	}
+	other, err := store.StatsOf(bob)
+	if err != nil || len(other.Achievements) != 0 {
+		t.Fatalf("bob stats = %+v, %v", other, err)
+	}
+
+	lobbyID, err := store.CreateLobby(alice, 480, 0, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinLobby(lobbyID, bob); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []uint64{alice, bob} {
+		lobbies, err := store.LobbiesOf(id)
+		if err != nil || len(lobbies) != 1 || lobbies[0] != lobbyID {
+			t.Fatalf("lobbies of %d = %v, %v", id, lobbies, err)
+		}
+	}
+}
+
+func TestLegacyAchievementSchemaUpgrade(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	legacy, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = legacy.Exec(`CREATE TABLE accounts (steam_id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE,
+		password_hash TEXT NOT NULL, persona_name TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT 0);
+		CREATE TABLE achievements (steam_id INTEGER NOT NULL REFERENCES accounts(steam_id),
+		appid INTEGER NOT NULL, name TEXT NOT NULL, achieved INTEGER NOT NULL DEFAULT 0,
+		unlock_time INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (steam_id, appid, name));`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy.Close()
+
+	for i := 0; i < 2; i++ {
+		store, err := Open(path)
+		if err != nil {
+			t.Fatalf("open %d: %v", i, err)
+		}
+		accountID := uint64(0)
+		if i == 0 {
+			accountID, err = store.CreateAccount("alice", "h", "Alice")
+		} else {
+			var account *AuthAccount
+			account, err = store.AccountByUsername("alice")
+			if err == nil {
+				accountID = account.SteamID
+			}
+		}
+		if err != nil {
+			t.Fatalf("account on open %d: %v", i, err)
+		}
+		unlock, err := store.UnlockAchievement(accountID, Achievement{Appid: 480, ID: "first_kill"})
+		if err != nil || unlock.UnlockTime <= 0 {
+			t.Fatalf("unlock on legacy schema = %+v, %v", unlock, err)
+		}
+		store.Close()
 	}
 }
 

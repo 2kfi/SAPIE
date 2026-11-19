@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+option go_package = "github.com/sapie/sapie/server/internal/protocol;protocol";
 option optimize_for = LITE_RUNTIME;
 
 message Announce {
@@ -213,6 +214,21 @@ message Steam_Messages {
 	}
 }
 
+message AchievementDef {
+    string id = 1;
+    string display_name = 2;
+    string description = 3;
+    bool hidden = 4;
+    string icon = 5;
+}
+
+message AchievementUnlock {
+    uint64 steam_id = 1;
+    uint32 appid = 2;
+    AchievementDef def = 3;
+    int64 unlock_time = 4;
+}
+
 message Common_Message {
     uint64 source_id = 1;
     uint64 dest_id = 2;
@@ -230,6 +246,7 @@ message Common_Message {
         Networking_Sockets networking_sockets = 13;
         Steam_Messages steam_messages = 14;
         Networking_Messages networking_messages = 15;
+        AchievementUnlock achievement_unlock = 16;
     }
 
     uint32 source_ip = 128;

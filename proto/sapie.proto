@@ -56,11 +56,13 @@ message AchievementState {
   string name = 1;
   bool achieved = 2;
   uint32 unlock_time = 3;
+  int64 unlock_time_unix = 4;
 }
 
 message StatsGet {
   uint32 appid = 1;
   repeated string names = 2;
+  uint64 steam_id = 3;
 }
 
 message StatsSet {
@@ -72,6 +74,7 @@ message StatsSet {
 message StatsResponse {
   repeated StatValue stats = 1;
   repeated AchievementState achievements = 2;
+  uint64 steam_id = 3;
 }
 
 message Frame {
@@ -86,5 +89,6 @@ message Frame {
     StatsResponse stats_response = 8;
     bool ping = 9;
     bool pong = 10;
+    AchievementUnlock achievement_unlock = 11;
   }
 }

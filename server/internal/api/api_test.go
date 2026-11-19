@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sapie/sapie/server/internal/auth"
 	"github.com/sapie/sapie/server/internal/protocol"
@@ -95,6 +96,70 @@ func request(h http.Handler, method, path, token, body string) *httptest.Respons
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
+}
+
+func TestStatsEndpoint(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice, err := store.CreateAccount("alice", hash, "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := store.CreateAccount("bob", hash, "Bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := store.UnlockAchievement(alice, state.Achievement{
+		Appid: 480, ID: "first_kill", DisplayName: "First Kill", UnlockTime: 9999,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{"alice-token", "bob-token"} {
+		id := alice
+		if token == "bob-token" {
+			id = bob
+		}
+		if err := store.CreateSession(id, auth.HashToken(token), time.Now().Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler := New(store, "admin-token", auth.NewLimiter(nil), nil).Handler()
+	path := "/api/v1/users/" + strconv.FormatUint(alice, 10) + "/stats"
+
+	for _, token := range []string{"admin-token", "alice-token"} {
+		rec := request(handler, http.MethodGet, path, token, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("stats as %s = %d: %s", token, rec.Code, rec.Body.String())
+		}
+		var stats state.UserStats
+		if err := json.Unmarshal(rec.Body.Bytes(), &stats); err != nil {
+			t.Fatal(err)
+		}
+		if stats.SteamID != alice || len(stats.Achievements) != 1 ||
+			stats.Achievements[0].UnlockTime != unlock.UnlockTime ||
+			stats.Achievements[0].DisplayName != "First Kill" {
+			t.Fatalf("stats as %s = %s", token, rec.Body.String())
+		}
+	}
+	for _, token := range []string{"bob-token", "wrong"} {
+		if rec := request(handler, http.MethodGet, path, token, ""); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("stats as %s = %d", token, rec.Code)
+		}
+	}
+	if rec := request(handler, http.MethodGet, path, "", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("stats without token = %d", rec.Code)
+	}
+	if rec := request(handler, http.MethodGet, "/api/v1/users/nope/stats", "admin-token", ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad steam id = %d", rec.Code)
+	}
 }
 
 func TestUserEndpoints(t *testing.T) {

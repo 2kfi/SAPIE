@@ -174,6 +174,10 @@ func (s *Server) handle(conn net.Conn) {
 			if err := session.Send(&protocol.Frame{Payload: &protocol.Frame_TicketResponse{TicketResponse: response}}); err != nil {
 				log.Printf("session %d: ticket response: %v", session.steamID, err)
 			}
+		case *protocol.Frame_StatsGet:
+			s.handleStatsGet(session, payload.StatsGet)
+		case *protocol.Frame_AchievementUnlock:
+			s.handleAchievementUnlock(session, payload.AchievementUnlock)
 		default:
 			log.Printf("session %d: %T ignored (no-op)", session.steamID, frame.Payload)
 		}
@@ -271,6 +275,88 @@ func (s *Server) handleSteam(session *Session, msg *protocol.Common_Message) {
 		}
 	}
 	s.router.Route(session.steamID, msg)
+}
+
+func (s *Server) handleStatsGet(session *Session, req *protocol.StatsGet) {
+	if req == nil {
+		return
+	}
+	steamID := req.GetSteamId()
+	if steamID == 0 {
+		steamID = session.steamID
+	}
+	stats, err := s.store.StatsOf(steamID)
+	if err != nil {
+		log.Printf("session %d: stats for %d: %v", session.steamID, steamID, err)
+		return
+	}
+	response := &protocol.StatsResponse{SteamId: steamID}
+	for _, stat := range stats.Stats {
+		response.Stats = append(response.Stats, &protocol.StatValue{Name: stat.Name, Value: stat.Value})
+	}
+	for _, a := range stats.Achievements {
+		response.Achievements = append(response.Achievements, &protocol.AchievementState{
+			Name: a.ID, Achieved: a.Achieved,
+			UnlockTime: uint32(a.UnlockTime), UnlockTimeUnix: a.UnlockTime,
+		})
+	}
+	if err := session.Send(&protocol.Frame{Payload: &protocol.Frame_StatsResponse{StatsResponse: response}}); err != nil {
+		log.Printf("session %d: stats response: %v", session.steamID, err)
+	}
+}
+
+func (s *Server) handleAchievementUnlock(session *Session, unlock *protocol.AchievementUnlock) {
+	if unlock == nil || unlock.GetDef().GetId() == "" {
+		return
+	}
+	def := unlock.GetDef()
+	stored, err := s.store.UnlockAchievement(session.steamID, state.Achievement{
+		Appid: unlock.GetAppid(), ID: def.GetId(), DisplayName: def.GetDisplayName(),
+		Description: def.GetDescription(), Hidden: def.GetHidden(), Icon: def.GetIcon(),
+	})
+	if err != nil {
+		log.Printf("session %d: unlock achievement: %v", session.steamID, err)
+		return
+	}
+	push := &protocol.Common_Message{
+		SourceId: session.steamID,
+		Messages: &protocol.Common_Message_AchievementUnlock{AchievementUnlock: &protocol.AchievementUnlock{
+			SteamId: session.steamID, Appid: stored.Appid, UnlockTime: stored.UnlockTime,
+			Def: &protocol.AchievementDef{
+				Id: stored.ID, DisplayName: stored.DisplayName, Description: stored.Description,
+				Hidden: stored.Hidden, Icon: stored.Icon,
+			},
+		}},
+	}
+	ids := map[uint64]struct{}{}
+	friends, err := s.store.FriendsOf(session.steamID)
+	if err != nil {
+		log.Printf("session %d: unlock friends: %v", session.steamID, err)
+	}
+	for _, id := range friends {
+		ids[id] = struct{}{}
+	}
+	lobbies, err := s.store.LobbiesOf(session.steamID)
+	if err != nil {
+		log.Printf("session %d: unlock lobbies: %v", session.steamID, err)
+	}
+	for _, lobbyID := range lobbies {
+		members, err := s.store.LobbyMembers(lobbyID)
+		if err != nil {
+			log.Printf("session %d: unlock lobby %d members: %v", session.steamID, lobbyID, err)
+			continue
+		}
+		for _, id := range members {
+			ids[id] = struct{}{}
+		}
+	}
+	for id := range ids {
+		if id == session.steamID {
+			continue
+		}
+		push.DestId = id
+		s.router.Route(session.steamID, push)
+	}
 }
 
 func (s *Server) sendLoginResult(session *Session, status protocol.LoginResponse_Status, id uint64, persona, token []byte, friends []*protocol.FriendSnapshot) {

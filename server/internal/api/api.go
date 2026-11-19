@@ -57,6 +57,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/lobbies", s.createLobby)
 	mux.HandleFunc("POST /api/v1/lobbies/{lobby_id}/join", s.joinLobby)
 	mux.HandleFunc("GET /api/v1/users", s.listUsers)
+	mux.HandleFunc("GET /api/v1/users/{steam_id}/stats", s.userStats)
 	mux.HandleFunc("GET /api/v1/accounts", s.listAccounts)
 	mux.HandleFunc("POST /api/v1/accounts", s.createAccount)
 	mux.HandleFunc("DELETE /api/v1/accounts/{id}", s.deleteAccount)
@@ -76,10 +77,14 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	return err
 }
 
-func (s *Server) authorized(w http.ResponseWriter, r *http.Request) bool {
+func (s *Server) isAdmin(r *http.Request) bool {
 	token, ok := s.bearer(r)
+	return ok && s.token != "" && auth.Equal(token, s.token)
+}
+
+func (s *Server) authorized(w http.ResponseWriter, r *http.Request) bool {
 	// An empty configured token disables admin access rather than opening it up.
-	if !ok || s.token == "" || !auth.Equal(token, s.token) {
+	if !s.isAdmin(r) {
 		s.unauthorized(w)
 		return false
 	}
@@ -342,6 +347,30 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 		users = append(users, presence)
 	}
 	writeJSON(w, http.StatusOK, users)
+}
+
+func (s *Server) userStats(w http.ResponseWriter, r *http.Request) {
+	steamID, err := strconv.ParseUint(r.PathValue("steam_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid steam id", http.StatusBadRequest)
+		return
+	}
+	if !s.isAdmin(r) {
+		caller, ok := s.authorizeUser(w, r)
+		if !ok {
+			return
+		}
+		if caller != steamID {
+			s.unauthorized(w)
+			return
+		}
+	}
+	stats, err := s.store.StatsOf(steamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
 }
 
 func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {

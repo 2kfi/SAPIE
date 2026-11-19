@@ -407,6 +407,57 @@ func run() error {
 		return fmt.Errorf("lobby chat not routed to bob: %v", err)
 	}
 	fmt.Println("PASS M3 socket-sent lobby message routed to members")
+
+	if err := aliceClient.send(&protocol.Frame{Payload: &protocol.Frame_AchievementUnlock{
+		AchievementUnlock: &protocol.AchievementUnlock{
+			Appid: 480,
+			Def: &protocol.AchievementDef{
+				Id: "first_kill", DisplayName: "First Kill", Description: "Kill one opponent",
+			},
+		},
+	}}); err != nil {
+		return fmt.Errorf("send unlock: %w", err)
+	}
+	frame, err = bobClient.next(func(f *protocol.Frame) bool {
+		msg := steamMessage(f)
+		return msg != nil && msg.GetAchievementUnlock() != nil &&
+			msg.GetAchievementUnlock().GetDef().GetId() == "first_kill"
+	})
+	if err != nil {
+		return fmt.Errorf("bob did not receive unlock push: %w", err)
+	}
+	pushed := steamMessage(frame).GetAchievementUnlock()
+	if pushed.GetSteamId() != alice.SteamID || steamMessage(frame).GetSourceId() != alice.SteamID ||
+		pushed.GetUnlockTime() <= 0 {
+		return fmt.Errorf("bad unlock push: %+v", pushed)
+	}
+	unlockTime := pushed.GetUnlockTime()
+	fmt.Printf("PASS M4 bob received alice unlock push unlock_time=%d\n", unlockTime)
+
+	persisted, err := store.StatsOf(alice.SteamID)
+	if err != nil {
+		return fmt.Errorf("read persisted stats: %w", err)
+	}
+	if len(persisted.Achievements) != 1 || persisted.Achievements[0].UnlockTime != unlockTime ||
+		persisted.Achievements[0].ID != "first_kill" {
+		return fmt.Errorf("persisted unlock differs from push: %+v", persisted.Achievements)
+	}
+	fmt.Printf("PASS M4 alice unlock persisted with canonical unlock_time=%d\n", unlockTime)
+
+	status, body, err = apiCall(client, http.MethodGet,
+		fmt.Sprintf("%s/api/v1/users/%d/stats", adminURL, alice.SteamID), adminToken, nil)
+	if err != nil || status != http.StatusOK {
+		return fmt.Errorf("admin stats = %d: %s (%v)", status, body, err)
+	}
+	var stats state.UserStats
+	if err := json.Unmarshal(body, &stats); err != nil {
+		return fmt.Errorf("decode admin stats: %w", err)
+	}
+	if stats.SteamID != alice.SteamID || len(stats.Achievements) != 1 ||
+		stats.Achievements[0].ID != "first_kill" || stats.Achievements[0].UnlockTime != unlockTime {
+		return fmt.Errorf("admin stats unlock_time differs from push: %s", body)
+	}
+	fmt.Printf("PASS M4 admin API shows same unlock_time=%d\n", unlockTime)
 	return nil
 }
 
