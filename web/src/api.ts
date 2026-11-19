@@ -6,33 +6,35 @@ export type Session = Connection & {
   personaName: string
 }
 
+export type PresenceValues = Record<string, string | null>
+
 export type Friend = {
-  steam_id: string
+  steam_id: string | number
   persona_name: string
   persona_state: string | number
   appid: string | number | null
-  rich_presence: string | null
-  lobby_id: string | null
+  rich_presence: PresenceValues | string | null
+  lobby_id: string | number | null
   connect_str: string | null
 }
 
 export type Lobby = {
-  lobby_id: string
-  owner: string
+  lobby_id: string | number
+  owner: string | number
   appid: string | number
   member_limit: number
-  type: string
+  type: string | number
   joinable: boolean
-  members: string[]
+  members: (string | number)[]
 }
 
 export type PresenceUser = {
-  steam_id: string
+  steam_id: string | number
   persona_name: string
   persona_state?: string | number
   appid?: string | number | null
-  rich_presence?: string | null
-  lobby_id?: string | null
+  rich_presence?: PresenceValues | string | null
+  lobby_id?: string | number | null
   connect_str?: string | null
 }
 
@@ -148,10 +150,10 @@ export function getFriends(server: string, token: string): Promise<{ friends: Fr
 export function inviteFriend(
   server: string,
   token: string,
-  steamId: string,
+  steamId: string | number,
   connectStr: string,
 ): Promise<void> {
-  return request(server, `/friends/${encodeURIComponent(steamId)}/invite`, {
+  return request(server, `/friends/${encodeURIComponent(String(steamId))}/invite`, {
     method: 'POST',
     token,
     body: { connect_str: connectStr },
@@ -164,7 +166,7 @@ export function getLobbies(server: string, token: string): Promise<{ lobbies: Lo
 
 export type NewLobby = {
   appid: number | string
-  type: string
+  type: number
   member_limit: number
 }
 
@@ -172,17 +174,27 @@ export function createLobby(
   server: string,
   token: string,
   lobby: NewLobby,
-): Promise<{ lobby_id: string }> {
+): Promise<{ lobby_id: string | number }> {
   return request(server, '/lobbies', { method: 'POST', token, body: lobby })
 }
 
-export function joinLobby(server: string, token: string, lobbyId: string): Promise<void> {
-  return request(server, `/lobbies/${encodeURIComponent(lobbyId)}/join`, {
+export function joinLobby(
+  server: string,
+  token: string,
+  lobbyId: string | number,
+): Promise<void> {
+  return request(server, `/lobbies/${encodeURIComponent(String(lobbyId))}/join`, {
     method: 'POST',
     token,
   })
 }
 
-export function getAdminUsers(server: string, adminToken: string): Promise<{ users: PresenceUser[] }> {
-  return request(server, '/users', { token: adminToken })
+export async function getAdminUsers(
+  server: string,
+  adminToken: string,
+): Promise<PresenceUser[]> {
+  const data = await request<PresenceUser[] | { users?: PresenceUser[] }>(server, '/users', {
+    token: adminToken,
+  })
+  return Array.isArray(data) ? data : Array.isArray(data?.users) ? data.users : []
 }

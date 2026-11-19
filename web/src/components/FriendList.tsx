@@ -37,8 +37,28 @@ export function personaTone(value: string | number): 'online' | 'away' | 'offlin
   return 'offline'
 }
 
+function decodePresenceValue(raw: string): string {
+  if (typeof atob !== 'function') return raw
+  try {
+    const bytes = Uint8Array.from(atob(raw), (char) => char.charCodeAt(0))
+    return new TextDecoder().decode(bytes)
+  } catch {
+    return raw
+  }
+}
+
+function presenceSummary(value: Friend['rich_presence']): string | null {
+  if (typeof value === 'string') return value.trim() || null
+  if (!value || typeof value !== 'object') return null
+  const pairs = Object.entries(value)
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0)
+    .map(([key, raw]) => `${key}: ${decodePresenceValue(raw)}`)
+  return pairs.length > 0 ? pairs.join(' · ') : null
+}
+
 export function gameLabel(friend: Friend): string {
-  if (friend.rich_presence) return String(friend.rich_presence)
+  const presence = presenceSummary(friend.rich_presence)
+  if (presence) return presence
   if (friend.appid != null && friend.appid !== '') return `App ${friend.appid}`
   return 'Not in a game'
 }
@@ -88,10 +108,11 @@ export default function FriendList({
   async function sendInvite(event: FormEvent<HTMLFormElement>, friend: Friend) {
     event.preventDefault()
     if (busyId) return
-    const connectStr = (drafts[friend.steam_id] ?? '').trim()
-    setBusyId(friend.steam_id)
+    const id = String(friend.steam_id)
+    const connectStr = (drafts[id] ?? '').trim()
+    setBusyId(id)
     try {
-      await inviteFriend(session.server, session.token, friend.steam_id, connectStr)
+      await inviteFriend(session.server, session.token, id, connectStr)
       onNotice(`Invite sent to ${friend.persona_name}.`)
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) {
@@ -129,8 +150,9 @@ export default function FriendList({
         <ul className="friend-list">
           {friends.map((friend) => {
             const tone = personaTone(friend.persona_state)
+            const id = String(friend.steam_id)
             return (
-              <li className="friend" key={friend.steam_id}>
+              <li className="friend" key={id}>
                 <div className="friend__head">
                   <button
                     type="button"
@@ -160,30 +182,30 @@ export default function FriendList({
                   <button
                     type="button"
                     className="btn btn--quiet"
-                    disabled={!friend.lobby_id || busyId === friend.steam_id}
+                    disabled={!friend.lobby_id || busyId === id}
                     onClick={() => onJoinFriend(friend)}
                   >
                     Join Friend
                   </button>
                   <form className="inline-form" onSubmit={(event) => void sendInvite(event, friend)}>
-                    <label className="visually-hidden" htmlFor={`invite-${friend.steam_id}`}>
+                    <label className="visually-hidden" htmlFor={`invite-${id}`}>
                       Connect string for {friend.persona_name}
                     </label>
                     <input
-                      id={`invite-${friend.steam_id}`}
+                      id={`invite-${id}`}
                       className="mono"
                       type="text"
                       placeholder="Connect string"
                       autoComplete="off"
                       spellCheck={false}
-                      value={drafts[friend.steam_id] ?? ''}
+                      value={drafts[id] ?? ''}
                       onChange={(event) => setDrafts((current) => ({
                         ...current,
-                        [friend.steam_id]: event.target.value,
+                        [id]: event.target.value,
                       }))}
                       required
                     />
-                    <button type="submit" className="btn btn--quiet" disabled={busyId === friend.steam_id}>
+                    <button type="submit" className="btn btn--quiet" disabled={busyId === id}>
                       Invite
                     </button>
                   </form>
