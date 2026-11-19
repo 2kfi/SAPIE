@@ -162,7 +162,7 @@ func (s *Server) handle(conn net.Conn) {
 				log.Printf("session %d: ticket response: %v", session.steamID, err)
 			}
 		default:
-			log.Printf("session %d: %T ignored (M0 no-op)", session.steamID, frame.Payload)
+			log.Printf("session %d: %T ignored (no-op)", session.steamID, frame.Payload)
 		}
 	}
 }
