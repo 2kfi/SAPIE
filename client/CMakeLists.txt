@@ -123,6 +123,18 @@ if(SAPIE_INTERFACE_ERA STREQUAL "legacy")
   target_compile_definitions(steam_api PRIVATE SAPIE_LEGACY_INTERFACES)
 endif()
 
+if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+  add_executable(sapie_login_smoke harness/sapie_login_smoke.cpp)
+  target_include_directories(sapie_login_smoke PRIVATE
+    "${SAPIE_PROTO_GEN_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sdk_includes")
+  if(SAPIE_PROTOBUF_INCLUDE_DIR)
+    target_include_directories(sapie_login_smoke PRIVATE "${SAPIE_PROTOBUF_INCLUDE_DIR}")
+  endif()
+  target_link_libraries(sapie_login_smoke PRIVATE steam_api ${SAPIE_PROTOBUF_LIBRARY} Threads::Threads)
+  set_target_properties(sapie_login_smoke PROPERTIES CXX_VISIBILITY_PRESET hidden)
+endif()
+
 install(TARGETS steam_api
   RUNTIME DESTINATION .
   LIBRARY DESTINATION .)

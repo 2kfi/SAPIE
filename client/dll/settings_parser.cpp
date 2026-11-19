@@ -51,6 +51,85 @@ static void split_string(const std::string &s, char delim, Out result) {
     }
 }
 
+static bool parse_sapie_server_file(const std::string &path, std::string &host, uint16_t &port)
+{
+    std::ifstream input(utf8_decode(path));
+    if (!input.is_open()) return false;
+
+    consume_bom(input);
+    std::string line;
+    bool valid = (bool)std::getline(input, line);
+
+    if (valid) {
+        size_t first = line.find_first_not_of(" \t\r\n");
+        size_t last = line.find_last_not_of(" \t\r\n");
+        if (first == std::string::npos) {
+            valid = false;
+        } else {
+            line = line.substr(first, last - first + 1);
+            size_t separator = line.find(':');
+            if (separator == std::string::npos) {
+                valid = false;
+            } else {
+                host = line.substr(0, separator);
+                std::string port_text = line.substr(separator + 1);
+                if (host.empty() || port_text.empty() || host.find(':') != std::string::npos) {
+                    valid = false;
+                } else {
+                    for (unsigned char c : host) {
+                        if (!std::isalnum(c) && c != '.' && c != '-' && c != '_') {
+                            valid = false;
+                            break;
+                        }
+                    }
+
+                    size_t used = 0;
+                    unsigned long parsed_port = 0;
+                    try {
+                        parsed_port = std::stoul(port_text, &used);
+                    } catch (...) {
+                        valid = false;
+                    }
+                    if (used != port_text.size() || parsed_port == 0 || parsed_port > 65535) {
+                        valid = false;
+                    }
+                    if (valid) port = (uint16_t)parsed_port;
+                }
+            }
+        }
+    }
+
+    if (!valid) {
+        fprintf(stderr, "[SAPIE] invalid %s; using Goldberg LAN mode\n", path.c_str());
+        return false;
+    }
+
+    return true;
+}
+
+static void load_sapie_settings(Settings *settings)
+{
+    std::string host;
+    uint16 port = 0;
+    if (!parse_sapie_server_file(Local_Storage::get_game_settings_path() + "sapie_server.txt", host, port)
+        && !parse_sapie_server_file(Local_Storage::get_program_path() + "sapie_server.txt", host, port)) {
+        return;
+    }
+
+    std::string username = get_env_variable("SAPIE_USERNAME");
+    std::string password = get_env_variable("SAPIE_PASSWORD");
+    if (username.empty() || password.empty()) {
+        fprintf(stderr, "[SAPIE] sapie_server.txt found but SAPIE_USERNAME or SAPIE_PASSWORD is unset; using Goldberg LAN mode\n");
+        return;
+    }
+
+    settings->sapie_enabled = true;
+    settings->sapie_host = host;
+    settings->sapie_port = port;
+    settings->sapie_username = username;
+    settings->sapie_password = password;
+}
+
 static void load_gamecontroller_settings(Settings *settings)
 {
     std::string path = Local_Storage::get_game_settings_path() + "controller";
@@ -373,6 +452,8 @@ uint32 create_localstorage_settings(Settings **settings_client_out, Settings **s
     settings_server->warn_local_save = local_save;
     settings_client->supported_languages = supported_languages;
     settings_server->supported_languages = supported_languages;
+
+    load_sapie_settings(settings_client);
 
     {
         std::string dlc_config_path = Local_Storage::get_game_settings_path() + "DLC.txt";

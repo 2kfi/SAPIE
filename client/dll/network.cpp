@@ -17,6 +17,13 @@
 
 #include "network.h"
 
+#include "sapie.pb.h"
+
+#if !defined(STEAM_WIN32)
+#include <sys/select.h>
+#endif
+#include <cerrno>
+
 #define MAX_BROADCASTS 16
 static int number_broadcasts = -1;
 static IP_PORT broadcasts[MAX_BROADCASTS];
@@ -279,6 +286,93 @@ static void reset_last_error()
 #else
     return;
 #endif
+}
+
+#define SAPIE_MAX_FRAME_SIZE (1024 * 1024)
+#define SAPIE_LOGIN_TIMEOUT_MS 3000
+#define SAPIE_HEARTBEAT_INTERVAL 15.0
+#define SAPIE_HEARTBEAT_TIMEOUT 45.0
+
+static bool wait_socket(sock_t sock, bool write, int timeout_ms)
+{
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(sock, &fds);
+    struct timeval timeout;
+    timeout.tv_sec = timeout_ms / 1000;
+    timeout.tv_usec = (timeout_ms % 1000) * 1000;
+    return select((int)sock + 1, write ? NULL : &fds, write ? &fds : NULL, NULL, &timeout) > 0;
+}
+
+static bool send_all(sock_t sock, const char *data, size_t length)
+{
+    size_t sent = 0;
+    while (sent < length) {
+        int result = send(sock, data + sent, (int)(length - sent), MSG_NOSIGNAL);
+        if (result > 0) {
+            sent += (size_t)result;
+            continue;
+        }
+#if defined(STEAM_WIN32)
+        int error = WSAGetLastError();
+        if (error == WSAEWOULDBLOCK || error == WSAEINTR) {
+            if (wait_socket(sock, true, 1000)) continue;
+        }
+#else
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+            if (wait_socket(sock, true, 1000)) continue;
+        }
+#endif
+        return false;
+    }
+    return true;
+}
+
+static bool recv_exact(sock_t sock, char *data, size_t length)
+{
+    size_t received = 0;
+    while (received < length) {
+        int result = recv(sock, data + received, (int)(length - received), 0);
+        if (result > 0) {
+            received += (size_t)result;
+            continue;
+        }
+        if (result == 0) return false;
+#if defined(STEAM_WIN32)
+        int error = WSAGetLastError();
+        if (error == WSAEWOULDBLOCK || error == WSAEINTR) {
+            if (wait_socket(sock, false, SAPIE_LOGIN_TIMEOUT_MS)) continue;
+        }
+#else
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+            if (wait_socket(sock, false, SAPIE_LOGIN_TIMEOUT_MS)) continue;
+        }
+#endif
+        return false;
+    }
+    return true;
+}
+
+static bool send_sapie_frame(sock_t sock, const google::protobuf::MessageLite &message)
+{
+    std::string bytes;
+    if (!message.SerializeToString(&bytes)) return false;
+
+    uint32 length = htonl((uint32_t)bytes.size());
+    return send_all(sock, (const char *)&length, sizeof(length)) && send_all(sock, bytes.data(), bytes.size());
+}
+
+static bool recv_sapie_frame(sock_t sock, sapie::Frame &frame)
+{
+    uint32 length = 0;
+    if (!recv_exact(sock, (char *)&length, sizeof(length))) return false;
+
+    length = ntohl(length);
+    if (length == 0 || length > SAPIE_MAX_FRAME_SIZE) return false;
+
+    std::string bytes(length, '\0');
+    if (!recv_exact(sock, &bytes[0], length)) return false;
+    return frame.ParseFromArray(bytes.data(), (int)length);
 }
 
 static int send_packet_to(sock_t sock, IP_PORT ip_port, char *data, unsigned long length)
@@ -752,6 +846,213 @@ bool Networking::handle_low_level_udp(Common_Message *msg, IP_PORT ip_port)
     return false;
 }
 
+void Networking::replace_listen_id(CSteamID from, CSteamID to)
+{
+    auto id = std::find(ids.begin(), ids.end(), from);
+    if (id == ids.end()) {
+        addListenId(to);
+        return;
+    }
+
+    *id = to;
+}
+
+Server_Connection::Server_Connection(Settings *settings_, Networking *network_)
+    : settings(settings_), network(network_)
+{
+    next_retry = std::chrono::steady_clock::now();
+}
+
+Server_Connection::~Server_Connection()
+{
+    if (is_socket_valid(sock)) kill_socket(sock);
+}
+
+void Server_Connection::schedule_retry()
+{
+    if (is_socket_valid(sock)) kill_socket(sock);
+    sock = -1;
+    logged_in = false;
+    recv_buffer.clear();
+    next_retry = std::chrono::steady_clock::now() + std::chrono::milliseconds((int)(backoff_seconds * 1000));
+    backoff_seconds = std::min(backoff_seconds * 2.0, 30.0);
+}
+
+bool Server_Connection::apply_login(const sapie::LoginResponse &response)
+{
+    if (response.status() != sapie::LoginResponse_Status_OK || response.steam_id() == 0) {
+        fprintf(stderr, "[SAPIE] login rejected with status %d\n", (int)response.status());
+        return false;
+    }
+
+    CSteamID assigned_id((uint64)response.steam_id());
+    CSteamID previous_id = settings->get_local_steam_id();
+    settings->set_steam_id(assigned_id);
+    if (!response.persona_name().empty()) settings->set_local_name(response.persona_name());
+    network->replace_listen_id(previous_id, assigned_id);
+    return true;
+}
+
+bool Server_Connection::connect_and_login()
+{
+    run_at_startup();
+    struct addrinfo hints = {};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *result = NULL;
+    std::string port_text = std::to_string(settings->sapie_port);
+    if (getaddrinfo(settings->sapie_host.c_str(), port_text.c_str(), &hints, &result) != 0) {
+        schedule_retry();
+        return false;
+    }
+
+    sock_t new_sock = socket(result->ai_family, SOCK_STREAM, IPPROTO_TCP);
+    if (!is_socket_valid(new_sock) || !set_socket_nonblocking(new_sock) || !disable_nagle(new_sock)) {
+        if (is_socket_valid(new_sock)) kill_socket(new_sock);
+        freeaddrinfo(result);
+        schedule_retry();
+        return false;
+    }
+
+    int connected = connect(new_sock, result->ai_addr, (int)result->ai_addrlen);
+    freeaddrinfo(result);
+#if defined(STEAM_WIN32)
+    bool connecting = connected != 0 && (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINPROGRESS);
+#else
+    bool connecting = connected != 0 && (errno == EINPROGRESS || errno == EAGAIN || errno == EWOULDBLOCK);
+#endif
+    if ((connected != 0 && !connecting) || !wait_socket(new_sock, true, SAPIE_LOGIN_TIMEOUT_MS)) {
+        kill_socket(new_sock);
+        schedule_retry();
+        return false;
+    }
+
+    int socket_error = 0;
+    socklen_t error_length = sizeof(socket_error);
+    getsockopt(new_sock, SOL_SOCKET, SO_ERROR, (char *)&socket_error, &error_length);
+    if (socket_error != 0) {
+        kill_socket(new_sock);
+        schedule_retry();
+        return false;
+    }
+
+    sapie::Frame request;
+    request.mutable_login()->set_username(settings->sapie_username);
+    request.mutable_login()->set_password(settings->sapie_password);
+    request.mutable_login()->set_appid(settings->get_local_game_id().AppID());
+    request.mutable_login()->set_client_version("sapie-m1");
+
+    sapie::Frame response;
+    bool ok = send_sapie_frame(new_sock, request) && recv_sapie_frame(new_sock, response)
+        && response.has_login_response() && apply_login(response.login_response());
+    if (!ok) {
+        kill_socket(new_sock);
+        schedule_retry();
+        return false;
+    }
+
+    sock = new_sock;
+    logged_in = true;
+    backoff_seconds = 1.0;
+    last_send = last_receive = std::chrono::steady_clock::now();
+    return true;
+}
+
+void Server_Connection::pump()
+{
+    auto now = std::chrono::steady_clock::now();
+    if (!logged_in) {
+        if (now >= next_retry) connect_and_login();
+        return;
+    }
+
+    char buffer[4096];
+    for (;;) {
+        int received = recv(sock, buffer, sizeof(buffer), 0);
+        if (received > 0) {
+            recv_buffer.append(buffer, (size_t)received);
+            last_receive = std::chrono::steady_clock::now();
+            continue;
+        }
+        if (received == 0) {
+            schedule_retry();
+            return;
+        }
+#if defined(STEAM_WIN32)
+        int error = WSAGetLastError();
+        if (error != WSAEWOULDBLOCK) {
+            schedule_retry();
+            return;
+        }
+#else
+        if (errno == EINTR) continue;
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            schedule_retry();
+            return;
+        }
+#endif
+        break;
+    }
+
+    while (recv_buffer.size() >= sizeof(uint32_t)) {
+        uint32_t length = 0;
+        memcpy(&length, recv_buffer.data(), sizeof(length));
+        length = ntohl(length);
+        if (length == 0 || length > SAPIE_MAX_FRAME_SIZE) {
+            schedule_retry();
+            return;
+        }
+        if (recv_buffer.size() < sizeof(length) + length) break;
+
+        sapie::Frame frame;
+        if (!frame.ParseFromArray(recv_buffer.data() + sizeof(length), (int)length)) {
+            schedule_retry();
+            return;
+        }
+        recv_buffer.erase(0, sizeof(length) + length);
+
+        if (frame.has_login_response()) {
+            if (!apply_login(frame.login_response())) {
+                schedule_retry();
+                return;
+            }
+        } else if (frame.has_ping()) {
+            sapie::Frame pong;
+            pong.set_pong(true);
+            if (!send_sapie_frame(sock, pong)) {
+                schedule_retry();
+                return;
+            }
+            last_send = std::chrono::steady_clock::now();
+        } else if (frame.has_pong()) {
+            last_receive = std::chrono::steady_clock::now();
+        } else if (frame.has_steam()) {
+            network->do_callbacks_message(frame.mutable_steam());
+        }
+    }
+
+    now = std::chrono::steady_clock::now();
+    if (std::chrono::duration<double>(now - last_send).count() >= SAPIE_HEARTBEAT_INTERVAL) {
+        sapie::Frame ping;
+        ping.set_ping(true);
+        if (!send_sapie_frame(sock, ping)) {
+            schedule_retry();
+            return;
+        }
+        last_send = now;
+    }
+
+    if (std::chrono::duration<double>(now - last_receive).count() >= SAPIE_HEARTBEAT_TIMEOUT) {
+        schedule_retry();
+    }
+}
+
+void Networking::connect_to_server(Settings *settings)
+{
+    server_connection.reset(new Server_Connection(settings, this));
+    server_connection->connect_and_login();
+}
+
 #define NUM_TCP_WAITING 128
 
 Networking::Networking(CSteamID id, uint32 appid, uint16 port, std::set<IP_PORT> *custom_broadcasts, bool disable_sockets)
@@ -915,6 +1216,8 @@ void Networking::Run()
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     double time_extra = std::chrono::duration_cast<std::chrono::duration<double>>(now - last_run).count();
     last_run = now;
+
+    if (server_connection) server_connection->pump();
 
     if (!enabled || ids.size() == 0) {
         return;
