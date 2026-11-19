@@ -1,5 +1,8 @@
+import { useCallback, useState } from 'react'
 import Account from '../components/Account'
-import { EmptyState, ErrorState, LoadingState } from '../components/States'
+import { EmptyState } from '../components/States'
+import FriendList, { gameLabel, personaLabel } from '../components/FriendList'
+import LobbyPanel from '../components/LobbyPanel'
 import {
   FriendsIcon,
   GamesIcon,
@@ -7,9 +10,8 @@ import {
   LockIcon,
   ProfileIcon,
 } from '../components/Icons'
+import { joinLobby, messageOf, type Friend, type Session } from '../api'
 import type { Route } from '../routes'
-import type { ViewState } from '../state'
-import type { Connection } from '../tauri'
 import GameDetail from './GameDetail'
 import LiveAdmin from './LiveAdmin'
 
@@ -17,9 +19,8 @@ type ShellRoute = Exclude<Route, 'login'>
 
 type Props = {
   route: ShellRoute
-  state: ViewState
-  connection: Connection | null
-  onNavigate: (route: ShellRoute) => void
+  session: Session | null
+  onNavigate: (route: Route) => void
   onNotice: (message: string) => void
 }
 
@@ -29,39 +30,39 @@ const primary: { route: ShellRoute; label: string; Icon: typeof FriendsIcon }[] 
   { route: 'account', label: 'Profile', Icon: ProfileIcon },
 ]
 
-function FriendsView({ state, onNotice }: Pick<Props, 'state' | 'onNotice'>) {
+function FriendsView({
+  session,
+  onNotice,
+  onJoinFriend,
+  onSelectFriend,
+  onFriendsChange,
+}: {
+  session: Session
+  onNotice: Props['onNotice']
+  onJoinFriend: (friend: Friend) => void
+  onSelectFriend: (friend: Friend) => void
+  onFriendsChange: (friends: Friend[]) => void
+}) {
   return (
     <section className="view">
       <header className="view__head">
         <div>
           <h1>Friends</h1>
-          <p className="muted">Your list loads after you connect to a server.</p>
+          <p className="muted">Presence reported by the connected server.</p>
         </div>
       </header>
-      {state === 'loading' ? (
-        <LoadingState label="Loading friends…" />
-      ) : state === 'error' ? (
-        <ErrorState
-          action={
-            <button
-              type="button"
-              className="btn btn--quiet"
-              onClick={() => onNotice('Friend list is not connected in this scaffold.')}
-            >
-              Retry
-            </button>
-          }
-        >
-          Friend list could not be loaded.
-        </ErrorState>
-      ) : (
-        <EmptyState>No friends yet. Add one by username.</EmptyState>
-      )}
+      <FriendList
+        session={session}
+        onNotice={onNotice}
+        onJoinFriend={onJoinFriend}
+        onSelectFriend={onSelectFriend}
+        onFriendsChange={onFriendsChange}
+      />
     </section>
   )
 }
 
-function GamesView({ state, onNotice }: Pick<Props, 'state' | 'onNotice'>) {
+function GamesView() {
   return (
     <section className="view">
       <header className="view__head">
@@ -70,32 +71,23 @@ function GamesView({ state, onNotice }: Pick<Props, 'state' | 'onNotice'>) {
           <p className="muted">Games configured for this launcher.</p>
         </div>
       </header>
-      {state === 'loading' ? (
-        <LoadingState label="Loading games…" />
-      ) : state === 'error' ? (
-        <ErrorState
-          action={
-            <button
-              type="button"
-              className="btn btn--quiet"
-              onClick={() => onNotice('Game library is not connected in this scaffold.')}
-            >
-              Retry
-            </button>
-          }
-        >
-          Game library could not be loaded.
-        </ErrorState>
-      ) : (
-        <EmptyState>Add a game to get started</EmptyState>
-      )}
+      <EmptyState>Add a game from the details pane to configure it for this server.</EmptyState>
     </section>
   )
 }
 
-function DetailPane({ route, state, connection, onNotice }: Pick<Props, 'route' | 'state' | 'connection' | 'onNotice'>) {
+function DetailPane({
+  route,
+  session,
+  selectedFriend,
+  onConnectFriend,
+  onNotice,
+}: Pick<Props, 'route' | 'session' | 'onNotice'> & {
+  selectedFriend: Friend | null
+  onConnectFriend: (friend: Friend) => void
+}) {
   if (route === 'games') {
-    return <GameDetail state={state} connection={connection} onNotice={onNotice} />
+    return <GameDetail connection={session} onNotice={onNotice} />
   }
 
   if (route === 'account') {
@@ -114,7 +106,7 @@ function DetailPane({ route, state, connection, onNotice }: Pick<Props, 'route' 
     return (
       <section className="view view--detail" aria-labelledby="session-note-title">
         <h2 id="session-note-title">Session details</h2>
-        <EmptyState>Select a session to inspect it.</EmptyState>
+        <p className="muted">Live users and lobbies are listed in the main pane.</p>
       </section>
     )
   }
@@ -123,12 +115,66 @@ function DetailPane({ route, state, connection, onNotice }: Pick<Props, 'route' 
     <section className="view view--detail" aria-labelledby="p2p-title">
       <h2 id="p2p-title">Playing together</h2>
       <p>Peer-to-peer play is not available in this version.</p>
-      <p className="muted">Friend details and invites will appear here when a server is connected.</p>
+
+      {selectedFriend ? (
+        <div className="detail-card">
+          <h3>{selectedFriend.persona_name}</h3>
+          <dl className="fields">
+            <div className="fields__row">
+              <dt>Presence</dt>
+              <dd>{personaLabel(selectedFriend.persona_state)}</dd>
+            </div>
+            <div className="fields__row">
+              <dt>Game</dt>
+              <dd>{gameLabel(selectedFriend)}</dd>
+            </div>
+            <div className="fields__row">
+              <dt>Lobby</dt>
+              <dd className="mono">{selectedFriend.lobby_id ?? 'None'}</dd>
+            </div>
+          </dl>
+          <div className="detail__actions">
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={!selectedFriend.lobby_id}
+              onClick={() => onConnectFriend(selectedFriend)}
+            >
+              Connect to friend
+            </button>
+            <p className="muted">
+              {selectedFriend.lobby_id
+                ? `Joins lobby ${selectedFriend.lobby_id}.`
+                : 'This friend is not in a lobby.'}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <EmptyState>Select a friend to see their details.</EmptyState>
+      )}
+
+      {session ? <LobbyPanel session={session} onNotice={onNotice} /> : null}
     </section>
   )
 }
 
-export default function Shell({ route, state, connection, onNavigate, onNotice }: Props) {
+export default function Shell({ route, session, onNavigate, onNotice }: Props) {
+  const [friends, setFriends] = useState<Friend[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const selectedFriend = friends.find((friend) => friend.steam_id === selectedId) ?? null
+
+  const connectFriend = useCallback(async (friend: Friend) => {
+    if (!session || !friend.lobby_id) return
+    try {
+      await joinLobby(session.server, session.token, friend.lobby_id)
+      onNotice(`Joined ${friend.persona_name}'s lobby.`)
+    } catch (reason) {
+      onNotice(`Could not join ${friend.persona_name}: ${messageOf(reason)}`)
+    }
+  }, [session, onNotice])
+
+  const needsSession = !session && (route === 'friends' || route === 'games' || route === 'live')
+
   return (
     <div className="shell">
       <nav className="rail glass" aria-label="Main navigation">
@@ -163,16 +209,44 @@ export default function Shell({ route, state, connection, onNavigate, onNotice }
       </nav>
 
       <main className="workspace" id="main">
-        {route === 'friends' && <FriendsView state={state} onNotice={onNotice} />}
-        {route === 'games' && <GamesView state={state} onNotice={onNotice} />}
-        {route === 'account' && (
-          <Account state={state} scope="self" onNotice={onNotice} />
+        {needsSession ? (
+          <section className="view">
+            <header className="view__head">
+              <h1>Sign in required</h1>
+            </header>
+            <EmptyState>Connect to a SAPIE server to view this screen.</EmptyState>
+            <div className="detail__actions">
+              <button type="button" className="btn btn--primary" onClick={() => onNavigate('login')}>
+                Go to sign in
+              </button>
+            </div>
+          </section>
+        ) : (
+          <>
+            {route === 'friends' && session && (
+              <FriendsView
+                session={session}
+                onNotice={onNotice}
+                onJoinFriend={(friend) => void connectFriend(friend)}
+                onSelectFriend={(friend) => setSelectedId(friend.steam_id)}
+                onFriendsChange={setFriends}
+              />
+            )}
+            {route === 'games' && <GamesView />}
+            {route === 'account' && <Account />}
+            {route === 'live' && session && <LiveAdmin session={session} onNotice={onNotice} />}
+          </>
         )}
-        {route === 'live' && <LiveAdmin state={state} onNotice={onNotice} />}
       </main>
 
       <aside className="detail glass" aria-label="Details">
-        <DetailPane route={route} state={state} connection={connection} onNotice={onNotice} />
+        <DetailPane
+          route={route}
+          session={session}
+          selectedFriend={selectedFriend}
+          onConnectFriend={(friend) => void connectFriend(friend)}
+          onNotice={onNotice}
+        />
       </aside>
     </div>
   )

@@ -1,10 +1,9 @@
 import { useState, type FormEvent } from 'react'
+import { ApiError, login, messageOf, type Session } from '../api'
 import { EyeIcon, EyeOffIcon } from '../components/Icons'
-import type { Connection } from '../tauri'
 
 type Props = {
-  onConnect: (connection: Connection) => void
-  onPreview: () => void
+  onConnected: (session: Session) => void
 }
 
 function validateServer(value: string): string | null {
@@ -20,12 +19,14 @@ function validateServer(value: string): string | null {
   return null
 }
 
-export default function Login({ onConnect, onPreview }: Props) {
+export default function Login({ onConnected }: Props) {
   const [showPassword, setShowPassword] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (busy) return
     const form = new FormData(event.currentTarget)
     const server = String(form.get('server') ?? '').trim()
     const username = String(form.get('username') ?? '').trim()
@@ -45,11 +46,19 @@ export default function Login({ onConnect, onPreview }: Props) {
       return
     }
 
-    onConnect({ server, username, password })
-    setNotice({
-      text: `Connection saved for ${server}. Add a game on the Games screen to launch it.`,
-      error: false,
-    })
+    setBusy(true)
+    setNotice(null)
+    try {
+      const result = await login(server, username, password)
+      onConnected({ server, username, password, ...result })
+    } catch (reason) {
+      const text = reason instanceof ApiError && reason.status === 401
+        ? 'Username or password is incorrect.'
+        : messageOf(reason)
+      setNotice({ text, error: true })
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -61,11 +70,11 @@ export default function Login({ onConnect, onPreview }: Props) {
           </span>
           <div>
             <h1 id="login-title">Steam API Emulator</h1>
-            <p className="muted">Connect to a SAPIE server to continue.</p>
+            <p className="muted">Sign in to a SAPIE server to continue.</p>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={(event) => void handleSubmit(event)}>
           <div className="field">
             <label htmlFor="server">Server address</label>
             <input
@@ -118,17 +127,14 @@ export default function Login({ onConnect, onPreview }: Props) {
             </div>
           </div>
 
-          <button type="submit" className="btn btn--primary btn--wide">
-            Connect
+          <button type="submit" className="btn btn--primary btn--wide" disabled={busy}>
+            {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
 
         <div className="login-card__foot">
           <p role={notice?.error ? 'alert' : 'status'}>{notice?.text}</p>
-          <button type="button" className="link-button" onClick={onPreview}>
-            Open UI preview
-          </button>
-          <p className="muted">Preview opens the screens without saving a connection.</p>
+          <p className="muted">The session token stays in memory for this tab.</p>
         </div>
       </section>
     </main>

@@ -3,14 +3,12 @@ import Login from './screens/Login'
 import Shell from './screens/Shell'
 import Toast from './components/Toast'
 import { navigate, readRoute, type Route } from './routes'
-import { readPreviewState } from './state'
-import type { Connection } from './tauri'
+import type { Session } from './api'
 
 export default function App() {
   const [route, setRoute] = useState<Route>(readRoute)
   const [notice, setNotice] = useState<string | null>(null)
-  const [connection, setConnection] = useState<Connection | null>(null)
-  const previewState = readPreviewState()
+  const [session, setSession] = useState<Session | null>(null)
 
   useEffect(() => {
     const syncRoute = () => setRoute(readRoute())
@@ -23,15 +21,19 @@ export default function App() {
     navigate(next)
   }, [])
 
+  const connected = useCallback((next: Session) => {
+    setSession(next)
+    go('friends')
+  }, [go])
+
   return (
     <>
       {route === 'login' ? (
-        <Login onConnect={setConnection} onPreview={() => go('friends')} />
+        <Login onConnected={connected} />
       ) : (
         <Shell
           route={route}
-          state={previewState}
-          connection={connection}
+          session={session}
           onNavigate={go}
           onNotice={setNotice}
         />

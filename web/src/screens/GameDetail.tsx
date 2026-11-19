@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { EmptyState, ErrorState, LoadingState } from '../components/States'
+import { ErrorState, LoadingState } from '../components/States'
 import {
   configureServer,
   copyDll,
@@ -11,10 +11,7 @@ import {
   type Connection,
   type DetectResult,
 } from '../tauri'
-import type { ViewState } from '../state'
-
 type Props = {
-  state: ViewState
   connection: Connection | null
   onNotice: (message: string) => void
 }
@@ -39,7 +36,7 @@ function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path
 }
 
-export default function GameDetail({ state, connection, onNotice }: Props) {
+export default function GameDetail({ connection, onNotice }: Props) {
   const pathRef = useRef<HTMLInputElement>(null)
   const [game, setGame] = useState<Game | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -137,22 +134,6 @@ export default function GameDetail({ state, connection, onNotice }: Props) {
         </ErrorState>
       )}
 
-      {!busy && !error && !game && state === 'loading' && (
-        <LoadingState label="Loading game details…" />
-      )}
-
-      {!busy && !error && !game && state === 'error' && (
-        <ErrorState
-          action={
-            <button type="button" className="btn btn--quiet" onClick={() => pathRef.current?.focus()}>
-              Edit path
-            </button>
-          }
-        >
-          Executable not found at {'<path>'}
-        </ErrorState>
-      )}
-
       <dl className="fields">
         <div className="fields__row">
           <dt>Name</dt>
@@ -213,8 +194,6 @@ export default function GameDetail({ state, connection, onNotice }: Props) {
           {game ? 'Ready to launch.' : 'Launch is unavailable until a game is added.'}
         </p>
       </div>
-
-      {state === 'empty' && !game && <EmptyState>Add a game to get started</EmptyState>}
     </section>
   )
 }
