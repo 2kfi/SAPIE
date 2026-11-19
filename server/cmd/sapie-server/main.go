@@ -64,8 +64,9 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	sessions := session.New(store, auth.NewLimiter(nil))
-	admin := api.New(store, token)
+	limiter := auth.NewLimiter(nil)
+	sessions := session.New(store, limiter)
+	admin := api.New(store, token, limiter, sessions)
 	errs := make(chan error, 2)
 	go func() { errs <- sessions.Serve(ctx, gameLn) }()
 	go func() { errs <- admin.Serve(ctx, adminLn) }()

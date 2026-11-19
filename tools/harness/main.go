@@ -1,4 +1,4 @@
-// Command harness starts SAPIE in-process and proves two accounts can log in.
+// Command harness starts SAPIE in-process and proves login, friends and lobbies.
 package main
 
 import (
@@ -22,11 +22,122 @@ import (
 
 const adminToken = "harness-admin-token"
 
+const connectString = "connect=127.0.0.1:27015"
+
 func main() {
 	if err := run(); err != nil {
 		log.Fatalf("FAIL %v", err)
 	}
 	fmt.Println("PASS harness")
+}
+
+// gameClient drains the socket so pings and pushed presence never block a reply.
+type gameClient struct {
+	conn    net.Conn
+	frames  chan *protocol.Frame
+	stop    chan struct{}
+	pending []*protocol.Frame
+}
+
+func newGameClient(conn net.Conn) *gameClient {
+	c := &gameClient{conn: conn, frames: make(chan *protocol.Frame, 128), stop: make(chan struct{})}
+	go c.read()
+	return c
+}
+
+func (c *gameClient) read() {
+	defer close(c.frames)
+	for {
+		frame, err := protocol.ReadFrame(c.conn)
+		if err != nil {
+			return
+		}
+		select {
+		case c.frames <- frame:
+		case <-c.stop:
+			return
+		}
+	}
+}
+
+func (c *gameClient) next(match func(*protocol.Frame) bool) (*protocol.Frame, error) {
+	for i, frame := range c.pending {
+		if match(frame) {
+			c.pending = append(c.pending[:i], c.pending[i+1:]...)
+			return frame, nil
+		}
+	}
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case frame, ok := <-c.frames:
+			if !ok {
+				return nil, fmt.Errorf("connection closed")
+			}
+			if match(frame) {
+				return frame, nil
+			}
+			c.pending = append(c.pending, frame)
+		case <-timer.C:
+			return nil, fmt.Errorf("timed out waiting for frame")
+		}
+	}
+}
+
+func (c *gameClient) send(frame *protocol.Frame) error { return protocol.WriteFrame(c.conn, frame) }
+
+func (c *gameClient) login(username, password string) (*protocol.LoginResponse, error) {
+	frame := &protocol.Frame{Payload: &protocol.Frame_Login{Login: &protocol.LoginRequest{
+		Username: username, Password: password, Appid: 480, ClientVersion: "harness",
+	}}}
+	if err := c.send(frame); err != nil {
+		return nil, fmt.Errorf("send login: %w", err)
+	}
+	response, err := c.next(func(f *protocol.Frame) bool {
+		_, ok := f.Payload.(*protocol.Frame_LoginResponse)
+		return ok
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read login response: %w", err)
+	}
+	result, ok := response.Payload.(*protocol.Frame_LoginResponse)
+	if !ok {
+		return nil, fmt.Errorf("got %T, want LoginResponse", response.Payload)
+	}
+	if result.LoginResponse.Status != protocol.LoginResponse_OK {
+		return nil, fmt.Errorf("login %s status %v", username, result.LoginResponse.Status)
+	}
+	return result.LoginResponse, nil
+}
+
+func (c *gameClient) requestTicket(appid uint32) (*protocol.TicketResponse, error) {
+	frame := &protocol.Frame{Payload: &protocol.Frame_TicketRequest{TicketRequest: &protocol.TicketRequest{
+		Appid: appid, Data: []byte("harness-ticket-request"),
+	}}}
+	if err := c.send(frame); err != nil {
+		return nil, fmt.Errorf("send ticket request: %w", err)
+	}
+	response, err := c.next(func(f *protocol.Frame) bool {
+		_, ok := f.Payload.(*protocol.Frame_TicketResponse)
+		return ok
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read ticket response: %w", err)
+	}
+	result, ok := response.Payload.(*protocol.Frame_TicketResponse)
+	if !ok {
+		return nil, fmt.Errorf("got %T, want TicketResponse", response.Payload)
+	}
+	return result.TicketResponse, nil
+}
+
+func steamMessage(frame *protocol.Frame) *protocol.Common_Message {
+	steam, ok := frame.Payload.(*protocol.Frame_Steam)
+	if !ok {
+		return nil
+	}
+	return steam.Steam
 }
 
 func run() error {
@@ -47,10 +158,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("listen admin: %w", err)
 	}
-	sessions := session.New(store, auth.NewLimiter(nil))
+	limiter := auth.NewLimiter(nil)
+	sessions := session.New(store, limiter)
 	errs := make(chan error, 2)
 	go func() { errs <- sessions.Serve(ctx, gameLn) }()
-	go func() { errs <- api.New(store, adminToken).Serve(ctx, adminLn) }()
+	go func() { errs <- api.New(store, adminToken, limiter, sessions).Serve(ctx, adminLn) }()
 	defer func() {
 		cancel()
 		for i := 0; i < 2; i++ {
@@ -68,19 +180,32 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if err := store.AddFriend(alice.SteamID, bob.SteamID); err != nil {
+		return fmt.Errorf("seed friendship: %w", err)
+	}
 
-	aliceConn, aliceLogin, err := login(gameLn.Addr().String(), "harness-alice", "alice-pw")
+	aliceConn, err := net.Dial("tcp", gameLn.Addr().String())
 	if err != nil {
-		return err
+		return fmt.Errorf("dial alice: %w", err)
 	}
 	defer aliceConn.Close()
-	fmt.Printf("PASS login alice steam_id=%d\n", aliceLogin.SteamId)
-
-	bobConn, bobLogin, err := login(gameLn.Addr().String(), "harness-bob", "bob-pw")
+	aliceClient := newGameClient(aliceConn)
+	aliceLogin, err := aliceClient.login("harness-alice", "alice-pw")
 	if err != nil {
 		return err
 	}
+	fmt.Printf("PASS login alice steam_id=%d\n", aliceLogin.SteamId)
+
+	bobConn, err := net.Dial("tcp", gameLn.Addr().String())
+	if err != nil {
+		return fmt.Errorf("dial bob: %w", err)
+	}
 	defer bobConn.Close()
+	bobClient := newGameClient(bobConn)
+	bobLogin, err := bobClient.login("harness-bob", "bob-pw")
+	if err != nil {
+		return err
+	}
 	fmt.Printf("PASS login bob steam_id=%d\n", bobLogin.SteamId)
 
 	if aliceLogin.SteamId != alice.SteamID || bobLogin.SteamId != bob.SteamID {
@@ -96,7 +221,7 @@ func run() error {
 	}
 	fmt.Println("PASS distinct SteamIDs")
 
-	ticket, err := requestTicket(aliceConn, 480)
+	ticket, err := aliceClient.requestTicket(480)
 	if err != nil {
 		return err
 	}
@@ -140,7 +265,220 @@ func run() error {
 		return fmt.Errorf("admin API exposed password data: %s", body)
 	}
 	fmt.Println("PASS admin API lists both accounts")
+
+	aliceToken := string(aliceLogin.SessionToken)
+	bobToken := string(bobLogin.SessionToken)
+	if err := checkFriends(client, adminURL, aliceToken, aliceLogin.SteamId, bob.SteamID, "Bob"); err != nil {
+		return err
+	}
+	if err := checkFriends(client, adminURL, bobToken, bob.SteamID, alice.SteamID, "Alice"); err != nil {
+		return err
+	}
+	fmt.Println("PASS M2 both friends see each other online")
+
+	presence, err := aliceClient.next(func(f *protocol.Frame) bool {
+		msg := steamMessage(f)
+		return msg != nil && msg.GetFriend() != nil && msg.GetFriend().GetId() == bob.SteamID &&
+			string(msg.GetFriend().GetRichPresence()[state.PersonaStateKey]) == "1"
+	})
+	if err != nil || steamMessage(presence).GetSourceId() != bob.SteamID {
+		return fmt.Errorf("alice did not receive bob online presence: %v", err)
+	}
+	fmt.Println("PASS M2 bob presence pushed to alice over game socket")
+
+	status, body, err := apiCall(client, http.MethodPost,
+		fmt.Sprintf("%s/api/v1/friends/%d/invite", adminURL, bob.SteamID), aliceToken,
+		map[string]string{"connect_str": connectString})
+	if err != nil || status != http.StatusAccepted {
+		return fmt.Errorf("HTTP invite = %d: %s (%v)", status, body, err)
+	}
+	invite, err := bobClient.next(func(f *protocol.Frame) bool {
+		msg := steamMessage(f)
+		return msg != nil && msg.GetFriendMessages() != nil &&
+			msg.GetFriendMessages().GetType() == protocol.Friend_Messages_GAME_INVITE
+	})
+	if err != nil {
+		return fmt.Errorf("bob did not receive invite: %w", err)
+	}
+	got := steamMessage(invite)
+	if got.SourceId != alice.SteamID || string(got.GetFriendMessages().GetConnectStr()) != connectString {
+		return fmt.Errorf("bad invite: source=%d connect=%q", got.SourceId, got.GetFriendMessages().GetConnectStr())
+	}
+	fmt.Printf("PASS M2 bob received game invite from alice connect_str=%s\n", connectString)
+
+	if err := checkConnectString(client, adminURL, bobToken, alice.SteamID, connectString); err != nil {
+		return err
+	}
+	fmt.Println("PASS M2 invite connect string recorded in alice presence")
+
+	socketConnect := "connect=10.0.0.7:27016"
+	if err := aliceClient.send(&protocol.Frame{Payload: &protocol.Frame_Steam{Steam: &protocol.Common_Message{
+		DestId: bob.SteamID,
+		Messages: &protocol.Common_Message_FriendMessages{FriendMessages: &protocol.Friend_Messages{
+			Type:       protocol.Friend_Messages_GAME_INVITE,
+			InviteData: &protocol.Friend_Messages_ConnectStr{ConnectStr: []byte(socketConnect)},
+		}},
+	}}}); err != nil {
+		return err
+	}
+	frame, err := bobClient.next(func(f *protocol.Frame) bool {
+		msg := steamMessage(f)
+		return msg != nil && msg.GetFriendMessages() != nil &&
+			string(msg.GetFriendMessages().GetConnectStr()) == socketConnect
+	})
+	if err != nil || steamMessage(frame).GetSourceId() != alice.SteamID {
+		return fmt.Errorf("socket invite not routed to bob: %v", err)
+	}
+	fmt.Println("PASS M2 socket-sent invite routed and source_id stamped")
+
+	status, body, err = apiCall(client, http.MethodPost, adminURL+"/api/v1/lobbies", aliceToken,
+		map[string]any{"appid": 480, "type": 0, "member_limit": 4})
+	if err != nil || status != http.StatusCreated {
+		return fmt.Errorf("create lobby = %d: %s (%v)", status, body, err)
+	}
+	var created struct {
+		LobbyID uint64 `json:"lobby_id"`
+	}
+	if err := json.Unmarshal(body, &created); err != nil || created.LobbyID == 0 {
+		return fmt.Errorf("bad lobby response: %s (%v)", body, err)
+	}
+	fmt.Printf("PASS M3 alice created lobby_id=%d\n", created.LobbyID)
+
+	frame, err = aliceClient.next(func(f *protocol.Frame) bool {
+		msg := steamMessage(f)
+		return msg != nil && msg.GetLobby() != nil && msg.GetLobby().GetRoomId() == created.LobbyID
+	})
+	if err != nil || len(steamMessage(frame).GetLobby().GetMembers()) != 1 {
+		return fmt.Errorf("alice lobby update = %v", err)
+	}
+	fmt.Println("PASS M3 lobby creation pushed to owner")
+
+	status, body, err = apiCall(client, http.MethodPost,
+		fmt.Sprintf("%s/api/v1/lobbies/%d/join", adminURL, created.LobbyID), bobToken, nil)
+	if err != nil || status != http.StatusOK {
+		return fmt.Errorf("join lobby = %d: %s (%v)", status, body, err)
+	}
+	for _, c := range []*gameClient{aliceClient, bobClient} {
+		frame, err := c.next(func(f *protocol.Frame) bool {
+			msg := steamMessage(f)
+			return msg != nil && msg.GetLobby() != nil && msg.GetLobby().GetRoomId() == created.LobbyID &&
+				len(msg.GetLobby().GetMembers()) == 2
+		})
+		if err != nil {
+			return fmt.Errorf("lobby join update: %v", err)
+		}
+		members := steamMessage(frame).GetLobby().GetMembers()
+		if members[0].GetId() != alice.SteamID || members[1].GetId() != bob.SteamID {
+			return fmt.Errorf("unexpected lobby members: %+v", members)
+		}
+	}
+	fmt.Println("PASS M3 both clients observe same lobby_id and member list")
+
+	for _, caller := range []struct{ name, token string }{
+		{"alice", aliceToken}, {"bob", bobToken}, {"admin", adminToken},
+	} {
+		status, body, err = apiCall(client, http.MethodGet, adminURL+"/api/v1/lobbies", caller.token, nil)
+		if err != nil || status != http.StatusOK {
+			return fmt.Errorf("list lobbies as %s = %d: %s (%v)", caller.name, status, body, err)
+		}
+		var listed struct {
+			Lobbies []state.Lobby `json:"lobbies"`
+		}
+		if err := json.Unmarshal(body, &listed); err != nil || len(listed.Lobbies) != 1 ||
+			listed.Lobbies[0].LobbyID != created.LobbyID || len(listed.Lobbies[0].Members) != 2 ||
+			listed.Lobbies[0].Owner != alice.SteamID {
+			return fmt.Errorf("lobby listing = %s (%v)", body, err)
+		}
+	}
+	fmt.Println("PASS M3 user and admin GET /api/v1/lobbies show the lobby")
+
+	if err := aliceClient.send(&protocol.Frame{Payload: &protocol.Frame_Steam{Steam: &protocol.Common_Message{
+		Messages: &protocol.Common_Message_LobbyMessages{LobbyMessages: &protocol.Lobby_Messages{
+			Id: created.LobbyID, Type: protocol.Lobby_Messages_CHAT_MESSAGE, Bdata: []byte("gg"),
+		}},
+	}}}); err != nil {
+		return err
+	}
+	frame, err = bobClient.next(func(f *protocol.Frame) bool {
+		msg := steamMessage(f)
+		return msg != nil && msg.GetLobbyMessages() != nil && msg.GetLobbyMessages().GetId() == created.LobbyID
+	})
+	if err != nil || steamMessage(frame).GetSourceId() != alice.SteamID {
+		return fmt.Errorf("lobby chat not routed to bob: %v", err)
+	}
+	fmt.Println("PASS M3 socket-sent lobby message routed to members")
 	return nil
+}
+
+func checkFriends(client *http.Client, base, token string, self, friend uint64, persona string) error {
+	status, body, err := apiCall(client, http.MethodGet, base+"/api/v1/friends", token, nil)
+	if err != nil || status != http.StatusOK {
+		return fmt.Errorf("friends for %d = %d: %s (%v)", self, status, body, err)
+	}
+	var result struct {
+		Friends []state.Presence `json:"friends"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return err
+	}
+	if len(result.Friends) != 1 {
+		return fmt.Errorf("friends for %d = %s", self, body)
+	}
+	f := result.Friends[0]
+	if f.SteamID != friend || f.PersonaName != persona || f.PersonaState != 1 {
+		return fmt.Errorf("unexpected friend for %d: %+v", self, f)
+	}
+	return nil
+}
+
+func checkConnectString(client *http.Client, base, token string, friend uint64, want string) error {
+	status, body, err := apiCall(client, http.MethodGet, base+"/api/v1/friends", token, nil)
+	if err != nil || status != http.StatusOK {
+		return fmt.Errorf("friends = %d: %s (%v)", status, body, err)
+	}
+	var result struct {
+		Friends []state.Presence `json:"friends"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return err
+	}
+	for _, f := range result.Friends {
+		if f.SteamID == friend && f.ConnectStr == want {
+			return nil
+		}
+	}
+	return fmt.Errorf("connect string %q not found for %d: %s", want, friend, body)
+}
+
+func apiCall(client *http.Client, method, url, token string, payload any) (int, []byte, error) {
+	var reader io.Reader
+	if payload != nil {
+		buf, err := json.Marshal(payload)
+		if err != nil {
+			return 0, nil, err
+		}
+		reader = bytes.NewReader(buf)
+	}
+	req, err := http.NewRequest(method, url, reader)
+	if err != nil {
+		return 0, nil, err
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.StatusCode, body, nil
 }
 
 func createAccount(client *http.Client, base, username, password, persona string) (state.Account, error) {
@@ -174,53 +512,4 @@ func createAccount(client *http.Client, base, username, password, persona string
 		return state.Account{}, err
 	}
 	return account, nil
-}
-
-func requestTicket(conn net.Conn, appid uint32) (*protocol.TicketResponse, error) {
-	frame := &protocol.Frame{Payload: &protocol.Frame_TicketRequest{TicketRequest: &protocol.TicketRequest{
-		Appid: appid, Data: []byte("harness-ticket-request"),
-	}}}
-	if err := protocol.WriteFrame(conn, frame); err != nil {
-		return nil, fmt.Errorf("send ticket request: %w", err)
-	}
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	response, err := protocol.ReadFrame(conn)
-	if err != nil {
-		return nil, fmt.Errorf("read ticket response: %w", err)
-	}
-	result, ok := response.Payload.(*protocol.Frame_TicketResponse)
-	if !ok {
-		return nil, fmt.Errorf("got %T, want TicketResponse", response.Payload)
-	}
-	return result.TicketResponse, nil
-}
-
-func login(addr, username, password string) (net.Conn, *protocol.LoginResponse, error) {
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		return nil, nil, fmt.Errorf("dial: %w", err)
-	}
-	frame := &protocol.Frame{Payload: &protocol.Frame_Login{Login: &protocol.LoginRequest{
-		Username: username, Password: password, Appid: 480, ClientVersion: "harness",
-	}}}
-	if err := protocol.WriteFrame(conn, frame); err != nil {
-		conn.Close()
-		return nil, nil, fmt.Errorf("send login: %w", err)
-	}
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	response, err := protocol.ReadFrame(conn)
-	if err != nil {
-		conn.Close()
-		return nil, nil, fmt.Errorf("read login response: %w", err)
-	}
-	result, ok := response.Payload.(*protocol.Frame_LoginResponse)
-	if !ok {
-		conn.Close()
-		return nil, nil, fmt.Errorf("got %T, want LoginResponse", response.Payload)
-	}
-	if result.LoginResponse.Status != protocol.LoginResponse_OK {
-		conn.Close()
-		return nil, nil, fmt.Errorf("login %s status %v", username, result.LoginResponse.Status)
-	}
-	return conn, result.LoginResponse, nil
 }

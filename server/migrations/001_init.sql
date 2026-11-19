@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS lobbies (
     owner_id   INTEGER NOT NULL REFERENCES accounts(steam_id) ON DELETE CASCADE,
     appid      INTEGER NOT NULL,
     type       INTEGER NOT NULL DEFAULT 0,
+    member_limit INTEGER NOT NULL DEFAULT 0,
     joinable   INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
 );

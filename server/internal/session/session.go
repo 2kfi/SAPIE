@@ -26,6 +26,7 @@ const (
 
 type Session struct {
 	steamID      uint64
+	personaName  string
 	conn         net.Conn
 	writeMu      sync.Mutex
 	done         chan struct{}
@@ -52,11 +53,18 @@ type Server struct {
 
 func New(store *state.Store, limiter *auth.Limiter) *Server {
 	s := &Server{store: store, limiter: limiter, peers: make(map[uint64]*Session)}
-	s.router = router.New(s)
+	s.router = router.NewWithResolver(s, store)
 	return s
 }
 
 func (s *Server) Router() *router.Router { return s.router }
+
+func (s *Server) Deliver(to uint64, frame *protocol.Frame) { s.router.Deliver(to, frame) }
+
+func (s *Server) IsOnline(steamID uint64) bool {
+	_, ok := s.PeerFor(steamID)
+	return ok
+}
 
 func (s *Server) PeerFor(id uint64) (router.Peer, bool) {
 	s.mu.RLock()
@@ -112,13 +120,13 @@ func (s *Server) handle(conn net.Conn) {
 
 	ip := hostFromAddr(conn.RemoteAddr())
 	if !s.limiter.Allow(ip) {
-		s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil)
+		s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil, nil)
 		return
 	}
 	account, err := s.store.AccountByUsername(login.Login.GetUsername())
 	if err != nil || !auth.VerifyPassword(account.PasswordHash, login.Login.GetPassword()) {
 		s.limiter.RecordFailure(ip)
-		s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil)
+		s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil, nil)
 		return
 	}
 
@@ -132,12 +140,17 @@ func (s *Server) handle(conn net.Conn) {
 		return
 	}
 	session.steamID = account.SteamID
+	session.personaName = account.PersonaName
 	s.register(session)
-	defer s.unregister(session)
+	defer func() {
+		s.unregister(session)
+		s.pushPresence(session, false)
+	}()
 	go s.heartbeat(session)
 
 	s.sendLoginResult(session, protocol.LoginResponse_OK, account.SteamID,
-		[]byte(account.PersonaName), []byte(token))
+		[]byte(account.PersonaName), []byte(token), s.friendSnapshots(account.SteamID))
+	s.pushPresence(session, true)
 
 	for {
 		conn.SetReadDeadline(time.Now().Add(readTimeout))
@@ -149,7 +162,7 @@ func (s *Server) handle(conn net.Conn) {
 		case *protocol.Frame_Ping:
 			_ = session.Send(&protocol.Frame{Payload: &protocol.Frame_Pong{Pong: true}})
 		case *protocol.Frame_Steam:
-			s.router.Route(session.steamID, payload.Steam)
+			s.handleSteam(session, payload.Steam)
 		case *protocol.Frame_TicketRequest:
 			ticket, err := newTicket(session.steamID, payload.TicketRequest.GetAppid())
 			if err != nil {
@@ -182,12 +195,91 @@ func newTicket(steamID uint64, appid uint32) ([]byte, error) {
 	return sum[:], nil
 }
 
-func (s *Server) sendLoginResult(session *Session, status protocol.LoginResponse_Status, id uint64, persona, token []byte) {
+func (s *Server) friendSnapshots(steamID uint64) []*protocol.FriendSnapshot {
+	friends, err := s.store.FriendsPresence(steamID)
+	if err != nil {
+		log.Printf("session %d: friends: %v", steamID, err)
+		return nil
+	}
+	snapshots := make([]*protocol.FriendSnapshot, 0, len(friends))
+	for _, friend := range friends {
+		snapshots = append(snapshots, &protocol.FriendSnapshot{
+			SteamId:      friend.SteamID,
+			PersonaName:  []byte(friend.PersonaName),
+			Appid:        friend.Appid,
+			LobbyId:      friend.LobbyID,
+			RichPresence: friend.RichPresence,
+		})
+	}
+	return snapshots
+}
+
+func (s *Server) pushPresence(session *Session, online bool) {
+	presence, err := s.store.PresenceOf(session.steamID)
+	if err != nil {
+		log.Printf("session %d: presence: %v", session.steamID, err)
+		return
+	}
+	personaState := []byte("0")
+	if online {
+		personaState = []byte("1")
+	}
+	presence.RichPresence[state.PersonaStateKey] = personaState
+	s.router.Route(session.steamID, &protocol.Common_Message{
+		Messages: &protocol.Common_Message_Friend{Friend: &protocol.Friend{
+			Id:           session.steamID,
+			Name:         []byte(session.personaName),
+			RichPresence: presence.RichPresence,
+			Appid:        presence.Appid,
+			LobbyId:      presence.LobbyID,
+		}},
+	})
+}
+
+func (s *Server) handleSteam(session *Session, msg *protocol.Common_Message) {
+	if msg == nil {
+		return
+	}
+	switch payload := msg.Messages.(type) {
+	case *protocol.Common_Message_Friend:
+		friend := payload.Friend
+		if friend == nil {
+			return
+		}
+		friend.Id = session.steamID
+		presence, err := s.store.PresenceOf(session.steamID)
+		if err != nil {
+			log.Printf("session %d: presence: %v", session.steamID, err)
+			return
+		}
+		presence.Appid = friend.Appid
+		presence.LobbyID = friend.LobbyId
+		if len(friend.Name) > 0 {
+			presence.PersonaName = string(friend.Name)
+		}
+		presence.RichPresence = friend.RichPresence
+		if err := s.store.UpsertPresence(presence); err != nil {
+			log.Printf("session %d: store presence: %v", session.steamID, err)
+			return
+		}
+	case *protocol.Common_Message_FriendMessages:
+		if invite := payload.FriendMessages; invite != nil &&
+			invite.GetType() == protocol.Friend_Messages_GAME_INVITE && len(invite.GetConnectStr()) > 0 {
+			if err := s.store.SetConnectStr(session.steamID, string(invite.GetConnectStr())); err != nil {
+				log.Printf("session %d: store connect string: %v", session.steamID, err)
+			}
+		}
+	}
+	s.router.Route(session.steamID, msg)
+}
+
+func (s *Server) sendLoginResult(session *Session, status protocol.LoginResponse_Status, id uint64, persona, token []byte, friends []*protocol.FriendSnapshot) {
 	response := &protocol.LoginResponse{
 		Status:       status,
 		SteamId:      id,
 		PersonaName:  persona,
 		SessionToken: token,
+		Friends:      friends,
 	}
 	if err := session.Send(&protocol.Frame{Payload: &protocol.Frame_LoginResponse{LoginResponse: response}}); err != nil {
 		log.Printf("session: login response: %v", err)
