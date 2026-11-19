@@ -915,3 +915,58 @@ td {
     flex: 1 1 auto;
   }
 }
+
+/* Achievements */
+
+.achievements {
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.achievement {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-md);
+}
+
+.achievement__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  min-width: 0;
+}
+
+.achievement__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.achievement__state {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.achievement__state.is-earned {
+  color: var(--status);
+}
+
+.achievement__desc,
+.achievement__time {
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.achievement__time {
+  color: var(--muted);
+}

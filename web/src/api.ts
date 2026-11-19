@@ -38,6 +38,24 @@ export type PresenceUser = {
   connect_str?: string | null
 }
 
+export type Achievement = {
+  steam_id: string | number
+  appid: string | number
+  id: string
+  display_name: string
+  description: string
+  hidden: boolean
+  icon: string
+  achieved: boolean
+  unlock_time: number
+}
+
+export type UserStats = {
+  steam_id: string | number
+  stats: { name: string; value: string }[]
+  achievements: Achievement[]
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status?: number) {
     super(message)
@@ -162,6 +180,14 @@ export function inviteFriend(
 
 export function getLobbies(server: string, token: string): Promise<{ lobbies: Lobby[] }> {
   return request(server, '/lobbies', { token })
+}
+
+export function getStats(
+  server: string,
+  token: string,
+  steamId: string | number,
+): Promise<UserStats> {
+  return request(server, `/users/${encodeURIComponent(String(steamId))}/stats`, { token })
 }
 
 export type NewLobby = {

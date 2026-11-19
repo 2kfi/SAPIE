@@ -3,13 +3,16 @@ import {
   ApiError,
   getAdminUsers,
   getLobbies,
+  getStats,
   messageOf,
+  type Achievement,
   type Lobby,
   type PresenceUser,
   type Session,
 } from '../api'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
 import { gameLabel, personaLabel, personaTone } from '../components/FriendList'
+import AchievementList from '../components/AchievementList'
 
 type Props = {
   session: Session
@@ -31,6 +34,11 @@ export default function LiveAdmin({ session, onNotice }: Props) {
   const [usersError, setUsersError] = useState<string | null>(null)
   const [lobbiesError, setLobbiesError] = useState<string | null>(null)
   const [asOf, setAsOf] = useState<Date | null>(null)
+  const [statsSteamId, setStatsSteamId] = useState('')
+  const [statsTarget, setStatsTarget] = useState('')
+  const [statsAchievements, setStatsAchievements] = useState<Achievement[]>([])
+  const [statsLoading, setStatsLoading] = useState(false)
+  const [statsError, setStatsError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -81,6 +89,38 @@ export default function LiveAdmin({ session, onNotice }: Props) {
     }
     setAdminToken(token)
     setTokenDraft('')
+  }
+
+  const loadStats = useCallback(async (steamId: string) => {
+    if (!adminToken || !steamId) return
+    setStatsLoading(true)
+    setStatsError(null)
+    try {
+      const data = await getStats(session.server, adminToken, steamId)
+      setStatsAchievements(Array.isArray(data?.achievements) ? data.achievements : [])
+    } catch (reason) {
+      setStatsAchievements([])
+      setStatsError(reason instanceof ApiError && reason.status === 401
+        ? 'The admin token was rejected.'
+        : messageOf(reason))
+    } finally {
+      setStatsLoading(false)
+    }
+  }, [adminToken, session.server])
+
+  function applyStats(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const steamId = statsSteamId.trim()
+    if (!adminToken) {
+      onNotice('Enter an admin token first.')
+      return
+    }
+    if (!steamId) {
+      onNotice('Enter a Steam ID to view achievements.')
+      return
+    }
+    setStatsTarget(steamId)
+    void loadStats(steamId)
   }
 
   return (
@@ -205,6 +245,42 @@ export default function LiveAdmin({ session, onNotice }: Props) {
               </tbody>
             </table>
           </div>
+        )}
+      </section>
+
+      <section className="panel" aria-labelledby="live-achievements-title">
+        <h2 id="live-achievements-title">Achievements</h2>
+        <form className="admin-token" onSubmit={applyStats}>
+          <label htmlFor="stats-steam-id">Steam ID</label>
+          <div className="inline-field">
+            <input
+              id="stats-steam-id"
+              type="text"
+              inputMode="numeric"
+              value={statsSteamId}
+              onChange={(event) => setStatsSteamId(event.target.value)}
+              placeholder="76561197960265729"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button type="submit" className="btn btn--quiet" disabled={!adminToken || statsLoading}>
+              Load
+            </button>
+          </div>
+          <p className="muted">Looks up achievements with the admin token above. Read-only.</p>
+        </form>
+        {!adminToken ? (
+          <EmptyState>Enter an admin token above to look up achievements.</EmptyState>
+        ) : !statsTarget ? (
+          <EmptyState>Enter a Steam ID to view that account's achievements.</EmptyState>
+        ) : statsError ? (
+          <ErrorState action={<button type="button" className="btn btn--quiet" onClick={() => void loadStats(statsTarget)}>Retry</button>}>
+            {statsError}
+          </ErrorState>
+        ) : statsLoading ? (
+          <LoadingState label="Loading achievements…" />
+        ) : (
+          <AchievementList achievements={statsAchievements} />
         )}
       </section>
     </section>

@@ -233,7 +233,7 @@ export default function Shell({ route, session, onNavigate, onNotice }: Props) {
               />
             )}
             {route === 'games' && <GamesView />}
-            {route === 'account' && <Account />}
+            {route === 'account' && <Account session={session} />}
             {route === 'live' && session && <LiveAdmin session={session} onNotice={onNotice} />}
           </>
         )}
