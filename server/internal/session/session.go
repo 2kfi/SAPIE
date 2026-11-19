@@ -3,6 +3,9 @@ package session
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
 	"log"
 	"net"
 	"sync"
@@ -22,11 +25,12 @@ const (
 )
 
 type Session struct {
-	steamID   uint64
-	conn      net.Conn
-	writeMu   sync.Mutex
-	done      chan struct{}
-	closeOnce sync.Once
+	steamID      uint64
+	conn         net.Conn
+	writeMu      sync.Mutex
+	done         chan struct{}
+	closeOnce    sync.Once
+	ticketNumber uint32 // owned by the frame loop
 }
 
 func (c *Session) Send(frame *protocol.Frame) error {
@@ -146,10 +150,36 @@ func (s *Server) handle(conn net.Conn) {
 			_ = session.Send(&protocol.Frame{Payload: &protocol.Frame_Pong{Pong: true}})
 		case *protocol.Frame_Steam:
 			s.router.Route(session.steamID, payload.Steam)
+		case *protocol.Frame_TicketRequest:
+			ticket, err := newTicket(session.steamID, payload.TicketRequest.GetAppid())
+			if err != nil {
+				log.Printf("session %d: ticket generation: %v", session.steamID, err)
+				continue
+			}
+			session.ticketNumber++
+			response := &protocol.TicketResponse{Ticket: ticket, Number: session.ticketNumber}
+			if err := session.Send(&protocol.Frame{Payload: &protocol.Frame_TicketResponse{TicketResponse: response}}); err != nil {
+				log.Printf("session %d: ticket response: %v", session.steamID, err)
+			}
 		default:
 			log.Printf("session %d: %T ignored (M0 no-op)", session.steamID, frame.Payload)
 		}
 	}
+}
+
+// newTicket derives a 32-byte opaque ticket from a random nonce and the identity
+// it was issued for. No record is kept, so binding cannot be verified yet.
+func newTicket(steamID uint64, appid uint32) ([]byte, error) {
+	var nonce [32]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, err
+	}
+	var input [44]byte
+	binary.BigEndian.PutUint64(input[:8], steamID)
+	binary.BigEndian.PutUint32(input[8:12], appid)
+	copy(input[12:], nonce[:])
+	sum := sha256.Sum256(input[:])
+	return sum[:], nil
 }
 
 func (s *Server) sendLoginResult(session *Session, status protocol.LoginResponse_Status, id uint64, persona, token []byte) {

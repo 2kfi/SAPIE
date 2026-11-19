@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net"
@@ -88,6 +89,69 @@ func TestLoginHandshake(t *testing.T) {
 	}
 	if peer, ok := srv.PeerFor(id); !ok || peer == nil {
 		t.Fatal("authenticated session not registered")
+	}
+}
+
+func TestTicketRequest(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAccount("alice", hash, "Alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := New(store, auth.NewLimiter(nil))
+	go srv.Serve(ctx, ln)
+
+	c, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	login := &protocol.Frame{Payload: &protocol.Frame_Login{Login: &protocol.LoginRequest{Username: "alice", Password: "pw"}}}
+	if err := protocol.WriteFrame(c, login); err != nil {
+		t.Fatal(err)
+	}
+	readLoginResponse(t, c)
+
+	var previous []byte
+	for want := uint32(1); want <= 2; want++ {
+		req := &protocol.Frame{Payload: &protocol.Frame_TicketRequest{TicketRequest: &protocol.TicketRequest{Appid: 480}}}
+		if err := protocol.WriteFrame(c, req); err != nil {
+			t.Fatal(err)
+		}
+		c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		frame, err := protocol.ReadFrame(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, ok := frame.Payload.(*protocol.Frame_TicketResponse)
+		if !ok {
+			t.Fatalf("got %T, want TicketResponse", frame.Payload)
+		}
+		ticket := result.TicketResponse.GetTicket()
+		if len(ticket) != 32 {
+			t.Fatalf("ticket length = %d, want 32", len(ticket))
+		}
+		if got := result.TicketResponse.GetNumber(); got != want {
+			t.Fatalf("ticket number = %d, want %d", got, want)
+		}
+		if bytes.Equal(ticket, previous) {
+			t.Fatal("repeated ticket bytes")
+		}
+		previous = ticket
 	}
 }
 
