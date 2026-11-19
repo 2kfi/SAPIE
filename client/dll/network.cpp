@@ -631,6 +631,14 @@ std::set<IP_PORT> Networking::resolve_ip(std::string dns)
 
 void Networking::do_callbacks_message(Common_Message *msg)
 {
+    if (msg->has_achievement_unlock()) {
+        const auto &unlock = msg->achievement_unlock();
+        uint64 steam_id = unlock.steam_id() ? unlock.steam_id() : msg->source_id();
+        if (sapie::local_mirror().apply_achievement_unlock(unlock, msg->source_id())) {
+            fire_achievement_callbacks(steam_id, unlock.def().id());
+        }
+    }
+
     if (msg->has_network() || msg->has_network_old()) {
         PRINT_DEBUG("has_network\n");
         run_callbacks(CALLBACK_ID_NETWORKING, msg);
@@ -966,13 +974,52 @@ bool Server_Connection::connect_and_login()
     return true;
 }
 
-bool Server_Connection::send_steam(Common_Message *msg)
+bool Server_Connection::send_frame(const google::protobuf::MessageLite &message)
 {
     if (!connected()) return false;
+    return send_sapie_frame(sock, message);
+}
 
+bool Server_Connection::send_steam(Common_Message *msg)
+{
     sapie::Frame frame;
     frame.mutable_steam()->CopyFrom(*msg);
-    return send_sapie_frame(sock, frame);
+    return send_frame(frame);
+}
+
+void Networking::fire_achievement_callbacks(uint64 steam_id, const std::string &def_id)
+{
+    if (!steam_callbacks) return;
+
+    uint64 game_id = CGameID(appid).ToUint64();
+    UserStatsReceived_t stats = {};
+    stats.m_nGameID = game_id;
+    stats.m_eResult = k_EResultOK;
+    stats.m_steamIDUser = CSteamID(steam_id);
+    steam_callbacks->addCBResult(stats.k_iCallback, &stats, sizeof(stats), true);
+
+    UserAchievementStored_t achievement = {};
+    achievement.m_nGameID = game_id;
+    strncpy(achievement.m_rgchAchievementName, def_id.c_str(), k_cchStatNameMax - 1);
+    steam_callbacks->addCBResult(achievement.k_iCallback, &achievement, sizeof(achievement), true);
+}
+
+void Networking::fire_stats_callbacks(uint64 steam_id, bool stored)
+{
+    if (!steam_callbacks) return;
+
+    if (stored) {
+        UserStatsStored_t result = {};
+        result.m_nGameID = CGameID(appid).ToUint64();
+        result.m_eResult = k_EResultOK;
+        steam_callbacks->addCBResult(result.k_iCallback, &result, sizeof(result), true);
+    }
+
+    UserStatsReceived_t stats = {};
+    stats.m_nGameID = CGameID(appid).ToUint64();
+    stats.m_eResult = k_EResultOK;
+    stats.m_steamIDUser = CSteamID(steam_id);
+    steam_callbacks->addCBResult(stats.k_iCallback, &stats, sizeof(stats), true);
 }
 
 void Server_Connection::pump()
@@ -1043,6 +1090,22 @@ void Server_Connection::pump()
             last_send = std::chrono::steady_clock::now();
         } else if (frame.has_pong()) {
             last_receive = std::chrono::steady_clock::now();
+        } else if (frame.has_achievement_unlock()) {
+            const auto &unlock = frame.achievement_unlock();
+            if (sapie::local_mirror().apply_achievement_unlock(unlock)) {
+                network->fire_achievement_callbacks(unlock.steam_id(), unlock.def().id());
+            }
+        } else if (frame.has_stats_response()) {
+            const auto &response = frame.stats_response();
+            bool added = sapie::local_mirror().apply_stats_response(response);
+            if (added) {
+                for (const auto &achievement : response.achievements()) {
+                    if (achievement.achieved()) {
+                        network->fire_achievement_callbacks(response.steam_id(), achievement.name());
+                    }
+                }
+            }
+            network->fire_stats_callbacks(response.steam_id(), sapie::local_mirror().consume_stats_store());
         } else if (frame.has_steam()) {
             Common_Message *steam = frame.mutable_steam();
             steam->set_dest_id(0);
@@ -1075,7 +1138,8 @@ void Networking::connect_to_server(Settings *settings)
 
 #define NUM_TCP_WAITING 128
 
-Networking::Networking(CSteamID id, uint32 appid, uint16 port, std::set<IP_PORT> *custom_broadcasts, bool disable_sockets)
+Networking::Networking(CSteamID id, uint32 appid, uint16 port, std::set<IP_PORT> *custom_broadcasts, bool disable_sockets, class SteamCallBacks *steam_callbacks_)
+    : steam_callbacks(steam_callbacks_)
 {
     tcp_port = udp_port = port;
     own_ip = 0x7F000001;
@@ -1540,6 +1604,11 @@ bool Networking::sendTo(Common_Message *msg, bool reliable, Connection *conn)
 
     reset_last_error();
     return ret;
+}
+
+bool Networking::send_frame(const google::protobuf::MessageLite &message)
+{
+    return server_connection && server_connection->send_frame(message);
 }
 
 bool Networking::send_steam(Common_Message *msg, bool reliable, bool all)

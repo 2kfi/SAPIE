@@ -19,7 +19,10 @@
 #define __INCLUDED_STEAM_USER_STATS_H__
 
 #include "base.h"
+#include "network.h"
 #include "../overlay_experimental/steam_overlay.h"
+#include "../sapie/local_mirror.h"
+#include "sapie.pb.h"
 
 struct Steam_Leaderboard_Score {
     CSteamID steam_id;
@@ -76,6 +79,7 @@ private:
 
     Local_Storage *local_storage;
     Settings *settings;
+    Networking *network;
     SteamCallResults *callback_results;
     class SteamCallBacks *callbacks;
     class Steam_Overlay* overlay;
@@ -218,10 +222,74 @@ std::string get_value_for_language(nlohmann::json &json, std::string key, std::s
     return "";
 }
 
+bool sapie_active() const
+{
+    return settings->sapie_enabled && network != nullptr;
+}
+
+uint32 appid() const
+{
+    return settings->get_local_game_id().AppID();
+}
+
+bool send_stats_get(uint64 steam_id = 0)
+{
+    if (!sapie_active()) return false;
+
+    sapie::Frame frame;
+    sapie::StatsGet *get = frame.mutable_stats_get();
+    get->set_appid(appid());
+    get->set_steam_id(steam_id);
+    return network->send_frame(frame);
+}
+
+bool send_stats_set()
+{
+    if (!sapie_active()) return false;
+
+    sapie::Frame frame;
+    sapie::StatsSet *set = frame.mutable_stats_set();
+    set->set_appid(appid());
+    uint64 steam_id = settings->get_local_steam_id().ConvertToUint64();
+    for (const auto &name : sorted_achievement_names) {
+        auto it = user_achievements.find(name);
+        if (it == user_achievements.end() || !it->value("earned", false)) continue;
+
+        int64 unlock_time = sapie::local_mirror().achievement_unlock_time(steam_id, name);
+        sapie::AchievementState *state = set->add_achievements();
+        state->set_name(name);
+        state->set_achieved(true);
+        state->set_unlock_time((uint32)unlock_time);
+        state->set_unlock_time_unix(unlock_time);
+    }
+    return network->send_frame(frame);
+}
+
+bool send_achievement_unlock(const std::string &name, nlohmann::json &definition)
+{
+    if (!sapie_active()) return false;
+
+    sapie::Frame frame;
+    ::AchievementUnlock *unlock = frame.mutable_achievement_unlock();
+    unlock->set_appid(appid());
+    ::AchievementDef *def = unlock->mutable_def();
+    def->set_id(name);
+    def->set_display_name(get_value_for_language(definition, "displayName", settings->get_language()));
+    def->set_description(get_value_for_language(definition, "description", settings->get_language()));
+    try {
+        def->set_hidden(std::atoi(definition["hidden"].get<std::string>().c_str()) != 0);
+    } catch (...) {}
+    try {
+        def->set_icon(definition["icon"].get<std::string>());
+    } catch (...) {}
+    return network->send_frame(frame);
+}
+
 public:
-Steam_User_Stats(Settings *settings, Local_Storage *local_storage, class SteamCallResults *callback_results, class SteamCallBacks *callbacks, Steam_Overlay* overlay):
-    settings(settings),
+Steam_User_Stats(Settings *settings, Local_Storage *local_storage, class SteamCallResults *callback_results, class SteamCallBacks *callbacks, Steam_Overlay* overlay, Networking *network):
     local_storage(local_storage),
+    settings(settings),
+    network(network),
     callback_results(callback_results),
     callbacks(callbacks),
     defined_achievements(nlohmann::json::object()),
@@ -281,6 +349,8 @@ bool RequestCurrentStats()
 {
     PRINT_DEBUG("Steam_User_Stats::RequestCurrentStats\n");
     std::lock_guard<std::recursive_mutex> lock(global_mutex);
+
+    if (sapie_active()) return send_stats_get();
 
     UserStatsReceived_t data;
     data.m_nGameID = settings->get_local_game_id().ToUint64();
@@ -470,6 +540,14 @@ bool GetAchievement( const char *pchName, bool *pbAchieved )
         if (it == defined_achievements.end()) return false;
         std::string pch_name = it->value("name", std::string());
 
+        if (sapie_active()) {
+            if (pbAchieved != nullptr) {
+                *pbAchieved = sapie::local_mirror().achievement_unlocked(
+                    settings->get_local_steam_id().ConvertToUint64(), pch_name);
+            }
+            return true;
+        }
+
         auto ach = user_achievements.find(pch_name);
         if (it != defined_achievements.end() && ach != user_achievements.end()) {
             if(pbAchieved != nullptr) *pbAchieved = (*ach)["earned"];
@@ -492,6 +570,16 @@ bool SetAchievement( const char *pchName )
         auto it = defined_achievements_find(pchName);
         if (it == defined_achievements.end()) return false;
         std::string pch_name = it->value("name", std::string());
+
+        if (sapie_active()) {
+            if (user_achievements.find(pch_name) == user_achievements.end() || !user_achievements[pch_name].value("earned", false)) {
+                user_achievements[pch_name]["earned"] = true;
+                user_achievements[pch_name]["earned_time"] = static_cast<uint32>(0);
+                if (!send_achievement_unlock(pch_name, it.value())) return false;
+                send_stats_get();
+            }
+            return true;
+        }
 
         if (it != defined_achievements.end()) {
             if (user_achievements.find(pch_name) == user_achievements.end() || user_achievements[pch_name].value("earned", false) == false) {
@@ -547,6 +635,14 @@ bool GetAchievementAndUnlockTime( const char *pchName, bool *pbAchieved, uint32 
         if (it == defined_achievements.end()) return false;
         std::string pch_name = it->value("name", std::string());
 
+        if (sapie_active()) {
+            int64 unlock_time = sapie::local_mirror().achievement_unlock_time(
+                settings->get_local_steam_id().ConvertToUint64(), pch_name);
+            if (pbAchieved != nullptr) *pbAchieved = unlock_time > 0;
+            if (punUnlockTime != nullptr) *punUnlockTime = unlock_time > 0 ? (uint32)unlock_time : 0;
+            return true;
+        }
+
         auto ach = user_achievements.find(pch_name);
         if (it != defined_achievements.end() && ach != user_achievements.end()) {
             if(pbAchieved != nullptr) *pbAchieved = (*ach)["earned"];
@@ -572,6 +668,15 @@ bool StoreStats()
 {
     PRINT_DEBUG("StoreStats\n");
     std::lock_guard<std::recursive_mutex> lock(global_mutex);
+
+    if (sapie_active()) {
+        sapie::local_mirror().note_stats_store();
+        if (!send_stats_set() || !send_stats_get()) {
+            sapie::local_mirror().consume_stats_store();
+            return false;
+        }
+        return true;
+    }
 
     UserStatsStored_t data;
     data.m_nGameID = settings->get_local_game_id().ToUint64();
@@ -722,7 +827,11 @@ SteamAPICall_t RequestUserStats( CSteamID steamIDUser )
     //if (steamIDUser == settings->get_local_steam_id()) {
     //    load_achievements();
     //}
-    
+
+    if (sapie_active()) {
+        send_stats_get(steamIDUser.ConvertToUint64());
+        return callback_results->reserveCallResult();
+    }
 
     UserStatsReceived_t data;
     data.m_nGameID = settings->get_local_game_id().ToUint64();
@@ -771,6 +880,16 @@ bool GetUserAchievement( CSteamID steamIDUser, const char *pchName, bool *pbAchi
     if (pchName == nullptr) return false;
     std::lock_guard<std::recursive_mutex> lock(global_mutex);
 
+    if (sapie_active()) {
+        auto it = defined_achievements_find(pchName);
+        if (it == defined_achievements.end()) return false;
+        if (pbAchieved != nullptr) {
+            *pbAchieved = sapie::local_mirror().achievement_unlocked(
+                steamIDUser.ConvertToUint64(), it->value("name", std::string()));
+        }
+        return true;
+    }
+
     if (steamIDUser == settings->get_local_steam_id()) {
         return GetAchievement(pchName, pbAchieved);
     }
@@ -784,6 +903,16 @@ bool GetUserAchievementAndUnlockTime( CSteamID steamIDUser, const char *pchName,
     PRINT_DEBUG("GetUserAchievementAndUnlockTime %s\n", pchName);
     if (pchName == nullptr) return false;
     std::lock_guard<std::recursive_mutex> lock(global_mutex);
+
+    if (sapie_active()) {
+        auto it = defined_achievements_find(pchName);
+        if (it == defined_achievements.end()) return false;
+        int64 unlock_time = sapie::local_mirror().achievement_unlock_time(
+            steamIDUser.ConvertToUint64(), it->value("name", std::string()));
+        if (pbAchieved != nullptr) *pbAchieved = unlock_time > 0;
+        if (punUnlockTime != nullptr) *punUnlockTime = unlock_time > 0 ? (uint32)unlock_time : 0;
+        return true;
+    }
 
     if (steamIDUser == settings->get_local_steam_id()) {
         return GetAchievementAndUnlockTime(pchName, pbAchieved, punUnlockTime);

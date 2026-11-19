@@ -23,6 +23,8 @@
 static const uint64_t kFixedSteamID = 76561197960265728ULL + 4242;
 static const uint64_t kMirrorFriendID = kFixedSteamID + 1;
 static const uint32_t kMirrorAppID = 480;
+static const char kMirrorAchievement[] = "MIRROR_ACH";
+static const int64_t kMirrorUnlockTime = 1700000000LL;
 static const int kMaxFrameSize = 1024 * 1024;
 
 static uint64_t mirror_lobby_id()
@@ -98,6 +100,9 @@ struct StubServer {
     std::atomic<bool> got_login{false};
     std::atomic<bool> correct_credentials{false};
     std::atomic<int> connections{0};
+    std::atomic<bool> got_achievement_unlock{false};
+    std::atomic<bool> got_stats_set{false};
+    std::atomic<bool> got_stats_get{false};
     std::atomic<bool> stop{false};
     bool reject;
     bool mirror;
@@ -208,6 +213,21 @@ struct StubServer {
                 }
             }
 
+            if (mirror) {
+                sapie::Frame unlock_push;
+                AchievementUnlock *unlock = unlock_push.mutable_achievement_unlock();
+                unlock->set_steam_id(kMirrorFriendID);
+                unlock->set_appid(kMirrorAppID);
+                unlock->set_unlock_time(kMirrorUnlockTime);
+                AchievementDef *def = unlock->mutable_def();
+                def->set_id(kMirrorAchievement);
+                def->set_display_name("Mirror Achievement");
+                if (!write_frame(fd, unlock_push)) {
+                    close(fd);
+                    continue;
+                }
+            }
+
             while (!stop) {
                 if (!wait_readable(fd, 50)) continue;
                 sapie::Frame inbound;
@@ -216,6 +236,22 @@ struct StubServer {
                     sapie::Frame pong;
                     pong.set_pong(true);
                     if (!write_frame(fd, pong)) break;
+                } else if (inbound.has_achievement_unlock()) {
+                    got_achievement_unlock = true;
+                } else if (inbound.has_stats_set()) {
+                    got_stats_set = true;
+                } else if (inbound.has_stats_get()) {
+                    got_stats_get = true;
+                    sapie::Frame response;
+                    sapie::StatsResponse *stats = response.mutable_stats_response();
+                    uint64_t target_id = inbound.stats_get().steam_id() ? inbound.stats_get().steam_id() : kFixedSteamID;
+                    stats->set_steam_id(target_id);
+                    sapie::AchievementState *achievement = stats->add_achievements();
+                    achievement->set_name(kMirrorAchievement);
+                    achievement->set_achieved(true);
+                    achievement->set_unlock_time((uint32_t)kMirrorUnlockTime);
+                    achievement->set_unlock_time_unix(kMirrorUnlockTime);
+                    if (!write_frame(fd, response)) break;
                 }
             }
             close(fd);
@@ -243,7 +279,16 @@ int main(int argc, char **argv)
     setenv("SteamAppPath", temp_dir, 1);
     setenv("XDG_DATA_HOME", (std::string(temp_dir) + "/data").c_str(), 1);
 
-    if (mirror) setenv("SteamAppId", "480", 1);
+    if (mirror) {
+        setenv("SteamAppId", "480", 1);
+        std::ofstream achievements(std::string(temp_dir) + "/steam_settings/achievements.json");
+        achievements << "[{\"name\":\"" << kMirrorAchievement
+                     << "\",\"hidden\":0,\"displayName\":{\"english\":\"Mirror Achievement\"},"
+                        "\"description\":{\"english\":\"Mirror unlock smoke\"},"
+                        "\"progress\":{\"value\":{\"operation\":\"from_to\",\"operand1\":\"MIRROR_STAT\"},"
+                        "\"min_val\":\"0\",\"max_val\":\"1\"}}]";
+        achievements.close();
+    }
 
     StubServer server(reject, mirror);
     if (expect_login) {
@@ -265,6 +310,7 @@ int main(int argc, char **argv)
         printf("FAIL: SteamAPI_Init returned false\n");
         return 1;
     }
+    if (mirror) SteamAPI_ManualDispatch_Init();
 
     ISteamUser *user = SteamUser();
     uint64 steam_id = user ? user->GetSteamID().ConvertToUint64() : 0;
@@ -352,8 +398,76 @@ int main(int argc, char **argv)
                 printf("FAIL: pushed lobby member data was not mirrored\n");
                 return 1;
             }
-            printf("PASS: mirror run loaded friends and lobby from server pushes (persona_state=%d)\n",
-                   (int)friends->GetFriendPersonaState(buddy));
+            ISteamUserStats *stats = SteamUserStats();
+            if (!stats) {
+                printf("FAIL: mirror run has no user stats interface\n");
+                return 1;
+            }
+
+            bool achieved = false;
+            uint32 unlock_time = 0;
+            if (!stats->GetUserAchievementAndUnlockTime(buddy, kMirrorAchievement, &achieved, &unlock_time)
+                || !achieved || unlock_time != (uint32_t)kMirrorUnlockTime) {
+                printf("FAIL: peer achievement unlock was not mirrored (achieved=%d time=%u)\n",
+                       (int)achieved, (unsigned)unlock_time);
+                return 1;
+            }
+
+            stats->RequestUserStats(buddy);
+            if (!stats->SetAchievement(kMirrorAchievement) || !stats->StoreStats()) {
+                printf("FAIL: achievement unlock or StoreStats was rejected\n");
+                return 1;
+            }
+            for (int i = 0; i < 20; ++i) {
+                SteamAPI_RunCallbacks();
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+
+            achieved = false;
+            unlock_time = 0;
+            if (!stats->GetAchievementAndUnlockTime(kMirrorAchievement, &achieved, &unlock_time)
+                || !achieved || unlock_time != (uint32_t)kMirrorUnlockTime) {
+                printf("FAIL: self achievement time was not canonical (achieved=%d time=%u)\n",
+                       (int)achieved, (unsigned)unlock_time);
+                return 1;
+            }
+            if (!stats->GetUserAchievementAndUnlockTime(CSteamID(steam_id), kMirrorAchievement, &achieved, &unlock_time)
+                || !achieved || unlock_time != (uint32_t)kMirrorUnlockTime) {
+                printf("FAIL: self peer-stat getter disagrees with local getter\n");
+                return 1;
+            }
+            if (!server.got_achievement_unlock || !server.got_stats_set || !server.got_stats_get) {
+                printf("FAIL: server did not receive unlock/stats frames (unlock=%d set=%d get=%d)\n",
+                       (int)server.got_achievement_unlock, (int)server.got_stats_set, (int)server.got_stats_get);
+                return 1;
+            }
+
+            bool got_achievement_cb = false;
+            bool got_stats_stored_cb = false;
+            bool got_stats_received_cb = false;
+            HSteamPipe pipe = SteamAPI_GetHSteamPipe();
+            for (;;) {
+                CallbackMsg_t msg = {};
+                if (!SteamAPI_ManualDispatch_GetNextCallback(pipe, &msg)) break;
+                if (msg.m_iCallback == UserAchievementStored_t::k_iCallback
+                    && msg.m_pubParam && msg.m_cubParam >= (int)sizeof(UserAchievementStored_t)) {
+                    auto *stored = reinterpret_cast<UserAchievementStored_t *>(msg.m_pubParam);
+                    if (std::string(stored->m_rgchAchievementName) == kMirrorAchievement) got_achievement_cb = true;
+                } else if (msg.m_iCallback == UserStatsStored_t::k_iCallback) {
+                    got_stats_stored_cb = true;
+                } else if (msg.m_iCallback == UserStatsReceived_t::k_iCallback) {
+                    got_stats_received_cb = true;
+                }
+                SteamAPI_ManualDispatch_FreeLastCallback(pipe);
+            }
+            if (!got_achievement_cb || !got_stats_stored_cb || !got_stats_received_cb) {
+                printf("FAIL: missing Steam callbacks (achievement=%d stored=%d received=%d)\n",
+                       (int)got_achievement_cb, (int)got_stats_stored_cb, (int)got_stats_received_cb);
+                return 1;
+            }
+
+            printf("PASS: mirror run loaded friends/lobby and synced achievement at %lld (callbacks ok)\n",
+                   (long long)kMirrorUnlockTime);
             return 0;
         }
         printf("PASS: login used server SteamID %llu\n", (unsigned long long)steam_id);

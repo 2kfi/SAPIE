@@ -39,7 +39,8 @@ else()
   endif()
 endif()
 
-get_filename_component(SAPIE_PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../proto" REALPATH)
+# The DLL generates from its own proto copies so a server schema change cannot shift its wire ABI silently.
+set(SAPIE_PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dll")
 set(SAPIE_PROTO_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${SAPIE_PROTO_GEN_DIR}")
 set(SAPIE_PROTO_SRCS

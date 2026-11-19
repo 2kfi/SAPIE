@@ -52,13 +52,13 @@ Steam_Client::Steam_Client()
 {
     uint32 appid = create_localstorage_settings(&settings_client, &settings_server, &local_storage);
 
-    network = new Networking(settings_server->get_local_steam_id(), appid, settings_server->get_port(), &(settings_server->custom_broadcasts), settings_server->disable_networking);
-
     callback_results_client = new SteamCallResults();
     callback_results_server = new SteamCallResults();
     callbacks_client = new SteamCallBacks(callback_results_client);
     callbacks_server = new SteamCallBacks(callback_results_server);
     run_every_runcb = new RunEveryRunCB();
+
+    network = new Networking(settings_server->get_local_steam_id(), appid, settings_server->get_port(), &(settings_server->custom_broadcasts), settings_server->disable_networking, callbacks_client);
 
     PRINT_DEBUG("steam client init: id: %llu server id: %llu appid: %u port: %u \n", settings_client->get_local_steam_id().ConvertToUint64(), settings_server->get_local_steam_id().ConvertToUint64(), appid, settings_server->get_port());
 
@@ -75,7 +75,7 @@ Steam_Client::Steam_Client()
 
     steam_matchmaking = new Steam_Matchmaking(settings_client, network, callback_results_client, callbacks_client, run_every_runcb);
     steam_matchmaking_servers = new Steam_Matchmaking_Servers(settings_client, network);
-    steam_user_stats = new Steam_User_Stats(settings_client, local_storage, callback_results_client, callbacks_client, steam_overlay);
+    steam_user_stats = new Steam_User_Stats(settings_client, local_storage, callback_results_client, callbacks_client, steam_overlay, network);
     steam_apps = new Steam_Apps(settings_client, callback_results_client);
     steam_networking = new Steam_Networking(settings_client, network, callbacks_client, run_every_runcb);
     steam_remote_storage = new Steam_Remote_Storage(settings_client, local_storage, callback_results_client);
