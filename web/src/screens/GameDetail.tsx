@@ -1,22 +1,123 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
-import { callNative } from '../tauri'
+import {
+  configureServer,
+  copyDll,
+  detectGame,
+  launchGame,
+  pickExecutable,
+  setLdPreload,
+  unpackSteamstub,
+  type Connection,
+  type DetectResult,
+} from '../tauri'
 import type { ViewState } from '../state'
 
 type Props = {
   state: ViewState
+  connection: Connection | null
   onNotice: (message: string) => void
 }
 
-function report(onNotice: (message: string) => void, error: unknown) {
-  onNotice(error instanceof Error ? error.message : String(error))
+type Game = {
+  exePath: string
+  detected: DetectResult
+  dllPath: string
 }
 
-export default function GameDetail({ state, onNotice }: Props) {
-  const pathRef = useRef<HTMLInputElement>(null)
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
 
-  if (state === 'loading') {
-    return <LoadingState label="Loading game details…" />
+function eraLabel(era: string): string {
+  if (era === 'legacy') return 'Legacy (pre-2016)'
+  if (era === 'modern') return 'Modern'
+  return 'Unknown'
+}
+
+function fileName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path
+}
+
+export default function GameDetail({ state, connection, onNotice }: Props) {
+  const pathRef = useRef<HTMLInputElement>(null)
+  const [game, setGame] = useState<Game | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!game || !connection) return
+    configureServer(game.exePath, connection)
+      .then(() => onNotice(`Server updated to ${connection.server}.`))
+      .catch((reason) => setError(message(reason)))
+    // Reconfigure only when the connection changes; adding a game configures it already.
+  }, [connection])
+
+  async function addGame() {
+    if (!connection) {
+      setError('Connect to a server on the login screen before adding a game.')
+      return
+    }
+    setError(null)
+    setBusy('Choose the game executable…')
+    try {
+      const picked = await pickExecutable()
+      if (!picked) {
+        setBusy(null)
+        return
+      }
+
+      setBusy('Checking for SteamStub…')
+      let exePath = picked
+      let unpackNote: string
+      try {
+        const unpacked = await unpackSteamstub(picked)
+        if (unpacked) {
+          exePath = unpacked
+          unpackNote = 'SteamStub removed; using the unpacked executable.'
+        } else {
+          unpackNote = 'No SteamStub found; using the original executable.'
+        }
+      } catch (reason) {
+        unpackNote = `SteamStub check skipped: ${message(reason)}`
+      }
+
+      setBusy('Detecting the game…')
+      const detected = await detectGame(exePath)
+
+      setBusy('Installing the SAPIE DLL…')
+      const dllPath = await copyDll(exePath, detected.era)
+
+      setBusy('Writing the connection files…')
+      await configureServer(exePath, connection)
+
+      try {
+        await setLdPreload(exePath, dllPath)
+      } catch (reason) {
+        unpackNote += ` LD_PRELOAD was not set: ${message(reason)}`
+      }
+
+      setGame({ exePath, detected, dllPath })
+      onNotice(`${unpackNote} Game is ready to launch.`)
+    } catch (reason) {
+      setError(message(reason))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function launch() {
+    if (!game) return
+    setError(null)
+    setBusy('Launching game…')
+    try {
+      await launchGame(game.exePath)
+      onNotice('Game launched with SAPIE credentials.')
+    } catch (reason) {
+      setError(message(reason))
+    } finally {
+      setBusy(null)
+    }
   }
 
   return (
@@ -28,7 +129,19 @@ export default function GameDetail({ state, onNotice }: Props) {
         </div>
       </header>
 
-      {state === 'error' && (
+      {busy && <LoadingState label={busy} />}
+
+      {!busy && error && (
+        <ErrorState action={<button type="button" className="btn btn--quiet" onClick={addGame}>Try again</button>}>
+          {error}
+        </ErrorState>
+      )}
+
+      {!busy && !error && !game && state === 'loading' && (
+        <LoadingState label="Loading game details…" />
+      )}
+
+      {!busy && !error && !game && state === 'error' && (
         <ErrorState
           action={
             <button type="button" className="btn btn--quiet" onClick={() => pathRef.current?.focus()}>
@@ -43,7 +156,7 @@ export default function GameDetail({ state, onNotice }: Props) {
       <dl className="fields">
         <div className="fields__row">
           <dt>Name</dt>
-          <dd>Not set</dd>
+          <dd>{game ? fileName(game.exePath) : 'Not set'}</dd>
         </div>
         <div className="fields__row">
           <dt>App ID</dt>
@@ -60,19 +173,15 @@ export default function GameDetail({ state, onNotice }: Props) {
                 id="exe-path"
                 className="mono"
                 type="text"
+                value={game?.exePath ?? ''}
+                readOnly={!!game}
                 placeholder="Not set"
                 autoComplete="off"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
               />
-              <button
-                type="button"
-                className="btn btn--quiet"
-                onClick={() =>
-                  callNative('pick_executable').catch((error) => report(onNotice, error))
-                }
-              >
+              <button type="button" className="btn btn--quiet" onClick={addGame} disabled={!!busy}>
                 Browse
               </button>
             </div>
@@ -84,22 +193,28 @@ export default function GameDetail({ state, onNotice }: Props) {
         </div>
         <div className="fields__row">
           <dt>Era</dt>
-          <dd>Not set</dd>
+          <dd>{game ? eraLabel(game.detected.era) : 'Not set'}</dd>
         </div>
         <div className="fields__row">
           <dt>Architecture</dt>
-          <dd>Not set</dd>
+          <dd>{game ? game.detected.arch : 'Not set'}</dd>
+        </div>
+        <div className="fields__row">
+          <dt>Interfaces</dt>
+          <dd className="mono">{game ? `${game.detected.interfaces.length} detected` : 'Not set'}</dd>
         </div>
       </dl>
 
       <div className="detail__actions">
-        <button type="button" className="btn btn--primary" disabled>
+        <button type="button" className="btn btn--primary" disabled={!game || !!busy} onClick={launch}>
           Launch
         </button>
-        <p className="muted">Launch is unavailable until a game is added.</p>
+        <p className="muted">
+          {game ? 'Ready to launch.' : 'Launch is unavailable until a game is added.'}
+        </p>
       </div>
 
-      {state === 'empty' && <EmptyState>Add a game to get started</EmptyState>}
+      {state === 'empty' && !game && <EmptyState>Add a game to get started</EmptyState>}
     </section>
   )
 }

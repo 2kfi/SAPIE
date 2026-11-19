@@ -1,19 +1,34 @@
 [[permission]]
 identifier = "allow-pick-executable"
-description = "Enables the M0 executable picker stub."
+description = "Enables the native executable picker."
 commands.allow = ["pick_executable"]
 
 [[permission]]
+identifier = "allow-detect-game"
+description = "Enables game detection and Steam interface scanning."
+commands.allow = ["detect_game"]
+
+[[permission]]
+identifier = "allow-unpack-steamstub"
+description = "Enables the Steamless sidecar for SteamStub removal."
+commands.allow = ["unpack_steamstub"]
+
+[[permission]]
 identifier = "allow-copy-dll"
-description = "Enables the M0 DLL copy stub."
+description = "Enables copying the matching SAPIE DLL next to the game."
 commands.allow = ["copy_dll"]
 
 [[permission]]
 identifier = "allow-set-ld-preload"
-description = "Enables the M0 LD_PRELOAD stub."
+description = "Enables recording the Linux LD_PRELOAD library."
 commands.allow = ["set_ld_preload"]
 
 [[permission]]
+identifier = "allow-configure-server"
+description = "Enables writing sapie_server.txt and saving connection settings."
+commands.allow = ["configure_server"]
+
+[[permission]]
 identifier = "allow-launch-game"
-description = "Enables the M0 game launch stub."
+description = "Enables launching the configured game with SAPIE credentials."
 commands.allow = ["launch_game"]

@@ -4,12 +4,12 @@ import Shell from './screens/Shell'
 import Toast from './components/Toast'
 import { navigate, readRoute, type Route } from './routes'
 import { readPreviewState } from './state'
-
-// shortcut: sign-in is stubbed in M0, so the shell previews the signed-in user's account.
+import type { Connection } from './tauri'
 
 export default function App() {
   const [route, setRoute] = useState<Route>(readRoute)
   const [notice, setNotice] = useState<string | null>(null)
+  const [connection, setConnection] = useState<Connection | null>(null)
   const previewState = readPreviewState()
 
   useEffect(() => {
@@ -26,11 +26,12 @@ export default function App() {
   return (
     <>
       {route === 'login' ? (
-        <Login onPreview={() => go('friends')} />
+        <Login onConnect={setConnection} onPreview={() => go('friends')} />
       ) : (
         <Shell
           route={route}
           state={previewState}
+          connection={connection}
           onNavigate={go}
           onNotice={setNotice}
         />

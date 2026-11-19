@@ -28,6 +28,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": []
+    "icon": [],
+    "resources": [
+      "resources/steamless/*",
+      "resources/steamless/Plugins/*"
+    ]
   }
 }

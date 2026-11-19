@@ -1,17 +1,55 @@
 import { useState, type FormEvent } from 'react'
 import { EyeIcon, EyeOffIcon } from '../components/Icons'
+import type { Connection } from '../tauri'
 
 type Props = {
+  onConnect: (connection: Connection) => void
   onPreview: () => void
 }
 
-export default function Login({ onPreview }: Props) {
+function validateServer(value: string): string | null {
+  const server = value.trim()
+  const separator = server.indexOf(':')
+  if (separator < 1 || server.indexOf(':', separator + 1) !== -1) {
+    return 'Enter the server as host:port (for example 127.0.0.1:7777).'
+  }
+  const port = Number(server.slice(separator + 1))
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return 'Port must be a number between 1 and 65535.'
+  }
+  return null
+}
+
+export default function Login({ onConnect, onPreview }: Props) {
   const [showPassword, setShowPassword] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setNotice('No server is connected in this scaffold. Login will be wired up with the Go server.')
+    const form = new FormData(event.currentTarget)
+    const server = String(form.get('server') ?? '').trim()
+    const username = String(form.get('username') ?? '').trim()
+    const password = String(form.get('password') ?? '')
+
+    const invalid = validateServer(server)
+    if (invalid) {
+      setNotice({ text: invalid, error: true })
+      return
+    }
+    if (!username) {
+      setNotice({ text: 'Username is required.', error: true })
+      return
+    }
+    if (!password) {
+      setNotice({ text: 'Password is required.', error: true })
+      return
+    }
+
+    onConnect({ server, username, password })
+    setNotice({
+      text: `Connection saved for ${server}. Add a game on the Games screen to launch it.`,
+      error: false,
+    })
   }
 
   return (
@@ -80,22 +118,17 @@ export default function Login({ onPreview }: Props) {
             </div>
           </div>
 
-          <div className="checkbox-field">
-            <input id="remember" name="remember" type="checkbox" />
-            <label htmlFor="remember">Remember this server</label>
-          </div>
-
           <button type="submit" className="btn btn--primary btn--wide">
             Connect
           </button>
         </form>
 
         <div className="login-card__foot">
-          <p role="status">{notice}</p>
+          <p role={notice?.error ? 'alert' : 'status'}>{notice?.text}</p>
           <button type="button" className="link-button" onClick={onPreview}>
             Open UI preview
           </button>
-          <p className="muted">Preview skips sign-in and opens the screens without a server.</p>
+          <p className="muted">Preview opens the screens without saving a connection.</p>
         </div>
       </section>
     </main>

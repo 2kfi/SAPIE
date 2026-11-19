@@ -9,6 +9,7 @@ import {
 } from '../components/Icons'
 import type { Route } from '../routes'
 import type { ViewState } from '../state'
+import type { Connection } from '../tauri'
 import GameDetail from './GameDetail'
 import LiveAdmin from './LiveAdmin'
 
@@ -17,6 +18,7 @@ type ShellRoute = Exclude<Route, 'login'>
 type Props = {
   route: ShellRoute
   state: ViewState
+  connection: Connection | null
   onNavigate: (route: ShellRoute) => void
   onNotice: (message: string) => void
 }
@@ -91,9 +93,9 @@ function GamesView({ state, onNotice }: Pick<Props, 'state' | 'onNotice'>) {
   )
 }
 
-function DetailPane({ route, state, onNotice }: Pick<Props, 'route' | 'state' | 'onNotice'>) {
+function DetailPane({ route, state, connection, onNotice }: Pick<Props, 'route' | 'state' | 'connection' | 'onNotice'>) {
   if (route === 'games') {
-    return <GameDetail state={state} onNotice={onNotice} />
+    return <GameDetail state={state} connection={connection} onNotice={onNotice} />
   }
 
   if (route === 'account') {
@@ -126,7 +128,7 @@ function DetailPane({ route, state, onNotice }: Pick<Props, 'route' | 'state' | 
   )
 }
 
-export default function Shell({ route, state, onNavigate, onNotice }: Props) {
+export default function Shell({ route, state, connection, onNavigate, onNotice }: Props) {
   return (
     <div className="shell">
       <nav className="rail glass" aria-label="Main navigation">
@@ -170,7 +172,7 @@ export default function Shell({ route, state, onNavigate, onNotice }: Props) {
       </main>
 
       <aside className="detail glass" aria-label="Details">
-        <DetailPane route={route} state={state} onNotice={onNotice} />
+        <DetailPane route={route} state={state} connection={connection} onNotice={onNotice} />
       </aside>
     </div>
   )
