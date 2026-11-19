@@ -1,0 +1,19 @@
+[[permission]]
+identifier = "allow-pick-executable"
+description = "Enables the M0 executable picker stub."
+commands.allow = ["pick_executable"]
+
+[[permission]]
+identifier = "allow-copy-dll"
+description = "Enables the M0 DLL copy stub."
+commands.allow = ["copy_dll"]
+
+[[permission]]
+identifier = "allow-set-ld-preload"
+description = "Enables the M0 LD_PRELOAD stub."
+commands.allow = ["set_ld_preload"]
+
+[[permission]]
+identifier = "allow-launch-game"
+description = "Enables the M0 game launch stub."
+commands.allow = ["launch_game"]
