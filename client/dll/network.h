@@ -20,6 +20,11 @@
 
 #include "base.h"
 
+#include <memory>
+
+namespace sapie { class LoginResponse; }
+class Settings;
+
 inline bool protobuf_message_equal(const google::protobuf::MessageLite& msg_a,
                 const google::protobuf::MessageLite& msg_b) {
   return (msg_a.GetTypeName() == msg_b.GetTypeName()) &&
@@ -34,6 +39,8 @@ typedef unsigned int sock_t;
 #else
 typedef int sock_t;
 #endif
+
+class Server_Connection;
 
 struct IP_PORT {
     uint32 ip;
@@ -113,6 +120,10 @@ class Networking {
 
     struct Network_Callback_Container callbacks[CALLBACK_IDS_MAX];
     std::vector<Common_Message> local_send;
+    std::unique_ptr<Server_Connection> server_connection;
+
+    friend class Server_Connection;
+    void replace_listen_id(CSteamID from, CSteamID to);
 
     bool add_id_connection(struct Connection *connection, CSteamID steam_id);
     void run_callbacks(Callback_Ids id, Common_Message *msg);
@@ -126,6 +137,7 @@ public:
     static std::set<IP_PORT> resolve_ip(std::string dns);
     Networking(CSteamID id, uint32 appid, uint16 port, std::set<IP_PORT> *custom_broadcasts, bool disable_sockets);
     ~Networking();
+    void connect_to_server(Settings *settings);
     void addListenId(CSteamID id);
     void setAppID(uint32 appid);
     void Run();
@@ -137,6 +149,24 @@ public:
     bool setCallback(Callback_Ids id, CSteamID steam_id, void (*message_callback)(void *object, Common_Message *msg), void *object);
     uint32 getIP(CSteamID id);
     uint32 getOwnIP();
+};
+
+class Server_Connection {
+    class Settings *settings;
+    class Networking *network;
+    sock_t sock = -1;
+    std::string recv_buffer;
+    std::chrono::steady_clock::time_point last_send, last_receive, next_retry;
+    double backoff_seconds = 1.0;
+    bool logged_in = false;
+
+    void schedule_retry();
+    bool apply_login(const sapie::LoginResponse &response);
+public:
+    Server_Connection(class Settings *settings, class Networking *network);
+    ~Server_Connection();
+    bool connect_and_login();
+    void pump();
 };
 
 #endif

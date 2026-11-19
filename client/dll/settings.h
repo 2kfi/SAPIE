@@ -90,9 +90,11 @@ public:
     static std::string sanitize(std::string name);
     Settings(CSteamID steam_id, CGameID game_id, std::string name, std::string language, bool offline);
     CSteamID get_local_steam_id();
+    void set_steam_id(CSteamID id) { steam_id = id; }
     CGameID get_local_game_id();
     const char *get_local_name();
     void set_local_name(char *name);
+    void set_local_name(const std::string &name) { this->name = name; }
     const char *get_language();
     void set_language(char *language);
 
@@ -167,6 +169,12 @@ public:
 
     //warn people who use local save
     bool warn_local_save = false;
+
+    //SAPIE server login; absent config keeps Goldberg's LAN-only mode
+    bool sapie_enabled = false;
+    std::string sapie_host;
+    uint16 sapie_port = 0;
+    std::string sapie_username, sapie_password;
 };
 
 #endif

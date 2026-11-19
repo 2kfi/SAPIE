@@ -247,6 +247,9 @@ STEAMAPI_API steam_bool S_CALLTYPE SteamAPI_Init()
 #endif
     load_old_interface_versions();
     Steam_Client* client = get_steam_client();
+    if (client->settings_client->sapie_enabled) {
+        client->network->connect_to_server(client->settings_client);
+    }
     user_steam_pipe = client->CreateSteamPipe();
     client->ConnectToGlobalUser(user_steam_pipe);
     global_counter++;
