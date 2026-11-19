@@ -10,5 +10,5 @@ set(CMAKE_EXE_LINKER_FLAGS "-m32" CACHE STRING "" FORCE)
 
 set(CMAKE_LIBRARY_ARCHITECTURE i386-linux-gnu)
 
-get_filename_component(SAPIE_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+get_filename_component(SAPIE_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 set(SAPIE_PROTOBUF_ROOT "${SAPIE_REPO_ROOT}/third_party/protobuf/linux-x86" CACHE PATH "Cross-built protobuf-lite prefix")

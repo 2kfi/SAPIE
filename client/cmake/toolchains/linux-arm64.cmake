@@ -14,5 +14,5 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE NEVER)
 set(CMAKE_SHARED_LINKER_FLAGS "-static-libgcc -static-libstdc++" CACHE STRING "" FORCE)
 set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++" CACHE STRING "" FORCE)
 
-get_filename_component(SAPIE_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+get_filename_component(SAPIE_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 set(SAPIE_PROTOBUF_ROOT "${SAPIE_REPO_ROOT}/third_party/protobuf/linux-arm64" CACHE PATH "Cross-built protobuf-lite prefix")
