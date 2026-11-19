@@ -20,6 +20,7 @@
 
 #include "base.h"
 #include "../overlay_experimental/steam_overlay.h"
+#include "../sapie/local_mirror.h"
 
 #define SEND_FRIEND_RATE 4.0
 
@@ -55,7 +56,7 @@ public ISteamFriends
 
     Friend us;
     bool modified;
-    std::vector<Friend> friends;
+    std::vector<Friend> &friends;
 
     std::map<uint64, struct Avatar_Numbers> avatars;
     CSteamID lobby_id;
@@ -144,7 +145,8 @@ Steam_Friends(Settings* settings, Networking* network, SteamCallResults* callbac
     callbacks(callbacks),
     callback_results(callback_results),
     run_every_runcb(run_every_runcb),
-    overlay(overlay)
+    overlay(overlay),
+    friends(sapie::local_mirror().friends())
 {
     this->network->setCallback(CALLBACK_ID_FRIEND, settings->get_local_steam_id(), &Steam_Friends::steam_friends_callback, this);
     this->network->setCallback(CALLBACK_ID_FRIEND_MESSAGES, settings->get_local_steam_id(), &Steam_Friends::steam_friends_callback, this);
@@ -276,6 +278,8 @@ EPersonaState GetFriendPersonaState( CSteamID steamIDFriend )
     if (steamIDFriend == settings->get_local_steam_id() || find_friend(steamIDFriend)) {
         state = k_EPersonaStateOnline;
     }
+    int pushed = sapie::local_mirror().persona_state(steamIDFriend.ConvertToUint64());
+    if (pushed) state = (EPersonaState)pushed;
 
     //works because all of those who could be in a lobby are our friends
     return state;
@@ -840,7 +844,7 @@ bool InviteUserToGame( CSteamID steamIDFriend, const char *pchConnectString )
     msg.set_allocated_friend_messages(friend_messages);
     msg.set_source_id(settings->get_local_steam_id().ConvertToUint64());
     msg.set_dest_id(steamIDFriend.ConvertToUint64());
-    return network->sendTo(&msg, true);
+    return network->send_steam(&msg, true);
 }
 
 
@@ -1071,7 +1075,7 @@ void RunCallbacks()
         f->set_appid(settings->get_local_game_id().AppID());
         f->set_lobby_id(settings->get_lobby().ConvertToUint64());
         msg.set_allocated_friend_(f);
-        network->sendToAllIndividuals(&msg, true);
+        network->send_steam(&msg, true, true);
         modified = false;
         last_sent_friends = std::chrono::high_resolution_clock::now();
     }
@@ -1102,7 +1106,7 @@ void Callback(Common_Message *msg)
             f->set_appid(settings->get_local_game_id().AppID());
             f->set_lobby_id(settings->get_lobby().ConvertToUint64());
             msg_.set_allocated_friend_(f);
-            network->sendTo(&msg_, true);
+            network->send_steam(&msg_, true);
         }
     }
 

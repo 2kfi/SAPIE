@@ -21,7 +21,15 @@
 #include <thread>
 
 static const uint64_t kFixedSteamID = 76561197960265728ULL + 4242;
+static const uint64_t kMirrorFriendID = kFixedSteamID + 1;
+static const uint32_t kMirrorAppID = 480;
 static const int kMaxFrameSize = 1024 * 1024;
+
+static uint64_t mirror_lobby_id()
+{
+    return CSteamID(4243, k_EChatInstanceFlagLobby | k_EChatInstanceFlagMMSLobby,
+                    k_EUniversePublic, k_EAccountTypeChat).ConvertToUint64();
+}
 
 static bool read_exact(int fd, char *data, size_t length)
 {
@@ -92,9 +100,10 @@ struct StubServer {
     std::atomic<int> connections{0};
     std::atomic<bool> stop{false};
     bool reject;
+    bool mirror;
     std::thread worker;
 
-    explicit StubServer(bool reject_) : reject(reject_)
+    StubServer(bool reject_, bool mirror_) : reject(reject_), mirror(mirror_)
     {
         listen_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (listen_fd < 0) {
@@ -147,12 +156,43 @@ struct StubServer {
             login_response->set_steam_id(reject ? 0 : kFixedSteamID);
             login_response->set_persona_name(reject ? "" : "SmokeTester");
             login_response->set_session_token(reject ? "" : "token");
+            if (mirror) {
+                sapie::FriendSnapshot *buddy = login_response->add_friends();
+                buddy->set_steam_id(kMirrorFriendID);
+                buddy->set_persona_name("MirrorBuddy");
+                buddy->set_appid(kMirrorAppID);
+                buddy->set_lobby_id(mirror_lobby_id());
+                (*buddy->mutable_rich_presence())["sapie_persona_state"] = "2";
+                (*buddy->mutable_rich_presence())["map"] = "de_dust";
+            }
             if (!write_frame(fd, response)) {
                 close(fd);
                 continue;
             }
 
-            while (!stop && wait_readable(fd, 100)) {
+            if (mirror) {
+                sapie::Frame push;
+                Common_Message *steam = push.mutable_steam();
+                steam->set_source_id(kMirrorFriendID);
+                Lobby *lobby = steam->mutable_lobby();
+                lobby->set_room_id(mirror_lobby_id());
+                lobby->set_owner(kMirrorFriendID);
+                lobby->set_appid(kMirrorAppID);
+                lobby->set_member_limit(4);
+                lobby->set_type(k_ELobbyTypePublic);
+                lobby->set_joinable(true);
+                (*lobby->mutable_values())["name"] = "Mirror Lobby";
+                Lobby_Member *member = lobby->add_members();
+                member->set_id(kMirrorFriendID);
+                (*member->mutable_values())["role"] = "captain";
+                if (!write_frame(fd, push)) {
+                    close(fd);
+                    continue;
+                }
+            }
+
+            while (!stop) {
+                if (!wait_readable(fd, 50)) continue;
                 sapie::Frame inbound;
                 if (!read_frame(fd, inbound)) break;
                 if (inbound.has_ping()) {
@@ -170,7 +210,8 @@ int main(int argc, char **argv)
 {
     std::string mode = argc > 1 ? argv[1] : "";
     bool reject = mode == "--reject";
-    bool expect_login = mode.empty() || reject;
+    bool mirror = mode == "--mirror";
+    bool expect_login = mode.empty() || reject || mirror;
     bool fallback = mode == "--fallback";
 
     char temp_pattern[] = "/tmp/sapie-w1a-smoke-XXXXXX";
@@ -185,7 +226,9 @@ int main(int argc, char **argv)
     setenv("SteamAppPath", temp_dir, 1);
     setenv("XDG_DATA_HOME", (std::string(temp_dir) + "/data").c_str(), 1);
 
-    StubServer server(reject);
+    if (mirror) setenv("SteamAppId", "480", 1);
+
+    StubServer server(reject, mirror);
     if (expect_login) {
         std::ofstream config(std::string(temp_dir) + "/steam_settings/sapie_server.txt");
         config << "127.0.0.1:" << server.port << "\n";
@@ -226,6 +269,69 @@ int main(int argc, char **argv)
         if (steam_id != kFixedSteamID) {
             printf("FAIL: expected SteamID %llu, got %llu\n", (unsigned long long)kFixedSteamID, (unsigned long long)steam_id);
             return 1;
+        }
+        if (mirror) {
+            for (int i = 0; i < 10; ++i) {
+                SteamAPI_RunCallbacks();
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+
+            ISteamFriends *friends = SteamFriends();
+            ISteamMatchmaking *matchmaking = SteamMatchmaking();
+            if (!friends || !matchmaking) {
+                printf("FAIL: mirror run has no friends or matchmaking interface\n");
+                return 1;
+            }
+            if (friends->GetFriendCount(k_EFriendFlagImmediate) != 1) {
+                printf("FAIL: mirror run did not load the pushed friend\n");
+                return 1;
+            }
+            CSteamID buddy((uint64)kMirrorFriendID);
+            if (friends->GetFriendByIndex(0, k_EFriendFlagImmediate).ConvertToUint64() != kMirrorFriendID) {
+                printf("FAIL: unexpected friend index 0\n");
+                return 1;
+            }
+            if (std::string(friends->GetFriendPersonaName(buddy)) != "MirrorBuddy") {
+                printf("FAIL: pushed friend name was not mirrored\n");
+                return 1;
+            }
+            if (friends->GetFriendPersonaState(buddy) != k_EPersonaStateBusy) {
+                printf("FAIL: pushed persona state was not mirrored\n");
+                return 1;
+            }
+            FriendGameInfo_t game_info = {};
+            if (!friends->GetFriendGamePlayed(buddy, &game_info)
+                || game_info.m_gameID.AppID() != kMirrorAppID
+                || game_info.m_steamIDLobby.ConvertToUint64() != mirror_lobby_id()) {
+                printf("FAIL: pushed friend game/lobby was not mirrored\n");
+                return 1;
+            }
+            if (std::string(friends->GetFriendRichPresence(buddy, "map")) != "de_dust") {
+                printf("FAIL: pushed friend rich presence was not mirrored\n");
+                return 1;
+            }
+
+            CSteamID lobby((uint64)mirror_lobby_id());
+            if (matchmaking->GetLobbyOwner(lobby).ConvertToUint64() != kMirrorFriendID) {
+                printf("FAIL: pushed lobby owner was not mirrored (got %llu)\n",
+                       (unsigned long long)matchmaking->GetLobbyOwner(lobby).ConvertToUint64());
+                return 1;
+            }
+            if (matchmaking->GetNumLobbyMembers(lobby) != 1
+                || matchmaking->GetLobbyMemberByIndex(lobby, 0).ConvertToUint64() != kMirrorFriendID) {
+                printf("FAIL: pushed lobby members were not mirrored\n");
+                return 1;
+            }
+            if (std::string(matchmaking->GetLobbyData(lobby, "name")) != "Mirror Lobby") {
+                printf("FAIL: pushed lobby data was not mirrored\n");
+                return 1;
+            }
+            if (std::string(matchmaking->GetLobbyMemberData(lobby, buddy, "role")) != "captain") {
+                printf("FAIL: pushed lobby member data was not mirrored\n");
+                return 1;
+            }
+            printf("PASS: mirror run loaded friends and lobby from server pushes\n");
+            return 0;
         }
         printf("PASS: login used server SteamID %llu\n", (unsigned long long)steam_id);
         return 0;
