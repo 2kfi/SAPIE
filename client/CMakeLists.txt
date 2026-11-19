@@ -78,7 +78,7 @@ if(SAPIE_PROTOBUF_ROOT)
   find_package(Protobuf CONFIG QUIET)
 endif()
 if(NOT TARGET protobuf::libprotobuf-lite AND NOT CMAKE_CROSSCOMPILING)
-  find_package(Protobuf QUIET)
+  find_package(Protobuf CONFIG QUIET)
 endif()
 if(WIN32 AND TARGET absl::base)
   # absl's exported target bakes the host's librt path into its interface libs;

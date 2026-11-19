@@ -17,6 +17,7 @@
 
 #include "network.h"
 
+#include "../sapie/local_mirror.h"
 #include "sapie.pb.h"
 
 #if !defined(STEAM_WIN32)
@@ -207,6 +208,11 @@ static bool is_socket_valid(sock_t sock)
     }
 
     return true;
+}
+
+bool Server_Connection::connected() const
+{
+    return logged_in && is_socket_valid(sock);
 }
 
 static bool is_tcp_socket_valid(struct TCP_Socket &socket)
@@ -885,6 +891,8 @@ bool Server_Connection::apply_login(const sapie::LoginResponse &response)
         return false;
     }
 
+    sapie::local_mirror().apply_login(response);
+
     CSteamID assigned_id((uint64)response.steam_id());
     CSteamID previous_id = settings->get_local_steam_id();
     settings->set_steam_id(assigned_id);
@@ -958,6 +966,15 @@ bool Server_Connection::connect_and_login()
     return true;
 }
 
+bool Server_Connection::send_steam(Common_Message *msg)
+{
+    if (!connected()) return false;
+
+    sapie::Frame frame;
+    frame.mutable_steam()->CopyFrom(*msg);
+    return send_sapie_frame(sock, frame);
+}
+
 void Server_Connection::pump()
 {
     auto now = std::chrono::steady_clock::now();
@@ -1027,7 +1044,10 @@ void Server_Connection::pump()
         } else if (frame.has_pong()) {
             last_receive = std::chrono::steady_clock::now();
         } else if (frame.has_steam()) {
-            network->do_callbacks_message(frame.mutable_steam());
+            Common_Message *steam = frame.mutable_steam();
+            steam->set_dest_id(0);
+            sapie::local_mirror().apply_steam_message(steam);
+            network->do_callbacks_message(steam);
         }
     }
 
@@ -1520,6 +1540,16 @@ bool Networking::sendTo(Common_Message *msg, bool reliable, Connection *conn)
 
     reset_last_error();
     return ret;
+}
+
+bool Networking::send_steam(Common_Message *msg, bool reliable, bool all)
+{
+    if (server_connection && server_connection->connected()) {
+        if (all) msg->set_dest_id(0);
+        return server_connection->send_steam(msg);
+    }
+
+    return all ? sendToAllIndividuals(msg, reliable) : sendTo(msg, reliable);
 }
 
 bool Networking::sendToAllIndividuals(Common_Message *msg, bool reliable)

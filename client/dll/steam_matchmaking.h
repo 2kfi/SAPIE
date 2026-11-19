@@ -16,6 +16,7 @@
    <http://www.gnu.org/licenses/>.  */
 
 #include "base.h"
+#include "../sapie/local_mirror.h"
 
 #define SEND_LOBBY_RATE 5.0
 
@@ -75,7 +76,7 @@ public ISteamMatchmaking
     class SteamCallBacks *callbacks;
     class RunEveryRunCB *run_every_runcb;
 
-    std::vector<Lobby> lobbies;
+    std::vector<Lobby> &lobbies;
     std::chrono::high_resolution_clock::time_point last_sent_lobbies;
     std::vector<struct Pending_Joins> pending_joins;
     std::vector<struct Pending_Creates> pending_creates;
@@ -131,7 +132,7 @@ void send_lobby_data()
             Common_Message msg = Common_Message();
             msg.set_source_id(settings->get_local_steam_id().ConvertToUint64());
             msg.set_allocated_lobby(new Lobby(l));
-            network->sendToAllIndividuals(&msg, true);
+            network->send_steam(&msg, true, true);
         }
     }
 }
@@ -159,7 +160,7 @@ void trigger_lobby_dataupdate(CSteamID lobby, CSteamID member, bool success, dou
             Common_Message msg = Common_Message();
             msg.set_source_id(settings->get_local_steam_id().ConvertToUint64());
             msg.set_allocated_lobby(new Lobby(*l));
-            network->sendToAllIndividuals(&msg, true);
+            network->send_steam(&msg, true, true);
         }
     }
 }
@@ -198,7 +199,7 @@ bool send_owner_packet(CSteamID lobby_id, Lobby_Messages *message)
     msg.set_source_id(settings->get_local_steam_id().ConvertToUint64());
     msg.set_dest_id((uint64)lobby->owner());
     msg.mutable_lobby_messages()->set_id(lobby_id.ConvertToUint64());
-    return network->sendTo(&msg, true);
+    return network->send_steam(&msg, true);
 }
 
 bool send_clients_packet(CSteamID lobby_id, Lobby_Messages *message)
@@ -213,7 +214,7 @@ bool send_clients_packet(CSteamID lobby_id, Lobby_Messages *message)
     msg.set_allocated_lobby_messages(message);
     msg.set_source_id(settings->get_local_steam_id().ConvertToUint64());
     msg.mutable_lobby_messages()->set_id(lobby_id.ConvertToUint64());
-    return network->sendToAllIndividuals(&msg, true);
+    return network->send_steam(&msg, true, true);
 }
 
 bool send_lobby_members_packet(CSteamID lobby_id, Lobby_Messages *message)
@@ -231,7 +232,7 @@ bool send_lobby_members_packet(CSteamID lobby_id, Lobby_Messages *message)
 
     for (auto & m : lobby->members()) {
         msg.set_dest_id((uint64)m.id());
-        network->sendTo(&msg, true);
+        network->send_steam(&msg, true);
     }
 
     return true;
@@ -304,6 +305,7 @@ static void steam_matchmaking_run_every_runcb(void *object)
 }
 
 Steam_Matchmaking(class Settings *settings, class Networking *network, class SteamCallResults *callback_results, class SteamCallBacks *callbacks, class RunEveryRunCB *run_every_runcb)
+    : lobbies(sapie::local_mirror().lobbies())
 {
     this->settings = settings;
     this->network = network;
@@ -739,7 +741,7 @@ bool InviteUserToLobby( CSteamID steamIDLobby, CSteamID steamIDInvitee )
     msg.set_allocated_friend_messages(friend_messages);
     msg.set_source_id(settings->get_local_steam_id().ConvertToUint64());
     msg.set_dest_id(steamIDInvitee.ConvertToUint64());
-    return network->sendTo(&msg, true);
+    return network->send_steam(&msg, true);
 }
 
 
@@ -1174,8 +1176,22 @@ CSteamID GetLobbyOwner( CSteamID steamIDLobby )
 bool RequestFriendsLobbies()
 {
     PRINT_DEBUG("RequestFriendsLobbies\n");
-    RequestFriendsLobbiesResponse_t data = {};
-    callbacks->addCBResult(data.k_iCallback, &data, sizeof(data));
+    auto entries = sapie::local_mirror().friend_lobbies();
+
+    if (entries.empty()) {
+        RequestFriendsLobbiesResponse_t data = {};
+        callbacks->addCBResult(data.k_iCallback, &data, sizeof(data));
+        return true;
+    }
+
+    for (size_t i = 0; i < entries.size(); ++i) {
+        RequestFriendsLobbiesResponse_t data = {};
+        data.m_ulSteamIDFriend = entries[i].first;
+        data.m_ulSteamIDLobby = entries[i].second;
+        data.m_cResultIndex = (int)i + 1;
+        data.m_cResultsTotal = (int)entries.size();
+        callbacks->addCBResult(data.k_iCallback, &data, sizeof(data));
+    }
     return true;
 }
 

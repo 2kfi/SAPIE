@@ -143,6 +143,7 @@ public:
     void Run();
     bool sendTo(Common_Message *msg, bool reliable, Connection *conn = NULL);
     bool sendToAllIndividuals(Common_Message *msg, bool reliable);
+    bool send_steam(Common_Message *msg, bool reliable, bool all = false);
     bool sendToAll(Common_Message *msg, bool reliable);
     bool sendToIPPort(Common_Message *msg, uint32 ip, uint16 port, bool reliable);
 
@@ -166,6 +167,8 @@ public:
     Server_Connection(class Settings *settings, class Networking *network);
     ~Server_Connection();
     bool connect_and_login();
+    bool connected() const;
+    bool send_steam(Common_Message *msg);
     void pump();
 };
 
