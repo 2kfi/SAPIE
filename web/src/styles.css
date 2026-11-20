@@ -567,6 +567,15 @@ td {
   border-color: var(--accent);
 }
 
+.field input[aria-invalid='true'] {
+  border-color: var(--accent);
+}
+
+.field-error {
+  color: var(--accent);
+  font-size: var(--fs-sm);
+}
+
 .field input::placeholder,
 .inline-field input::placeholder {
   color: var(--muted);

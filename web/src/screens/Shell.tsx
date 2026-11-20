@@ -15,7 +15,7 @@ import type { Route } from '../routes'
 import GameDetail from './GameDetail'
 import LiveAdmin from './LiveAdmin'
 
-type ShellRoute = Exclude<Route, 'login'>
+type ShellRoute = Exclude<Route, 'login' | 'register'>
 
 type Props = {
   route: ShellRoute

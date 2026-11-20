@@ -1,63 +1,78 @@
-import { useState, type FormEvent } from 'react'
-import { ApiError, login, messageOf, type Session } from '../api'
+import { useEffect, useState, type FormEvent } from 'react'
+import { ApiError, getConfig, login, messageOf, type Session } from '../api'
 import { EyeIcon, EyeOffIcon } from '../components/Icons'
+import type { Route } from '../routes'
 
 type Props = {
   onConnected: (session: Session) => void
+  onNavigate: (route: Route) => void
 }
 
-function validateServer(value: string): string | null {
-  const server = value.trim()
-  const separator = server.indexOf(':')
-  if (separator < 1 || server.indexOf(':', separator + 1) !== -1) {
-    return 'Enter the server as host:port (for example 127.0.0.1:7777).'
-  }
-  const port = Number(server.slice(separator + 1))
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    return 'Port must be a number between 1 and 65535.'
-  }
-  return null
+type FieldErrors = { username?: string; password?: string }
+
+function currentServer(): string {
+  return window.location.host
 }
 
-export default function Login({ onConnected }: Props) {
+export default function Login({ onConnected, onNavigate }: Props) {
   const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
+  const [errors, setErrors] = useState<FieldErrors>({})
+  const [config, setConfig] = useState<{ allowed: boolean | null; error: string | null }>({
+    allowed: null,
+    error: null,
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    getConfig(currentServer())
+      .then((data) => {
+        if (!cancelled) setConfig({ allowed: data?.allow_register === true, error: null })
+      })
+      .catch((reason) => {
+        if (!cancelled) setConfig({ allowed: null, error: messageOf(reason) })
+      })
+    return () => { cancelled = true }
+  }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (busy) return
-    const form = new FormData(event.currentTarget)
-    const server = String(form.get('server') ?? '').trim()
-    const username = String(form.get('username') ?? '').trim()
-    const password = String(form.get('password') ?? '')
+    const values = new FormData(event.currentTarget)
+    const username = String(values.get('username') ?? '').trim()
+    const password = String(values.get('password') ?? '')
 
-    const invalid = validateServer(server)
-    if (invalid) {
-      setNotice({ text: invalid, error: true })
-      return
-    }
-    if (!username) {
-      setNotice({ text: 'Username is required.', error: true })
-      return
-    }
-    if (!password) {
-      setNotice({ text: 'Password is required.', error: true })
+    const nextErrors: FieldErrors = {}
+    if (!username) nextErrors.username = 'Enter your username.'
+    if (!password) nextErrors.password = 'Enter your password.'
+    setErrors(nextErrors)
+    if (nextErrors.username || nextErrors.password) {
+      setNotice({ text: 'Check the highlighted fields.', error: true })
+      document.getElementById(nextErrors.username ? 'username' : 'password')?.focus()
       return
     }
 
     setBusy(true)
     setNotice(null)
+    let signedIn = false
     try {
-      const result = await login(server, username, password)
-      onConnected({ server, username, password, ...result })
+      const result = await login(currentServer(), username, password)
+      signedIn = true
+      setNotice({ text: `Signed in as ${username}.`, error: false })
+      window.setTimeout(() => onConnected({
+        server: currentServer(),
+        username,
+        password,
+        ...result,
+      }), 400)
     } catch (reason) {
       const text = reason instanceof ApiError && reason.status === 401
         ? 'Username or password is incorrect.'
         : messageOf(reason)
       setNotice({ text, error: true })
     } finally {
-      setBusy(false)
+      if (!signedIn) setBusy(false)
     }
   }
 
@@ -70,27 +85,11 @@ export default function Login({ onConnected }: Props) {
           </span>
           <div>
             <h1 id="login-title">Steam API Emulator</h1>
-            <p className="muted">Sign in to a SAPIE server to continue.</p>
+            <p className="muted">Sign in to continue.</p>
           </div>
         </div>
 
-        <form onSubmit={(event) => void handleSubmit(event)}>
-          <div className="field">
-            <label htmlFor="server">Server address</label>
-            <input
-              id="server"
-              name="server"
-              type="text"
-              inputMode="url"
-              autoComplete="off"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              placeholder="host:port"
-              required
-            />
-          </div>
-
+        <form onSubmit={(event) => void handleSubmit(event)} noValidate>
           <div className="field">
             <label htmlFor="username">Username</label>
             <input
@@ -101,8 +100,12 @@ export default function Login({ onConnected }: Props) {
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              required
+              aria-invalid={Boolean(errors.username)}
+              aria-describedby={errors.username ? 'username-error' : undefined}
             />
+            {errors.username && (
+              <p id="username-error" className="field-error" role="alert">{errors.username}</p>
+            )}
           </div>
 
           <div className="field">
@@ -113,7 +116,8 @@ export default function Login({ onConnected }: Props) {
                 name="password"
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
-                required
+                aria-invalid={Boolean(errors.password)}
+                aria-describedby={errors.password ? 'password-error' : undefined}
               />
               <button
                 type="button"
@@ -125,6 +129,9 @@ export default function Login({ onConnected }: Props) {
                 {showPassword ? <EyeOffIcon /> : <EyeIcon />}
               </button>
             </div>
+            {errors.password && (
+              <p id="password-error" className="field-error" role="alert">{errors.password}</p>
+            )}
           </div>
 
           <button type="submit" className="btn btn--primary btn--wide" disabled={busy}>
@@ -133,6 +140,19 @@ export default function Login({ onConnected }: Props) {
         </form>
 
         <div className="login-card__foot">
+          {config.error ? (
+            <p className="field-error" role="alert">
+              Registration availability could not be checked: {config.error}
+            </p>
+          ) : config.allowed === null ? (
+            <p className="muted" role="status">Checking registration availability…</p>
+          ) : config.allowed ? (
+            <button type="button" className="link-button" disabled={busy} onClick={() => onNavigate('register')}>
+              Create an account
+            </button>
+          ) : (
+            <p className="muted">Registration is disabled on this server.</p>
+          )}
           <p role={notice?.error ? 'alert' : 'status'}>{notice?.text}</p>
           <p className="muted">The session token stays in memory for this tab.</p>
         </div>
