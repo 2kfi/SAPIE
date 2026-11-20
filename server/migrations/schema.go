@@ -3,7 +3,12 @@ package migrations
 
 import _ "embed"
 
-// Schema is the idempotent initial migration.
-//
+// Files are applied in order. Every statement is idempotent so old and fresh
+// databases converge on the same schema.
+var Files = []string{schema001, schema002}
+
 //go:embed 001_init.sql
-var Schema string
+var schema001 string
+
+//go:embed 002_social.sql
+var schema002 string

@@ -73,11 +73,11 @@ current game client.
 | --- | --- |
 | `LoginRequest` | Authenticate; reply `LoginResponse` with friends |
 | `ping` | Reply `pong` |
-| `Common_Message{Friend}` | Store own presence, then fan out to friends |
-| `Common_Message{Friend_Messages}` | Record game-invite connect string, then deliver to `dest_id` or all friends |
+| `Common_Message{Friend}` | Store own presence, then fan out to unblocked friends |
+| `Common_Message{Friend_Messages}` | Record game-invite connect string, then deliver to `dest_id` or all friends. Blocked or non-friend accounts are rejected; blocked peers are skipped in broadcast. |
 | `Common_Message{Lobby}`, `{Lobby_Messages}` | Fan out to the lobby's members |
-| `Common_Message{Networking_Sockets}`, `{Networking_Messages}` (signaling) | P2P signaling; allowed only to friends/lobby mates, delivered to `dest_id`. `source_ip`/`source_port` hint stamped on `Networking_Sockets`. |
-| `Common_Message{Networking_Sockets}`, `{Networking_Messages}` with `DATA` | Relay fallback: forwarded to the explicit `dest_id` peer only (friend/lobby gate, no broadcast). See P2P traffic. |
+| `Common_Message{Networking_Sockets}`, `{Networking_Messages}` (signaling) | P2P signaling; allowed only to unblocked friends/lobby mates, delivered to `dest_id`. `source_ip`/`source_port` hint stamped on `Networking_Sockets`. |
+| `Common_Message{Networking_Sockets}`, `{Networking_Messages}` with `DATA` | Relay fallback: forwarded to the explicit `dest_id` peer only (unblocked friend/lobby gate, no broadcast). See P2P traffic. |
 | Other `Common_Message` variants | `source_id` stamped, logged and dropped |
 | `TicketRequest` | Reply `TicketResponse` (see App tickets); not sent by the shipped client |
 | `ContentServerRequest` | Post-login only; reply `ContentServerResponse{ok: true}` as a neutral acknowledgement. No content data is served. |
@@ -91,6 +91,13 @@ Server pushes use `Common_Message` frames: presence is a `Friend` with a
 `Friend_Messages{GAME_INVITE}`, and lobby updates are `Lobby` frames. Login and
 disconnect push presence to friends. The server sends a `ping` every 30 s and
 closes a connection with no frame read for 90 s.
+
+A friend graph change (accept, remove, block or unblock) pushes a snapshot as a
+sequence of existing `Common_Message{Friend}` frames, one per visible friend.
+There is no snapshot message and no new proto field. Blocking hides both
+directions of presence and removes a peer from invite, signaling and relay
+paths while the friendship rows stay in place. Unblocking restores the visible
+graph.
 
 ## Achievements and stats
 
@@ -180,10 +187,11 @@ game and HTTP login. CORS allows only `localhost` and `127.0.0.1` origins over
 The admin API listens on `--admin-listen` (default `127.0.0.1:8080`, loopback).
 The 0.2 web UI listens separately on `--ui-listen` (default `0.0.0.0:8081`) and
 serves the SPA from `--ui-dir` (default `./web/dist`). On 8081 a narrow reverse
-proxy forwards only user routes: `config`, `register`, `login`, `friends`,
-`invite`, `lobbies`, `join` and one's own stats. Admin-only paths such as
-`/api/v1/users` and account CRUD return 404 on 8081 and still work on 8080.
-Because 8081 is plain HTTP on the LAN, session tokens cross it in cleartext.
+proxy forwards only user routes: `config`, `register`, `login`, friends,
+requests, remove, block, blocked list, user search, lobbies, join, sessions and
+one's own stats. Admin-only paths such as `/api/v1/users` and account CRUD return
+404 on 8081 and still work on 8080. Because 8081 is plain HTTP on the LAN,
+session tokens cross it in cleartext.
 
 | Method and path | Auth | Result |
 | --- | --- | --- |
@@ -192,6 +200,17 @@ Because 8081 is plain HTTP on the LAN, session tokens cross it in cleartext.
 | `POST /login` | public | `{session_token, steam_id, persona_name}`; 401 on bad credentials |
 | `GET /friends` | user | `{friends:[{steam_id, persona_name, persona_state, appid, rich_presence, lobby_id, connect_str}]}` |
 | `POST /friends/{steam_id}/invite` | user | 202, pushes `Friend_Messages{GAME_INVITE}` with the body's `connect_str` |
+| `GET /friends/requests` | user | `{incoming:[...], outgoing:[...]}` of pending requests |
+| `POST /friends/requests` | user | 201 `{id, status, created_at}` for `{username, message}`; 30/hour |
+| `POST /friends/requests/{id}/accept`, `POST /friends/requests/{id}/decline` | user | 200 `{status}`; accept writes both friendship directions |
+| `DELETE /friends/requests/{id}` | user | 204, cancels a pending request sent by the caller |
+| `DELETE /friends/{steam_id}` | user | 204, removes both friendship directions and pair invites |
+| `POST /friends/{steam_id}/block`, `DELETE /friends/{steam_id}/block` | user | 204, hides both directions and restores visibility on unblock |
+| `GET /friends/blocked` | user | `{blocked:[{steam_id, persona_name, created_at}]}` |
+| `GET /users/search?q=bo` | user | `{users:[{steam_id, persona_name}]}`; 2 to 64 characters, 30/hour |
+| `POST /logout`, `POST /logout-all` | user | 204, revokes one token or every session for the account |
+| `GET /sessions` | user | `{sessions:[{id, created_at, expires_at, current}]}`; IDs are hash prefixes |
+| `DELETE /sessions/{id}` | user | 204, or 404 for another account's session |
 | `POST /tickets/verify` | admin | 200 `{valid}` for `{ticket, steam_id, appid, number}`; issuance check only |
 | `GET /lobbies` | user or admin | `{lobbies:[{lobby_id, owner, appid, member_limit, type, joinable, members}]}` |
 | `POST /lobbies` | user | 201 `{lobby_id}`; body `{appid,type,member_limit}` |
@@ -207,4 +226,5 @@ its own stats path; any other user returns 401.
 `connect_str` is stored in the inviter's presence and exposed to friends.
 `persona_state` is `1` when the user holds a live game session, `0` otherwise.
 `GET /healthz` is public. All responses omit password hashes and session tokens
-except `POST /login`.
+except `POST /login`. See `docs/API.md` for full request bodies, handler names,
+idempotency rules and error codes.

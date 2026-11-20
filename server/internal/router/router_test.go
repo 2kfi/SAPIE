@@ -27,6 +27,7 @@ type fakeResolver struct {
 	friends     map[uint64][]uint64
 	userLobbies map[uint64][]uint64
 	lobbies     map[uint64][]uint64
+	blocked     map[[2]uint64]bool
 }
 
 func (r fakeResolver) FriendsOf(id uint64) ([]uint64, error) { return r.friends[id], nil }
@@ -34,6 +35,10 @@ func (r fakeResolver) FriendsOf(id uint64) ([]uint64, error) { return r.friends[
 func (r fakeResolver) LobbiesOf(id uint64) ([]uint64, error) { return r.userLobbies[id], nil }
 
 func (r fakeResolver) LobbyMembers(id uint64) ([]uint64, error) { return r.lobbies[id], nil }
+
+func (r fakeResolver) IsBlocked(a, b uint64) (bool, error) {
+	return r.blocked[[2]uint64{a, b}] || r.blocked[[2]uint64{b, a}], nil
+}
 
 func TestRouteOverwritesSourceID(t *testing.T) {
 	r := New(nil)
@@ -244,6 +249,65 @@ func TestRouteP2PDataOfflineDestLogged(t *testing.T) {
 	})
 	if n := strings.Count(out, "route to=2 offline, dropped"); n != 1 {
 		t.Fatalf("offline log count = %d, want 1: %q", n, out)
+	}
+}
+
+func inviteMsg(dest uint64) *protocol.Common_Message {
+	return &protocol.Common_Message{
+		DestId: dest,
+		Messages: &protocol.Common_Message_FriendMessages{FriendMessages: &protocol.Friend_Messages{
+			Type: protocol.Friend_Messages_GAME_INVITE,
+		}},
+	}
+}
+
+func TestRouteInviteAuthorization(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		dest    uint64
+		blocked bool
+		want    int
+	}{
+		{"friend", 2, false, 1},
+		{"stranger", 4, false, 0},
+		{"blocked friend", 2, true, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			peer := &fakePeer{}
+			resolver := p2pResolver()
+			if tc.blocked {
+				resolver.blocked = map[[2]uint64]bool{{1, 2}: true}
+			}
+			r := NewWithResolver(fakeLookup{tc.dest: peer}, resolver)
+			r.Route(1, inviteMsg(tc.dest))
+			if got := len(peer.frames); got != tc.want {
+				t.Fatalf("delivered = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRouteBlockedPeerCannotUseLobbyP2P(t *testing.T) {
+	peer := &fakePeer{}
+	resolver := p2pResolver() // 3 is a lobby mate of 1
+	resolver.blocked = map[[2]uint64]bool{{3, 1}: true}
+	r := NewWithResolver(fakeLookup{3: peer}, resolver)
+	r.Route(1, socketMsg(3, protocol.Networking_Sockets_CONNECTION_REQUEST))
+	if len(peer.frames) != 0 {
+		t.Fatalf("blocked lobby mate received P2P: %d frames", len(peer.frames))
+	}
+}
+
+func TestRouteInviteBroadcastSkipsBlocked(t *testing.T) {
+	friend, blocked := &fakePeer{}, &fakePeer{}
+	resolver := fakeResolver{
+		friends: map[uint64][]uint64{1: {2, 4}},
+		blocked: map[[2]uint64]bool{{1, 4}: true},
+	}
+	r := NewWithResolver(fakeLookup{2: friend, 4: blocked}, resolver)
+	r.Route(1, inviteMsg(0))
+	if len(friend.frames) != 1 || len(blocked.frames) != 0 {
+		t.Fatalf("broadcast friend=%d blocked=%d, want 1/0", len(friend.frames), len(blocked.frames))
 	}
 }
 

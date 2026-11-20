@@ -48,9 +48,11 @@ func Open(path string) (*Store, error) {
 	}
 	// One connection keeps :memory: stable and serialises SQLite writes.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(migrations.Schema); err != nil {
-		db.Close()
-		return nil, err
+	for _, sql := range migrations.Files {
+		if _, err := db.Exec(sql); err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 	// Databases created before M3 lack the lobby member limit column.
 	var columns int
@@ -286,7 +288,11 @@ func (s *Store) AddFriend(a, b uint64) error {
 }
 
 func (s *Store) FriendsOf(steamID uint64) ([]uint64, error) {
-	rows, err := s.db.Query(`SELECT friend_id FROM friendships WHERE steam_id = ? ORDER BY friend_id`, steamID)
+	rows, err := s.db.Query(`SELECT f.friend_id FROM friendships f WHERE f.steam_id = ?
+		AND NOT EXISTS (SELECT 1 FROM blocks b WHERE
+			(b.steam_id = f.steam_id AND b.blocked_id = f.friend_id) OR
+			(b.steam_id = f.friend_id AND b.blocked_id = f.steam_id))
+		ORDER BY f.friend_id`, steamID)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +313,11 @@ func (s *Store) FriendsPresence(steamID uint64) ([]Presence, error) {
 		COALESCE(p.lobby_id, 0), COALESCE(p.rich_presence, X'')
 		FROM friendships f JOIN accounts a ON a.steam_id = f.friend_id
 		LEFT JOIN presence p ON p.steam_id = f.friend_id
-		WHERE f.steam_id = ? ORDER BY f.friend_id`, steamID)
+		WHERE f.steam_id = ?
+		AND NOT EXISTS (SELECT 1 FROM blocks b WHERE
+			(b.steam_id = f.steam_id AND b.blocked_id = f.friend_id) OR
+			(b.steam_id = f.friend_id AND b.blocked_id = f.steam_id))
+		ORDER BY f.friend_id`, steamID)
 	if err != nil {
 		return nil, err
 	}

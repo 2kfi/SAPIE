@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -43,6 +44,7 @@ type Server struct {
 	store         *state.Store
 	token         string
 	limiter       *auth.Limiter
+	social        *socialLimiter
 	notifier      Notifier
 	allowRegister bool
 
@@ -51,7 +53,10 @@ type Server struct {
 }
 
 func New(store *state.Store, token string, limiter *auth.Limiter, notifier Notifier) *Server {
-	return &Server{store: store, token: token, limiter: limiter, notifier: notifier, idem: make(map[string]*idemCall)}
+	return &Server{
+		store: store, token: token, limiter: limiter, social: newSocialLimiter(),
+		notifier: notifier, idem: make(map[string]*idemCall),
+	}
 }
 
 func (s *Server) SetAllowRegister(enabled bool) { s.allowRegister = enabled }
@@ -94,6 +99,34 @@ func (s *Server) idemFinish(key string, call *idemCall, resp cachedResponse) {
 	}
 }
 
+// idempotent caches only successful (status-bearing) responses. A failed call
+// can be retried with the same key.
+func (s *Server) idempotent(key string, w http.ResponseWriter, fn func(http.ResponseWriter) cachedResponse) {
+	if key == "" {
+		fn(w)
+		return
+	}
+	for {
+		call, leader := s.idemStart(key)
+		if !leader {
+			<-call.done
+			if call.response.status != 0 {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(call.response.status)
+				w.Write(call.response.body)
+				return
+			}
+			continue
+		}
+		s.idemFinish(key, call, fn(w))
+		return
+	}
+}
+
+func userIdeKey(steamID uint64, key string) string {
+	return strconv.FormatUint(steamID, 10) + ":" + key
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -106,12 +139,25 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/login", s.login)
 	mux.HandleFunc("GET /api/v1/friends", s.listFriends)
 	mux.HandleFunc("POST /api/v1/friends/{steam_id}/invite", s.inviteFriend)
+	mux.HandleFunc("GET /api/v1/friends/requests", s.listFriendRequests)
+	mux.HandleFunc("POST /api/v1/friends/requests", s.sendFriendRequest)
+	mux.HandleFunc("POST /api/v1/friends/requests/{id}/accept", s.acceptFriendRequest)
+	mux.HandleFunc("POST /api/v1/friends/requests/{id}/decline", s.declineFriendRequest)
+	mux.HandleFunc("DELETE /api/v1/friends/{a}/{b}", s.deleteFriendRoute)
+	mux.HandleFunc("DELETE /api/v1/friends/{steam_id}", s.removeFriend)
+	mux.HandleFunc("POST /api/v1/friends/{steam_id}/block", s.blockFriend)
+	mux.HandleFunc("GET /api/v1/friends/blocked", s.listBlocked)
 	mux.HandleFunc("POST /api/v1/tickets/verify", s.verifyTicket)
 	mux.HandleFunc("GET /api/v1/lobbies", s.listLobbies)
 	mux.HandleFunc("POST /api/v1/lobbies", s.createLobby)
 	mux.HandleFunc("POST /api/v1/lobbies/{lobby_id}/join", s.joinLobby)
 	mux.HandleFunc("GET /api/v1/users", s.listUsers)
+	mux.HandleFunc("GET /api/v1/users/search", s.searchUsers)
 	mux.HandleFunc("GET /api/v1/users/{steam_id}/stats", s.userStats)
+	mux.HandleFunc("POST /api/v1/logout", s.logout)
+	mux.HandleFunc("POST /api/v1/logout-all", s.logoutAll)
+	mux.HandleFunc("GET /api/v1/sessions", s.listSessions)
+	mux.HandleFunc("DELETE /api/v1/sessions/{id}", s.revokeSession)
 	mux.HandleFunc("GET /api/v1/accounts", s.listAccounts)
 	mux.HandleFunc("POST /api/v1/accounts", s.createAccount)
 	mux.HandleFunc("DELETE /api/v1/accounts/{id}", s.deleteAccount)
@@ -217,7 +263,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cannot issue token", http.StatusInternalServerError)
 		return
 	}
-	if err := s.store.CreateSession(account.SteamID, auth.HashToken(token), time.Now().Add(sessionTokenLifetime)); err != nil {
+	now := time.Now()
+	if err := s.store.DeleteExpiredSessionsFor(account.SteamID, now); err != nil {
+		http.Error(w, "cannot clean sessions", http.StatusInternalServerError)
+		return
+	}
+	if err := s.store.CreateSession(account.SteamID, auth.HashToken(token), now.Add(sessionTokenLifetime)); err != nil {
 		http.Error(w, "cannot store session", http.StatusInternalServerError)
 		return
 	}
@@ -415,6 +466,39 @@ func (s *Server) pushLobby(lobbyID uint64) {
 	}
 }
 
+// pushFriendSnapshot sends the current friend list as one Friend frame per
+// friend. The wire contract has no snapshot message, so a reload is a sequence
+// of existing Friend pushes.
+func (s *Server) pushFriendSnapshot(ids ...uint64) {
+	if s.notifier == nil {
+		return
+	}
+	for _, id := range ids {
+		friends, err := s.store.FriendsPresence(id)
+		if err != nil {
+			log.Printf("snapshot for %d: %v", id, err)
+			continue
+		}
+		for _, friend := range friends {
+			presenceState := []byte("0")
+			if s.notifier.IsOnline(friend.SteamID) {
+				presenceState = []byte("1")
+			}
+			friend.RichPresence[state.PersonaStateKey] = presenceState
+			s.notifier.Deliver(id, &protocol.Frame{Payload: &protocol.Frame_Steam{Steam: &protocol.Common_Message{
+				SourceId: friend.SteamID,
+				Messages: &protocol.Common_Message_Friend{Friend: &protocol.Friend{
+					Id:           friend.SteamID,
+					Name:         []byte(friend.PersonaName),
+					Appid:        friend.Appid,
+					LobbyId:      friend.LobbyID,
+					RichPresence: friend.RichPresence,
+				}},
+			}}})
+		}
+	}
+}
+
 func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 	if !s.authorized(w, r) {
 		return
@@ -478,26 +562,9 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 	if !s.authorized(w, r) {
 		return
 	}
-	key := r.Header.Get("Idempotency-Key")
-	if key == "" {
-		s.createAccountNow(w, r)
-		return
-	}
-	for {
-		call, leader := s.idemStart(key)
-		if !leader {
-			<-call.done
-			if call.response.status != 0 {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(call.response.status)
-				w.Write(call.response.body)
-				return
-			}
-			continue
-		}
-		s.idemFinish(key, call, s.createAccountNow(w, r))
-		return
-	}
+	s.idempotent(r.Header.Get("Idempotency-Key"), w, func(w http.ResponseWriter) cachedResponse {
+		return s.createAccountNow(w, r)
+	})
 }
 
 func (s *Server) createAccountNow(w http.ResponseWriter, r *http.Request) cachedResponse {
