@@ -749,16 +749,16 @@ This stage replaces the egui shell. The detection logic and tests move, they are
 #### M20-a Workflow split
 - **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** none.
 - **Scope:** `ci.yml` for push and PR (server, client, launcher, web, rust checks, tests, lint).
-  `release.yml` only for `v*` tags. Remove duplicated full matrices from `build.yml`. Cache Go,
+  `release.yml` only for plain numeric `0.*` tags. Remove duplicated full matrices from `build.yml`. Cache Go,
   Cargo, npm and protobuf.
 - **Acceptance:** a PR runs every check once. A tag runs the release path once. No tag other than
-  `v*` triggers a release.
+  plain numeric `0.*` triggers a release.
 
 #### M20-b Version stamping
 - **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M20-a.
 - **Scope:** derive the version from the tag for server ldflags, `tauri.conf.json`, `package.json`
   and the release notes. Fail the build on a mismatch.
-- **Acceptance:** `v0.4.0` reports 0.4.0 in `sapie-server --version`, the launcher About, and the web
+- **Acceptance:** the plain numeric `0.4` tag stamps 0.4.0 in the launcher About and the web
   footer. No hardcoded 0.1.0 remains.
 
 #### M20-c Launcher build and signing
@@ -895,7 +895,7 @@ This is the checklist of everything 0.4 touches. A phase may not skip an item wi
 #### CI, release and container
 
 - `.github/workflows/ci.yml`: PR and push checks, one matrix, caches.
-- `.github/workflows/release.yml`: `v*` tags only, artifacts, signing, release notes.
+- `.github/workflows/release.yml`: plain numeric `0.*` tags only, artifacts, signing, release notes.
 - Delete or rewrite `.github/workflows/build.yml` to remove duplication.
 - `.github/dependabot.yml`: Go, npm, Cargo, Actions.
 - `tools/release-bundle.sh`: Tauri launcher name, new files, checksums, notices.
