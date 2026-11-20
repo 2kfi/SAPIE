@@ -1,11 +1,11 @@
 # SAPIE UI
 
-One React 18 + TypeScript + Vite SPA in `web/`. The launcher is a native Rust egui/eframe app
-(`sapie-launcher`); it does not embed `web/dist` or run a webview. The Go server hosts the SPA on
-the LAN with `--ui-listen 0.0.0.0:8081` (default) from `--ui-dir ./web/dist`. Port 8081 proxies
-only user API routes; admin paths return 404 there and still work on the loopback admin listener
-at 8080. The views are wired to that API: login, friends, lobbies, live sessions and account
-achievements.
+One React 18 + TypeScript + Vite SPA in `web/`, plus a separate React UI bundled into the Tauri v2
+launcher at `client/src-tauri/ui/`. The launcher does not use `web/dist`. The Go server hosts the
+web SPA on the LAN with `--ui-listen 0.0.0.0:8081` (default) from `--ui-dir ./web/dist`. Port 8081
+proxies only user API routes; admin paths return 404 there and still work on the loopback admin
+listener at 8080. The views are wired to that API: login, friends, lobbies, live sessions and
+account achievements.
 
 The UI is dark only. There is no light theme and no theme toggle. Values shown in the UI come from
 API responses, from the browser session, or they are absent. Game setup, admin credentials and
@@ -75,21 +75,32 @@ The reasoning behind each colour, icon, radius and type choice is in `web/DESIGN
 
 ## Native launcher
 
-`client/src-tauri/` is a native Rust egui/eframe app built as `sapie-launcher`
-(`sapie-launcher.exe` on Windows, with `windows_subsystem`). It has a native file picker, copies
-the matching `steam_api` DLL or shared object, sets `LD_PRELOAD`, detects the Steam interface era,
-unpacks SteamStub executables, writes the connection files and starts the game with SAPIE
-credentials. It stores the server/username/password connection and per-game settings locally.
+`client/src-tauri/` is a Tauri v2 app built as `sapie-launcher` (`sapie-launcher.exe` on Windows,
+with `windows_subsystem`). Its React UI lives in `ui/` and is bundled into the binary. The shell is
+a local game library: sign in, add an executable, review detected arch, era and appid, then press
+Play. It uses native file dialogs, backs up the original library, copies the matching `steam_api`
+file, writes the connection files and starts the game. Game details offer repair library, restore
+original, remove from library, and display per-game arguments and a Linux preload override. Activity
+and settings are reachable from the rail. There are no friends, chat or store screens in the launcher
+in 0.4.
 
-There is no Tauri shell, webview, WebKit, Electron, embedded SPA or localhost page. The browser
-SPA has no Tauri bridge module and makes no native calls. Four Windows DLL variants
-(windows-x86/x64 × legacy/modern) were cross-built and inspected; all export the five new
-`SteamContentServer*` symbols and import no `libwinpthread-1.dll`.
+The launcher calls `POST /api/v1/login` and keeps only the session token in the OS keychain. It
+passes the token to the game through a short-lived 0600 token file with environment fallback; it
+does not persist the account password. The web SPA makes no native calls and has no Tauri bridge.
+
+Four Windows DLL variants (windows-x86/x64 × legacy/modern) were cross-built and inspected; all
+export the five new `SteamContentServer*` symbols and import no `libwinpthread-1.dll`. Native GUI
+click-through was not exercised headless.
 
 ## Build
 
 ```sh
-cd web && npm install && npm run build   # tsc --noEmit + vite build -> web/dist
+cd web && npm install && npm run build        # tsc --noEmit + vite build -> web/dist
 cd web && npx tsc --noEmit
-cd client/src-tauri && cargo check       # needs libxkbcommon/wayland/x11/xi/xrandr/gl1-mesa dev libs on Linux
+cd client/src-tauri && cargo check             # Tauri shell
+cd client/src-tauri/ui && npm ci && npm run build
+cd client/src-tauri/ui && npm test             # Vitest
 ```
+
+The launcher is dark only. `design/DESIGN.md` records the decision; there is no light theme or
+theme toggle on either surface.

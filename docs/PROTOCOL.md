@@ -4,9 +4,10 @@ The game client talks to `cmd/sapie-server` over TCP (default port `47584`, `--p
 binary protobuf protocol, not HTTP; a browser pointed at that port shows a connection reset,
 which is expected. Optional TLS is enabled by passing both `--tls-cert` and `--tls-key`.
 
-0.1 is published and frozen at `62007f5`. 0.2 adds P2P signaling, direct DATA and relay fallback.
-It is tagged `0.2` and published at https://github.com/2kfi/SAPIE/releases/tag/0.2. G0 is deferred
-to the user.
+0.1 is published and frozen at `62007f5`. 0.2 adds P2P signaling, direct DATA and relay fallback and
+is tagged `0.2` at https://github.com/2kfi/SAPIE/releases/tag/0.2. Tag `0.3` exists on a docs-only
+commit. The 0.4 work in this tree is a release candidate with no tag or published release. G0 is
+deferred to the user.
 
 ## Framing
 
@@ -186,23 +187,26 @@ one per frame so a packet is never sent twice:
   even when a direct path would work.
 
 Relaying is rate-limited only by the existing per-session handling; there is no
-dedicated relay rate limit. No live two-client C++↔Go session or real NAT test
-has been run.
+dedicated relay rate limit. A headless two-client C++ to Go session is recorded in
+`docs/verification/0.4-two-client.md`. Real NAT, direct UDP and relay path selection in a game are
+UNVERIFIED.
 
 ## Not supported yet
 
 Tickets can be checked for issuance by an admin but are not redeemed or
 consumed, and no Steam ownership check exists. Tickets are not one-time nor
 bound to a peer. P2P game traffic (direct and relay) ships in 0.2; the old 0.1
-P2P notice is superseded and G0 no longer gates the wording. Live two-client
-verification is still pending.
+P2P notice is superseded and G0 no longer gates the wording. A headless
+two-client C++ to Go session is recorded in `docs/verification/0.4-two-client.md`;
+a real game run is still UNVERIFIED.
 
 Known 0.1 limit, closed in 0.2 code:
 
 - The C++ client's `friends()` and `lobbies()` returned references to internal
   lists rather than copies. In 0.2 they return locked copies, and local lobby
-  mutations write back to the mirror explicitly. No live two-client run has
-  exercised this.
+  mutations write back to the mirror explicitly. The headless two-client run
+  exercised the joined-lobby path; the harness still fails intermittently on a
+  local-mirror timing race.
 
 ## HTTP API
 

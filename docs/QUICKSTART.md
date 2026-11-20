@@ -2,25 +2,25 @@
 
 SAPIE is a non-commercial project for running old Steam games without the Steam client. A Go server
 provides accounts, friends, lobbies and stats; a modified `steam_api` library in the game forwards
-calls to it. The launcher is a native Rust egui/eframe app, and the server also hosts a browser UI on
-the LAN.
+calls to it. The launcher is a Tauri v2 app with a React UI, and the server also hosts a browser UI
+on the LAN.
 
 Friends can play directly with each other, and the server relays traffic when a direct connection is not possible.
 
-This describes the direct P2P path with a server relay fallback. It has not been verified in a live two-client game.
+This describes the direct P2P path with a server relay fallback. A headless two-client C++ to Go
+session is recorded in `docs/verification/0.4-two-client.md`. A real game run and NAT path selection
+are UNVERIFIED.
 
 ## Download
 
-Get a 0.2 archive from the [SAPIE 0.2 release](https://github.com/2kfi/SAPIE/releases/tag/0.2):
+Get the newest release archive from the
+[SAPIE releases page](https://github.com/2kfi/SAPIE/releases). The `0.4` work in this tree is a
+release candidate with no published archive yet.
 
-- `SAPIE-0.2-linux-x64.tar.gz`
-- `SAPIE-0.2-linux-arm64.tar.gz`
-- `SAPIE-0.2-windows-x64.zip`
-
-The frozen 0.1 assets remain at https://github.com/2kfi/SAPIE/releases/tag/0.1. Unpack the archive
-for your operating system: it contains the launcher `sapie` (`sapie.exe` on Windows), the server
-`sapie-server` (`sapie-server.exe` on Windows), `steam_api/<target>-<era>/` libraries, `web/dist/`,
-and this file at the archive root.
+Unpack the archive for your operating system. It contains the launcher `sapie-launcher`
+(`sapie-launcher.exe` on Windows), the server `sapie-server` (`sapie-server.exe` on Windows),
+`steam_api/<target>-<era>/` libraries, `web/dist/`, and this file at the archive root. Older `0.1`
+and `0.2` assets stay on their tags.
 
 ## Start the server
 
@@ -55,22 +55,29 @@ With `--ui-listen` enabled, open `http://<server-host>:8081` in a browser. Login
 
 ## Friends
 
-There is no add-friend endpoint yet. Stop the server and link the two accounts in the database, in
-both directions:
-
-```sh
-sqlite3 sapie.db "INSERT OR IGNORE INTO friendships(steam_id,friend_id) VALUES (<A>,<B>), (<B>,<A>);"
-```
-
-Restart the server afterward. Friends lists, invites, and friend-gated P2P need this row.
+Friend management is in the web UI. Open Friends, enter a username, send a request, and accept an
+incoming one. Accepting writes both friendship directions and pushes a fresh snapshot to the game
+socket. There is no SQLite step. Requests, remove, block and unblock are documented in `docs/API.md`.
 
 ## Game setup
 
-Set `SAPIE_USERNAME` and `SAPIE_PASSWORD` in the environment where the game runs. Without both, the client falls back to Goldberg LAN mode.
+Use the launcher. Sign in to the server, add the game executable, confirm the detected arch, era and
+appid, then press Add to library. The launcher backs up the original library, copies the matching
+`steam_api` file, writes the connection files and starts the game. The connection state is real; the
+launcher calls `POST /api/v1/login` and stores only the session token in the OS keychain. The
+password is never written to disk or to the log.
 
-Put `host:port` in `sapie_server.txt` next to the game executable. For a server on the same machine that is `127.0.0.1:47584`. Put the game's appid in `steam_appid.txt` on its own line. Sample files are in the archive's `samples/` directory (and in `docs/samples/` in the source tree).
+For a manual setup, put `host:port` in `sapie_server.txt` next to the executable (for a local server,
+`127.0.0.1:47584`) and the appid in `steam_appid.txt` on its own line. Sample files are in the
+archive's `samples/` directory and in `docs/samples/` in the source tree. Copy the matching library
+by hand if needed.
 
-Use the native launcher's file picker to copy the matching `steam_api` DLL or shared object next to the game executable, or copy the file there manually. The launcher is an egui/eframe app: no webview, localhost page or terminal window is involved.
+The preferred handoff is a short-lived `steam_settings/sapie_client.json` file (mode 0600 on Unix)
+holding only the session token. When no file exists, the client falls back to `SAPIE_SESSION_TOKEN`,
+then to `SAPIE_USERNAME` and `SAPIE_PASSWORD` for older setups. Without any credential the client
+falls back to Goldberg LAN mode. Environment values are visible to other processes under the same
+OS account and in `/proc` on Linux. The DLL deletes the token file after one read and rejects files
+older than 10 minutes.
 
 ## Steamless
 

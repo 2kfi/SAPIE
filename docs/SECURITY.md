@@ -159,12 +159,13 @@ system-theme following. Do not claim a light theme or a second contrast pass.
 
 ## Docker web UI
 
-Current tree: `Dockerfile` builds only the Go server, exposes 47584 and 8080 and does not copy
-`web/dist`. `compose.yaml` publishes `47584` and `127.0.0.1:8080` and runs the admin listener on
-`:8080` inside the container. Port 8081 is not published today. A separate lane owns the container
-change.
+Current tree: `Dockerfile` builds `web/dist` in a Node stage, copies it to `/app/web/dist`, runs the
+Go server as a non-root user with `--ui-dir /app/web/dist --ui-listen 0.0.0.0:8081`, and exposes
+47584 and 8081. `compose.yaml` publishes `47584`, `127.0.0.1:8080` and `127.0.0.1:8081`, keeps the
+admin listener on `:8080` inside the container, mounts a data volume, and probes 8081 with a
+healthcheck.
 
-Operator guidance for when the UI is containerized:
+Operator guidance:
 
 - Bind the UI listener inside the container to `0.0.0.0:8081` so a published port works. Publish it
   to `127.0.0.1:8081` on the host if a reverse proxy terminates TLS there.
