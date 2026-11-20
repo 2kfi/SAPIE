@@ -135,6 +135,9 @@ int main(int argc, char **argv) {
         return 1;
     }
     SteamAPI_ManualDispatch_Init();
+    // The library runs a background callback thread. Without Shutdown it outlives
+    // main and copies protobuf statics while they are being destroyed.
+    std::atexit([] { SteamAPI_Shutdown(); });
 
     const uint64_t own_id = SteamUser()->GetSteamID().ConvertToUint64();
     const uint64_t peer = strtoull(friend_id.c_str(), nullptr, 10);
