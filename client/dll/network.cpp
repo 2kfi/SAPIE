@@ -1090,27 +1090,17 @@ void Server_Connection::pump()
             last_send = std::chrono::steady_clock::now();
         } else if (frame.has_pong()) {
             last_receive = std::chrono::steady_clock::now();
-        } else if (frame.has_achievement_unlock()) {
-            const auto &unlock = frame.achievement_unlock();
-            if (sapie::local_mirror().apply_achievement_unlock(unlock)) {
-                network->fire_achievement_callbacks(unlock.steam_id(), unlock.def().id());
-            }
         } else if (frame.has_stats_response()) {
             const auto &response = frame.stats_response();
-            bool added = sapie::local_mirror().apply_stats_response(response);
-            if (added) {
-                for (const auto &achievement : response.achievements()) {
-                    if (achievement.achieved()) {
-                        network->fire_achievement_callbacks(response.steam_id(), achievement.name());
-                    }
-                }
+            for (const auto &name : sapie::local_mirror().apply_stats_response(response, network->appid)) {
+                network->fire_achievement_callbacks(response.steam_id(), name);
             }
             network->fire_stats_callbacks(response.steam_id(), sapie::local_mirror().consume_stats_store());
         } else if (frame.has_steam()) {
             Common_Message *steam = frame.mutable_steam();
             steam->set_dest_id(0);
-            sapie::local_mirror().apply_steam_message(steam);
             network->do_callbacks_message(steam);
+            sapie::local_mirror().apply_steam_message(steam);
         }
     }
 

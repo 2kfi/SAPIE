@@ -243,28 +243,6 @@ bool send_stats_get(uint64 steam_id = 0)
     return network->send_frame(frame);
 }
 
-bool send_stats_set()
-{
-    if (!sapie_active()) return false;
-
-    sapie::Frame frame;
-    sapie::StatsSet *set = frame.mutable_stats_set();
-    set->set_appid(appid());
-    uint64 steam_id = settings->get_local_steam_id().ConvertToUint64();
-    for (const auto &name : sorted_achievement_names) {
-        auto it = user_achievements.find(name);
-        if (it == user_achievements.end() || !it->value("earned", false)) continue;
-
-        int64 unlock_time = sapie::local_mirror().achievement_unlock_time(steam_id, name);
-        sapie::AchievementState *state = set->add_achievements();
-        state->set_name(name);
-        state->set_achieved(true);
-        state->set_unlock_time((uint32)unlock_time);
-        state->set_unlock_time_unix(unlock_time);
-    }
-    return network->send_frame(frame);
-}
-
 bool send_achievement_unlock(const std::string &name, nlohmann::json &definition)
 {
     if (!sapie_active()) return false;
@@ -543,7 +521,7 @@ bool GetAchievement( const char *pchName, bool *pbAchieved )
         if (sapie_active()) {
             if (pbAchieved != nullptr) {
                 *pbAchieved = sapie::local_mirror().achievement_unlocked(
-                    settings->get_local_steam_id().ConvertToUint64(), pch_name);
+                    settings->get_local_steam_id().ConvertToUint64(), appid(), pch_name);
             }
             return true;
         }
@@ -573,9 +551,9 @@ bool SetAchievement( const char *pchName )
 
         if (sapie_active()) {
             if (user_achievements.find(pch_name) == user_achievements.end() || !user_achievements[pch_name].value("earned", false)) {
+                if (!send_achievement_unlock(pch_name, it.value())) return false;
                 user_achievements[pch_name]["earned"] = true;
                 user_achievements[pch_name]["earned_time"] = static_cast<uint32>(0);
-                if (!send_achievement_unlock(pch_name, it.value())) return false;
                 send_stats_get();
             }
             return true;
@@ -637,7 +615,7 @@ bool GetAchievementAndUnlockTime( const char *pchName, bool *pbAchieved, uint32 
 
         if (sapie_active()) {
             int64 unlock_time = sapie::local_mirror().achievement_unlock_time(
-                settings->get_local_steam_id().ConvertToUint64(), pch_name);
+                settings->get_local_steam_id().ConvertToUint64(), appid(), pch_name);
             if (pbAchieved != nullptr) *pbAchieved = unlock_time > 0;
             if (punUnlockTime != nullptr) *punUnlockTime = unlock_time > 0 ? (uint32)unlock_time : 0;
             return true;
@@ -671,7 +649,7 @@ bool StoreStats()
 
     if (sapie_active()) {
         sapie::local_mirror().note_stats_store();
-        if (!send_stats_set() || !send_stats_get()) {
+        if (!send_stats_get()) {
             sapie::local_mirror().consume_stats_store();
             return false;
         }
@@ -885,7 +863,7 @@ bool GetUserAchievement( CSteamID steamIDUser, const char *pchName, bool *pbAchi
         if (it == defined_achievements.end()) return false;
         if (pbAchieved != nullptr) {
             *pbAchieved = sapie::local_mirror().achievement_unlocked(
-                steamIDUser.ConvertToUint64(), it->value("name", std::string()));
+                steamIDUser.ConvertToUint64(), appid(), it->value("name", std::string()));
         }
         return true;
     }
@@ -908,7 +886,7 @@ bool GetUserAchievementAndUnlockTime( CSteamID steamIDUser, const char *pchName,
         auto it = defined_achievements_find(pchName);
         if (it == defined_achievements.end()) return false;
         int64 unlock_time = sapie::local_mirror().achievement_unlock_time(
-            steamIDUser.ConvertToUint64(), it->value("name", std::string()));
+            steamIDUser.ConvertToUint64(), appid(), it->value("name", std::string()));
         if (pbAchieved != nullptr) *pbAchieved = unlock_time > 0;
         if (punUnlockTime != nullptr) *punUnlockTime = unlock_time > 0 ? (uint32)unlock_time : 0;
         return true;
