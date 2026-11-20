@@ -5,13 +5,20 @@ use crate::detection::{
 use crate::error::{CommandError, ErrorKind, Result};
 use crate::state::GameRecord;
 use serde::Serialize;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const GAME_PROTOCOL_PORT: u16 = 47584;
 const BACKUP_SUFFIX: &str = ".sapie-original.bak";
 const DLL_NAMES: [&str; 3] = ["steam_api.dll", "steam_api64.dll", "libsteam_api.so"];
+const TOKEN_FILE_NAME: &str = "sapie_client.json";
+
+#[derive(Serialize)]
+struct TokenFile<'a> {
+    session_token: &'a str,
+}
 
 type Progress<'a> = Option<&'a dyn Fn(&str, &str)>;
 
@@ -458,7 +465,39 @@ pub fn unpack_steamstub(path: &str, progress: Progress<'_>) -> Result<Option<Str
     ))
 }
 
-pub fn launch(path: &str, record: &GameRecord, username: Option<&str>, token: &str) -> Result<u32> {
+fn write_launch_token(dir: &Path, token: &str) -> Result<PathBuf> {
+    let settings = scoped(dir, "steam_settings")?;
+    fs::create_dir_all(&settings)?;
+    let path = scoped(&settings, TOKEN_FILE_NAME)?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+    let content = serde_json::to_string(&TokenFile {
+        session_token: token,
+    })?;
+    #[cfg(unix)]
+    let file = {
+        use std::os::unix::fs::OpenOptionsExt;
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)?
+    };
+    #[cfg(not(unix))]
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)?;
+    let mut file = file;
+    if let Err(error) = file.write_all(content.as_bytes()) {
+        let _ = fs::remove_file(&path);
+        return Err(error.into());
+    }
+    Ok(path)
+}
+
+pub fn launch(path: &str, record: &GameRecord, token: &str) -> Result<u32> {
     let (exe, dir) = canonical_game(path)?;
     if !record.configured {
         return Err(CommandError::new(
@@ -466,19 +505,22 @@ pub fn launch(path: &str, record: &GameRecord, username: Option<&str>, token: &s
             "Configure this game before launching it.",
         ));
     }
+    if token.is_empty() {
+        return Err(CommandError::new(
+            ErrorKind::TokenExpired,
+            "The session has ended. Sign in again.",
+        ));
+    }
+    let token_path = write_launch_token(&dir, token)?;
     let mut command = Command::new(&exe);
     command.current_dir(&dir).args(&record.launch_args);
-    // The current DLL still reads credentials from the environment. M16-a replaces this
-    // with the token handoff; until then the token is never written to a file.
-    command
-        .env("SAPIE_USERNAME", username.unwrap_or(""))
-        .env("SAPIE_SESSION_TOKEN", token);
     if std::env::consts::OS == "linux" {
         if let Some(lib) = &record.ld_preload {
             command.env("LD_PRELOAD", lib);
         }
     }
     let child = command.spawn().map_err(|e| {
+        let _ = fs::remove_file(&token_path);
         CommandError::new(ErrorKind::Process, format!("Could not start the game: {e}"))
     })?;
     Ok(child.id())
@@ -497,6 +539,29 @@ mod tests {
 
     const ORIGINAL: &[u8] = b"SteamUser019\0SteamClient017\0";
     const FOREIGN: &[u8] = b"someone-elses-backup SteamUser016\0";
+
+    #[test]
+    fn token_file_is_private_and_contains_only_the_token() {
+        let dir = temp_dir("token-file");
+        let path = dir.join("steam_settings").join(TOKEN_FILE_NAME);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "stale").unwrap();
+
+        let token = "t".repeat(43);
+        let written = write_launch_token(&dir, &token).unwrap();
+        assert_eq!(written, path);
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&written).unwrap()).unwrap();
+        let object = value.as_object().unwrap();
+        assert_eq!(object.len(), 1);
+        assert_eq!(object["session_token"], token);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            assert_eq!(fs::metadata(&written).unwrap().mode() & 0o777, 0o600);
+        }
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn fake_exe(dir: &Path, name: &str) -> PathBuf {
         let mut pe = vec![0u8; 0x100];

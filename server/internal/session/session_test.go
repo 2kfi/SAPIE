@@ -96,6 +96,83 @@ func TestLoginHandshake(t *testing.T) {
 	}
 }
 
+func TestGameLoginWithSessionToken(t *testing.T) {
+	const validToken = "m16-valid-session-token"
+	cases := []struct {
+		name       string
+		token      string
+		expires    time.Duration
+		wantOK     bool
+		withStored bool
+	}{
+		{name: "valid token", token: validToken, expires: time.Hour, wantOK: true, withStored: true},
+		{name: "wrong token", token: "m16-wrong-token", withStored: true},
+		{name: "expired token", token: validToken, expires: -time.Hour, withStored: true},
+		{name: "no token or password"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := state.Open(":memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			hash, err := auth.HashPassword("pw")
+			if err != nil {
+				t.Fatal(err)
+			}
+			id, err := store.CreateAccount("alice", hash, "Alice")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.withStored {
+				if err := store.CreateSession(id, auth.HashToken(validToken), time.Now().Add(tc.expires)); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			srv := New(store, auth.NewLimiter(nil))
+			go srv.Serve(ctx, ln)
+
+			c, err := net.Dial("tcp", ln.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			login := &protocol.LoginRequest{Username: "alice"}
+			if tc.name == "valid token" {
+				// The token must bind identity even when the username is wrong.
+				login.Username = "not-alice"
+				login.Password = "wrong"
+			}
+			if tc.token != "" {
+				login.SessionToken = tc.token
+			}
+			if err := protocol.WriteFrame(c, &protocol.Frame{Payload: &protocol.Frame_Login{Login: login}}); err != nil {
+				t.Fatal(err)
+			}
+			response := readLoginResponse(t, c)
+			if tc.wantOK {
+				if response.Status != protocol.LoginResponse_OK || response.SteamId != id ||
+					string(response.PersonaName) != "Alice" || len(response.SessionToken) == 0 {
+					t.Fatalf("bad token login response: %v", response)
+				}
+				if peer, ok := srv.PeerFor(id); !ok || peer == nil {
+					t.Fatal("token-authenticated session not registered")
+				}
+			} else if response.Status != protocol.LoginResponse_BAD_CREDENTIALS {
+				t.Fatalf("status = %v, want BAD_CREDENTIALS", response.Status)
+			}
+		})
+	}
+}
+
 func TestTicketRequest(t *testing.T) {
 	store, err := state.Open(":memory:")
 	if err != nil {

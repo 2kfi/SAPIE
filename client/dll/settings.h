@@ -174,7 +174,7 @@ public:
     bool sapie_enabled = false;
     std::string sapie_host;
     uint16 sapie_port = 0;
-    std::string sapie_username, sapie_password;
+    std::string sapie_username, sapie_password, sapie_session_token;
 };
 
 #endif

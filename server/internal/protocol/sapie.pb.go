@@ -158,6 +158,7 @@ type LoginRequest struct {
 	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
 	Appid         uint32                 `protobuf:"varint,3,opt,name=appid,proto3" json:"appid,omitempty"`
 	ClientVersion string                 `protobuf:"bytes,4,opt,name=client_version,json=clientVersion,proto3" json:"client_version,omitempty"`
+	SessionToken  string                 `protobuf:"bytes,5,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -216,6 +217,13 @@ func (x *LoginRequest) GetAppid() uint32 {
 func (x *LoginRequest) GetClientVersion() string {
 	if x != nil {
 		return x.ClientVersion
+	}
+	return ""
+}
+
+func (x *LoginRequest) GetSessionToken() string {
+	if x != nil {
+		return x.SessionToken
 	}
 	return ""
 }
@@ -1059,12 +1067,13 @@ const file_sapie_proto_rawDesc = "" +
 	"\rrich_presence\x18\x05 \x03(\v2'.sapie.FriendSnapshot.RichPresenceEntryR\frichPresence\x1a?\n" +
 	"\x11RichPresenceEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"\x83\x01\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"\xa8\x01\n" +
 	"\fLoginRequest\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x14\n" +
 	"\x05appid\x18\x03 \x01(\rR\x05appid\x12%\n" +
-	"\x0eclient_version\x18\x04 \x01(\tR\rclientVersion\"\xb2\x02\n" +
+	"\x0eclient_version\x18\x04 \x01(\tR\rclientVersion\x12#\n" +
+	"\rsession_token\x18\x05 \x01(\tR\fsessionToken\"\xb2\x02\n" +
 	"\rLoginResponse\x123\n" +
 	"\x06status\x18\x01 \x01(\x0e2\x1b.sapie.LoginResponse.StatusR\x06status\x12\x19\n" +
 	"\bsteam_id\x18\x02 \x01(\x04R\asteamId\x12!\n" +

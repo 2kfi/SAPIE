@@ -137,11 +137,28 @@ func (s *Server) handle(conn net.Conn) {
 		s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil, nil)
 		return
 	}
-	account, err := s.store.AccountByUsername(login.Login.GetUsername())
-	if err != nil || !auth.VerifyPassword(account.PasswordHash, login.Login.GetPassword()) {
-		s.limiter.RecordFailure(ip)
-		s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil, nil)
-		return
+	var account *state.AuthAccount
+	if token := login.Login.GetSessionToken(); token != "" {
+		steamID, err := s.store.ResolveSession(auth.HashToken(token))
+		if err != nil {
+			s.limiter.RecordFailure(ip)
+			s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil, nil)
+			return
+		}
+		stored, err := s.store.AccountBySteamID(steamID)
+		if err != nil {
+			s.limiter.RecordFailure(ip)
+			s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil, nil)
+			return
+		}
+		account = &state.AuthAccount{Account: stored}
+	} else {
+		account, err = s.store.AccountByUsername(login.Login.GetUsername())
+		if err != nil || !auth.VerifyPassword(account.PasswordHash, login.Login.GetPassword()) {
+			s.limiter.RecordFailure(ip)
+			s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil, nil)
+			return
+		}
 	}
 
 	token, err := auth.NewToken()

@@ -1,7 +1,6 @@
 # SAPIE 0.4 LAN security
 
-This file describes what the code in this tree does at commit `3362471`. It is documentation only.
-It adds no code, TLS, token file or container changes. Those are separate work lanes. A requirement
+This file describes the shipping code paths in this tree. It is documentation only. A requirement
 that is not yet implemented is labeled as such.
 
 ## Listeners and what can reach them
@@ -129,13 +128,17 @@ command returns the token over Tauri IPC to the UI by the command contract (`Ses
 `client/src-tauri/ui/src/api.ts`). That crossing into UI memory is an accepted 0.4 boundary, not a
 disk write.
 
-Game handoff status: `launch_game` passes `SAPIE_USERNAME` and `SAPIE_SESSION_TOKEN` to the game and
-never passes a password env var (`client/src-tauri/src/game.rs`, `launch`). The values are still
-visible to other processes under the same OS account and in `/proc` on Linux. The DLL parser still
-reads `SAPIE_USERNAME` and `SAPIE_PASSWORD` from the environment
-(`client/dll/settings_parser.cpp:119`) and does not consume the token yet. M16 token consumption and
-the short-lived per-launch token file `sapie_client.json`, mode `0600`, remain future work and are
-not implemented in this tree.
+Game handoff status: `launch_game` writes `steam_settings/sapie_client.json` mode `0600` on Unix
+immediately before spawn and passes no credential env vars (`client/src-tauri/src/game.rs`). The
+file holds only `session_token`; the launcher removes it if spawn fails. Windows has no explicit
+ACL change, so the file inherits the game directory's default ACL. The DLL reads the file once,
+removes it after the read attempt, rejects files older than 10 minutes, and sends the token in
+`LoginRequest.session_token` (`client/dll/settings_parser.cpp`, `client/dll/network.cpp`). The
+server resolves the token hash against unexpired sessions (`server/internal/session/session.go`).
+When no token file exists, the DLL falls back to `SAPIE_SESSION_TOKEN`, then to
+`SAPIE_USERNAME`/`SAPIE_PASSWORD` for compatibility. Env values remain visible under the same OS
+account and in `/proc` on Linux; no password is read from the token file, and neither credential is
+logged.
 
 ## Webview boundary
 
