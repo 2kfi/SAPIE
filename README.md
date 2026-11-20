@@ -1,69 +1,65 @@
 # SAPIE
 
-SAPIE runs old Steam games without the Steam client. A Go server emulates Steam's
-account, friend, lobby and stats services; a forked Goldberg emulator DLL forwards
-Steam API calls to it; a Tauri launcher and the server's web UI share one React app.
+**Old games. No Steam client. Your own server.**
 
-## Status
+SAPIE is a self-hosted Steam API replacement for the games you already own. A Go
+server answers the calls those games make, a forked Goldberg DLL forwards them
+from inside the game, and one React UI runs in both the launcher and the server
+web view.
 
-Release `0.1` contains M1–M4: server-assigned SteamIDs, friends and presence,
-game invites and connect strings, lobbies, and achievements/stats. The full build
-and acceptance suite is green. A live two-client session against a real game has
-**not** been run yet, so treat this as an early release.
+## Why
 
-Peer-to-peer play is not available in this version.
+Some old games still play fine. Their launcher does not. SAPIE gives those games
+the small set of Steam services they actually ask for: identity, friends, lobbies
+and achievements. You host it. You keep the saves and the unlock times.
 
-## Quick start
+## What 0.1 does
 
-- Download the archive for your OS from the `0.1` Release and read
-  [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
-- Or run the server from source with Docker:
+- Issues SteamIDs from your own account list, not from Steam.
+- Shows friends online or offline and carries invites with a real connect string.
+- Creates and joins lobbies that both clients and the web UI can see.
+- Unlocks achievements once, keeps the first unlock time, and shows it to admins.
+- Ships one UI for the launcher and the server.
 
-  ```sh
-  SAPIE_ADMIN_TOKEN=<your-token> docker compose up --build
-  ```
+## The fine print
 
-The game protocol listens on TCP `47584`. The admin API binds to `127.0.0.1:8080`
-by default; Compose publishes it on host loopback only.
+- Peer-to-peer play is not available in this version.
+- Non-commercial, for gamers by gamers.
+- CI is green across all targets, but no live two-client game run has been done yet.
+- Steamless stays an unmodified Windows-only sidecar under its own NOTICE.
 
-## What works
+## Start in a minute
 
-- Login with server-issued SteamIDs and an admin-managed account list.
-- Friend list with online/offline presence and game invites carrying a connect string.
-- Lobby create/list/join, shared by both clients and visible in the web UI.
-- Achievement unlocks pushed to friends and visible to admins with a canonical unlock time.
-- One React UI served by the launcher and available in the server web view.
+```sh
+SAPIE_ADMIN_TOKEN=<your-token> docker compose up --build
+```
 
-## What does not
+The game protocol listens on TCP `47584`. The admin API stays on host loopback at
+`127.0.0.1:8080`. For the release archives and game-side config, read
+[`docs/QUICKSTART.md`](docs/QUICKSTART.md).
 
-- No P2P game-traffic relay. No `?state=` UI hooks or fabricated online states.
-- Steamless is an unmodified Windows-only sidecar shipped under its own NOTICE.
-- Older interface-era DLLs are supported, but real-game verification is still pending.
+## Layout
 
-## Repository layout
-
-- `proto/` — canonical wire contract (`net.proto` from Goldberg, `sapie.proto` envelope)
-- `client/` — Goldberg fork, 10 DLL/SO build targets, and the Tauri launcher
+- `proto/` — canonical wire contract
+- `client/` — Goldberg fork, 10 DLL/SO targets, Tauri launcher
 - `server/` — Go server and pure-Go SQLite store
 - `web/` — shared React UI
-- `tools/` — harness, proto-sync check and release bundle script
+- `tools/` — harness, proto-sync check, release bundler
 - `docs/` — build, protocol and quickstart guides
 
 ## Branches
 
-- `dev-client` — default integration branch
-- `dev-server` — synced copy of the same tree
-- `main-client`, `main-server` — release mirrors, currently at `0.1`
+`dev-client` is the default integration branch. `dev-server` mirrors it.
+`main-client` and `main-server` are the release mirrors, currently at `0.1`.
 
 ## Build
 
-See [`docs/BUILD.md`](docs/BUILD.md). The server needs Go 1.26; the web app needs
-Node 20; the launcher needs Rust and the Tauri system dependencies. CI builds the
-client, launcher and server for each tag, assembles OS archives and publishes the
-server image to `ghcr.io/2kfi/sapie-server:<tag>`.
+See [`docs/BUILD.md`](docs/BUILD.md). Server: Go 1.26. Web: Node 20. Launcher:
+Rust plus Tauri system libraries. Every tag builds client, launcher and server,
+assembles OS archives, and pushes `ghcr.io/2kfi/sapie-server:<tag>`.
 
 ## License
 
-The client fork is based on the Goldberg Emulator (LGPLv3). See `LICENSE`.
-Steamless is included as an unmodified sidecar under
+Client fork based on the Goldberg Emulator (LGPLv3). See `LICENSE`.
+Steamless is included unmodified under
 `client/src-tauri/resources/steamless/NOTICE.md`.
