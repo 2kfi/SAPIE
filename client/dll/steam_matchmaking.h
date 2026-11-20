@@ -673,7 +673,7 @@ SteamAPICall_t JoinLobby( CSteamID steamIDLobby )
 
     Lobby_Messages *message = new Lobby_Messages();
     message->set_type(Lobby_Messages::JOIN);
-    pending_join.message_sent = send_owner_packet(steamIDLobby, message);
+    pending_joins.back().message_sent = send_owner_packet(steamIDLobby, message);
 
     return pending_join.api_id;
 }
@@ -1408,7 +1408,8 @@ void Callback(Common_Message *msg)
 {
     if (msg->has_lobby()) {
         PRINT_DEBUG("GOT A LOBBY appid: %lu\n", msg->lobby().appid());
-        if (msg->lobby().owner() != settings->get_local_steam_id().ConvertToUint64() && msg->lobby().appid() == settings->get_local_game_id().AppID()) {
+        // The server also echoes lobbies we own; those carry the authoritative roster.
+        if (msg->lobby().appid() == settings->get_local_game_id().AppID()) {
             Lobby *lobby = get_lobby((uint64)msg->lobby().room_id());
             if (!lobby) {
                 size_t old_size = lobbies.size();
@@ -1487,6 +1488,7 @@ void Callback(Common_Message *msg)
                     }
 
                     *lobby = msg->lobby();
+                    sapie::local_mirror().upsert_lobby(*lobby);
                 }
             }
         }
@@ -1503,6 +1505,7 @@ void Callback(Common_Message *msg)
                     PRINT_DEBUG("LOBBY MESSAGE: JOIN\n");
                     if (enter_lobby(lobby, (uint64)msg->source_id())) {
                         trigger_lobby_member_join_leave((uint64)lobby->room_id(), (uint64)msg->source_id(), false, true, 0.01);
+                        sapie::local_mirror().upsert_lobby(*lobby);
                     }
                 }
 
@@ -1521,6 +1524,7 @@ void Callback(Common_Message *msg)
                         }
 
                         trigger_lobby_dataupdate((uint64)lobby->room_id(), (uint64)member->id(), true);
+                        sapie::local_mirror().upsert_lobby(*lobby);
                     }
                 }
             }
@@ -1528,12 +1532,14 @@ void Callback(Common_Message *msg)
             if (msg->lobby_messages().type() == Lobby_Messages::LEAVE) {
                 PRINT_DEBUG("LOBBY MESSAGE: LEAVE %llu\n", msg->source_id());
                 leave_lobby(lobby, (uint64)msg->source_id());
+                sapie::local_mirror().upsert_lobby(*lobby);
                 if (we_are_in_lobby) trigger_lobby_member_join_leave((uint64)lobby->room_id(), (uint64)msg->source_id(), true, true, 0.2);
             }
 
             if (msg->lobby_messages().type() == Lobby_Messages::CHANGE_OWNER) {
                 PRINT_DEBUG("LOBBY MESSAGE: CHANGE OWNER\n");
                 lobby->set_owner(msg->lobby_messages().idata());
+                sapie::local_mirror().upsert_lobby(*lobby);
                 if (we_are_in_lobby) trigger_lobby_dataupdate((uint64)lobby->room_id(), (uint64)lobby->room_id(), true);
             }
 

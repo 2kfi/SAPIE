@@ -104,6 +104,7 @@ struct StubServer {
     std::atomic<bool> got_achievement_unlock{false};
     std::atomic<bool> got_stats_set{false};
     std::atomic<bool> got_stats_get{false};
+    std::atomic<int> join_messages{0};
     std::atomic<bool> stop{false};
     bool reject;
     bool mirror;
@@ -300,7 +301,28 @@ struct StubServer {
                         member_join->set_type(Lobby_Messages::JOIN);
                         member_join->set_id(mirror_lobby_id());
                         if (!write_frame(fd, member_join_push)) break;
+
+                        sapie::Frame owner_change_push;
+                        Common_Message *owner_steam = owner_change_push.mutable_steam();
+                        owner_steam->set_source_id(kMirrorFriendID);
+                        Lobby_Messages *owner_change = owner_steam->mutable_lobby_messages();
+                        owner_change->set_type(Lobby_Messages::CHANGE_OWNER);
+                        owner_change->set_id(mirror_lobby_id());
+                        owner_change->set_idata(kMirrorFriendID);
+                        if (!write_frame(fd, owner_change_push)) break;
+
+                        sapie::Frame leave_push;
+                        Common_Message *leave_steam = leave_push.mutable_steam();
+                        leave_steam->set_source_id(kMirrorJoiningID);
+                        Lobby_Messages *leave = leave_steam->mutable_lobby_messages();
+                        leave->set_type(Lobby_Messages::LEAVE);
+                        leave->set_id(mirror_lobby_id());
+                        if (!write_frame(fd, leave_push)) break;
                     }
+                } else if (inbound.has_steam() && inbound.steam().has_lobby_messages()
+                           && inbound.steam().lobby_messages().type() == Lobby_Messages::JOIN
+                           && inbound.steam().lobby_messages().id() == mirror_lobby_id()) {
+                    ++join_messages;
                 }
             }
             close(fd);
@@ -532,6 +554,17 @@ int main(int argc, char **argv)
                 printf("FAIL: missing Steam callbacks (lobby_enter=%d member_join=%d achievement=%d stored=%d received=%d)\n",
                        (int)got_lobby_enter_cb, (int)got_member_join_cb, (int)got_achievement_cb,
                        (int)got_stats_stored_cb, (int)got_stats_received_cb);
+                return 1;
+            }
+            if (server.join_messages.load() != 1) {
+                printf("FAIL: expected one JOIN for lobby %llu, got %d\n",
+                       (unsigned long long)mirror_lobby_id(), server.join_messages.load());
+                return 1;
+            }
+            if (matchmaking->GetLobbyOwner(lobby).ConvertToUint64() != kMirrorFriendID
+                || matchmaking->GetNumLobbyMembers(lobby) != 1
+                || matchmaking->GetLobbyMemberByIndex(lobby, 0).ConvertToUint64() != kFixedSteamID) {
+                printf("FAIL: inbound owner change / leave did not update the lobby copy\n");
                 return 1;
             }
 
