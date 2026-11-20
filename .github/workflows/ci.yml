@@ -117,15 +117,30 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: rustfmt, clippy
       - name: Native GUI dependencies
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libxrandr-dev libgl1-mesa-dev
       - name: Cargo check
-        run: cargo check --manifest-path client/src-tauri/Cargo.toml
+        run: cd client/src-tauri && cargo check
       - name: Cargo test
-        run: cargo test --manifest-path client/src-tauri/Cargo.toml
+        run: cd client/src-tauri && cargo test
       - name: Rust formatting
-        run: cargo fmt --check --manifest-path client/src-tauri/Cargo.toml
+        run: cd client/src-tauri && cargo fmt --check
+      - name: Cargo clippy
+        run: cd client/src-tauri && cargo clippy --all-targets -- -D warnings
+
+  launcher-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build launcher UI
+        run: cd client/src-tauri/ui && npm ci && npm run build
+      - name: Launcher UI tests
+        # No test script exists in the launcher UI yet; --if-present avoids a fake suite.
+        run: cd client/src-tauri/ui && npm test --if-present
 
   web:
     runs-on: ubuntu-latest
@@ -136,3 +151,5 @@ jobs:
           node-version: '20'
       - name: Build web UI
         run: cd web && npm ci && npm run build
+      - name: Web UI tests
+        run: cd web && npm test
