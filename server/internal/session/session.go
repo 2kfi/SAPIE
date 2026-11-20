@@ -29,6 +29,7 @@ const (
 type Session struct {
 	steamID      uint64
 	personaName  string
+	appid        uint32
 	conn         net.Conn
 	writeMu      sync.Mutex
 	done         chan struct{}
@@ -151,6 +152,7 @@ func (s *Server) handle(conn net.Conn) {
 	}
 	session.steamID = account.SteamID
 	session.personaName = account.PersonaName
+	session.appid = login.Login.GetAppid()
 	s.register(session)
 	defer s.disconnect(session)
 	go s.heartbeat(session)
@@ -254,9 +256,62 @@ func (s *Server) handleSteam(session *Session, msg *protocol.Common_Message) {
 			return
 		}
 		friend.Id = session.steamID
+		if friend.Appid != 0 {
+			session.appid = friend.Appid
+		}
 		if err := s.store.UpdatePresence(session.steamID, string(friend.Name), friend.Appid, friend.LobbyId, friend.RichPresence); err != nil {
 			log.Printf("session %d: store presence: %v", session.steamID, err)
 			return
+		}
+	case *protocol.Common_Message_Lobby:
+		lobby := payload.Lobby
+		if lobby == nil {
+			return
+		}
+		if lobby.GetDeleted() {
+			if err := s.store.DeleteLobby(lobby.GetRoomId(), session.steamID); err != nil {
+				log.Printf("session %d: delete lobby %d: %v", session.steamID, lobby.GetRoomId(), err)
+			}
+			return
+		}
+		snapshot := state.Lobby{
+			LobbyID:     lobby.GetRoomId(),
+			Owner:       lobby.GetOwner(),
+			Appid:       lobby.GetAppid(),
+			MemberLimit: lobby.GetMemberLimit(),
+			Type:        lobby.GetType(),
+			Joinable:    lobby.GetJoinable(),
+		}
+		for _, member := range lobby.GetMembers() {
+			snapshot.Members = append(snapshot.Members, member.GetId())
+		}
+		if err := s.store.UpsertLobby(session.steamID, snapshot); err != nil {
+			log.Printf("session %d: sync lobby %d: %v", session.steamID, lobby.GetRoomId(), err)
+			return
+		}
+	case *protocol.Common_Message_LobbyMessages:
+		event := payload.LobbyMessages
+		if event == nil {
+			return
+		}
+		switch event.GetType() {
+		case protocol.Lobby_Messages_JOIN:
+			if err := s.store.JoinLobby(event.GetId(), session.steamID, session.appid); err != nil {
+				log.Printf("session %d: join lobby %d: %v", session.steamID, event.GetId(), err)
+				return
+			}
+		case protocol.Lobby_Messages_LEAVE:
+			if err := s.store.LeaveLobby(event.GetId(), session.steamID); err != nil {
+				log.Printf("session %d: leave lobby %d: %v", session.steamID, event.GetId(), err)
+				return
+			}
+			msg.DestId = 0 // every remaining member must see the departure
+		case protocol.Lobby_Messages_CHANGE_OWNER:
+			if err := s.store.ChangeLobbyOwner(event.GetId(), session.steamID, event.GetIdata()); err != nil {
+				log.Printf("session %d: change owner of lobby %d: %v", session.steamID, event.GetId(), err)
+				return
+			}
+			msg.DestId = 0 // every member must see the new owner
 		}
 	case *protocol.Common_Message_FriendMessages:
 		if invite := payload.FriendMessages; invite != nil &&
@@ -425,7 +480,37 @@ func (s *Server) disconnect(session *Session) {
 	if peer, ok := s.PeerFor(session.steamID); ok && peer != session {
 		return // a newer session already pushed its own presence
 	}
+	ids, err := s.store.LobbiesOf(session.steamID)
+	if err != nil {
+		log.Printf("session %d: lobbies on disconnect: %v", session.steamID, err)
+	}
+	for _, id := range ids {
+		lobby, err := s.store.Lobby(id)
+		if err != nil {
+			continue
+		}
+		wasOwner := lobby.Owner == session.steamID
+		if err := s.store.LeaveLobby(id, session.steamID); err != nil {
+			log.Printf("session %d: leave lobby %d: %v", session.steamID, id, err)
+			continue
+		}
+		s.routeLobbyEvent(session.steamID, id, protocol.Lobby_Messages_LEAVE, 0)
+		if !wasOwner {
+			continue
+		}
+		if updated, err := s.store.Lobby(id); err == nil && updated.Owner != session.steamID {
+			s.routeLobbyEvent(session.steamID, id, protocol.Lobby_Messages_CHANGE_OWNER, updated.Owner)
+		}
+	}
 	s.pushPresence(session, false)
+}
+
+func (s *Server) routeLobbyEvent(from, lobbyID uint64, typ protocol.Lobby_Messages_Types, idata uint64) {
+	s.router.Route(from, &protocol.Common_Message{
+		Messages: &protocol.Common_Message_LobbyMessages{LobbyMessages: &protocol.Lobby_Messages{
+			Id: lobbyID, Type: typ, Idata: idata,
+		}},
+	})
 }
 
 func looksLikeHTTP(head []byte) bool {

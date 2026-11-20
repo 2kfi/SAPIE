@@ -402,7 +402,7 @@ func TestUserEndpoints(t *testing.T) {
 		t.Fatalf("invite frame = %+v", frames[0].Payload)
 	}
 
-	rec = request(handler, http.MethodPost, "/api/v1/lobbies", session.Token, `{"appid":480,"type":0,"member_limit":2}`)
+	rec = request(handler, http.MethodPost, "/api/v1/lobbies", session.Token, `{"appid":480,"type":2,"member_limit":2}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create lobby = %d: %s", rec.Code, rec.Body.String())
 	}

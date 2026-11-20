@@ -525,6 +525,155 @@ func TestHiddenUnlockNotPushedToFriends(t *testing.T) {
 	}
 }
 
+func frameCollector(conn net.Conn) <-chan *protocol.Frame {
+	frames := make(chan *protocol.Frame, 16)
+	go func() {
+		for {
+			frame, err := protocol.ReadFrame(conn)
+			if err != nil {
+				return
+			}
+			frames <- frame
+		}
+	}()
+	return frames
+}
+
+func waitSteam(t *testing.T, frames <-chan *protocol.Frame, match func(*protocol.Common_Message) bool) *protocol.Common_Message {
+	t.Helper()
+	timeout := time.NewTimer(2 * time.Second)
+	defer timeout.Stop()
+	for {
+		select {
+		case frame, ok := <-frames:
+			if !ok {
+				t.Fatal("frame channel closed")
+			}
+			if msg := steamMessage(frame); msg != nil && match(msg) {
+				return msg
+			}
+		case <-timeout.C:
+			t.Fatal("timed out waiting for steam frame")
+		}
+	}
+}
+
+func lobbyMessage(id uint64, typ protocol.Lobby_Messages_Types, dest uint64) *protocol.Common_Message {
+	return &protocol.Common_Message{
+		DestId: dest,
+		Messages: &protocol.Common_Message_LobbyMessages{LobbyMessages: &protocol.Lobby_Messages{
+			Id: id, Type: typ,
+		}},
+	}
+}
+
+func TestSocketLobbyJoinAndLeave(t *testing.T) {
+	store, alice, bob := testStore(t)
+	carol, err := store.CreateAccount("carol", "h3", "Carol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lobbyID, err := store.CreateLobby(alice, 480, state.LobbyTypePublic, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := New(store, nil)
+
+	aliceServer, aliceClient := net.Pipe()
+	defer aliceServer.Close()
+	defer aliceClient.Close()
+	aliceSession := &Session{steamID: alice, personaName: "Alice", appid: 480, conn: aliceServer}
+	srv.peers[alice] = aliceSession
+	aliceFrames := frameCollector(aliceClient)
+
+	bobServer, bobClient := net.Pipe()
+	defer bobServer.Close()
+	defer bobClient.Close()
+	bobSession := &Session{steamID: bob, personaName: "Bob", appid: 480, conn: bobServer}
+	srv.peers[bob] = bobSession
+	bobFrames := frameCollector(bobClient)
+
+	srv.handleSteam(bobSession, lobbyMessage(lobbyID, protocol.Lobby_Messages_JOIN, alice))
+	join := waitSteam(t, aliceFrames, func(msg *protocol.Common_Message) bool {
+		return msg.GetLobbyMessages().GetType() == protocol.Lobby_Messages_JOIN
+	})
+	if join.GetSourceId() != bob || join.GetDestId() != alice {
+		t.Fatalf("join frame = %+v", join)
+	}
+	lobby, err := store.Lobby(lobbyID)
+	if err != nil || len(lobby.Members) != 2 || lobby.Members[1] != bob {
+		t.Fatalf("lobby after socket join = %+v, %v", lobby, err)
+	}
+
+	// The owner's full snapshot must now reach the joiner through the router.
+	srv.handleSteam(aliceSession, &protocol.Common_Message{
+		Messages: &protocol.Common_Message_Lobby{Lobby: &protocol.Lobby{
+			RoomId: lobbyID, Owner: alice, Appid: 480, MemberLimit: 3,
+			Type: state.LobbyTypePublic, Joinable: true,
+			Members: []*protocol.Lobby_Member{{Id: alice}, {Id: bob}},
+		}},
+	})
+	snapshot := waitSteam(t, bobFrames, func(msg *protocol.Common_Message) bool { return msg.GetLobby() != nil })
+	if snapshot.GetLobby().GetRoomId() != lobbyID || len(snapshot.GetLobby().GetMembers()) != 2 {
+		t.Fatalf("routed lobby snapshot = %+v", snapshot.GetLobby())
+	}
+
+	srv.handleSteam(&Session{steamID: carol, appid: 900}, lobbyMessage(lobbyID, protocol.Lobby_Messages_JOIN, alice))
+	lobby, err = store.Lobby(lobbyID)
+	if err != nil || len(lobby.Members) != 2 {
+		t.Fatalf("wrong-appid join changed roster: %+v, %v", lobby, err)
+	}
+
+	srv.handleSteam(bobSession, lobbyMessage(lobbyID, protocol.Lobby_Messages_LEAVE, alice))
+	left := waitSteam(t, aliceFrames, func(msg *protocol.Common_Message) bool {
+		return msg.GetLobbyMessages().GetType() == protocol.Lobby_Messages_LEAVE
+	})
+	if left.GetSourceId() != bob {
+		t.Fatalf("leave frame = %+v", left)
+	}
+	lobby, err = store.Lobby(lobbyID)
+	if err != nil || len(lobby.Members) != 1 || lobby.Members[0] != alice {
+		t.Fatalf("lobby after socket leave = %+v, %v", lobby, err)
+	}
+}
+
+func TestDisconnectUpdatesLobbyOwner(t *testing.T) {
+	store, alice, bob := testStore(t)
+	lobbyID, err := store.CreateLobby(alice, 480, state.LobbyTypePublic, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := New(store, nil)
+
+	aliceServer, aliceClient := net.Pipe()
+	defer aliceServer.Close()
+	defer aliceClient.Close()
+	aliceSession := &Session{steamID: alice, personaName: "Alice", appid: 480, conn: aliceServer}
+	srv.peers[alice] = aliceSession
+	_ = frameCollector(aliceClient)
+
+	bobServer, bobClient := net.Pipe()
+	defer bobServer.Close()
+	defer bobClient.Close()
+	bobSession := &Session{steamID: bob, personaName: "Bob", appid: 480, conn: bobServer}
+	srv.peers[bob] = bobSession
+	bobFrames := frameCollector(bobClient)
+
+	srv.handleSteam(bobSession, lobbyMessage(lobbyID, protocol.Lobby_Messages_JOIN, alice))
+	srv.disconnect(aliceSession)
+	changed := waitSteam(t, bobFrames, func(msg *protocol.Common_Message) bool {
+		lm := msg.GetLobbyMessages()
+		return lm != nil && lm.GetType() == protocol.Lobby_Messages_CHANGE_OWNER && lm.GetIdata() == bob
+	})
+	if changed.GetSourceId() != alice {
+		t.Fatalf("owner change frame = %+v", changed)
+	}
+	lobby, err := store.Lobby(lobbyID)
+	if err != nil || lobby.Owner != bob || len(lobby.Members) != 1 {
+		t.Fatalf("lobby after owner disconnect = %+v, %v", lobby, err)
+	}
+}
+
 func readLoginResponse(t *testing.T, c net.Conn) *protocol.LoginResponse {
 	t.Helper()
 	c.SetReadDeadline(time.Now().Add(5 * time.Second))

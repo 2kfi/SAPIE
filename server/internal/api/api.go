@@ -367,7 +367,12 @@ func (s *Server) joinLobby(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid lobby id", http.StatusBadRequest)
 		return
 	}
-	if err := s.store.JoinLobby(lobbyID, steamID); err != nil {
+	presence, err := s.store.PresenceOf(steamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.store.JoinLobby(lobbyID, steamID, presence.Appid); err != nil {
 		switch {
 		case state.IsNotFound(err):
 			http.Error(w, "lobby not found", http.StatusNotFound)

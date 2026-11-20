@@ -245,9 +245,17 @@ type Lobby struct {
 	Members     []uint64 `json:"members"`
 }
 
+const (
+	LobbyTypePrivate     uint32 = 0
+	LobbyTypeFriendsOnly uint32 = 1
+	LobbyTypePublic      uint32 = 2
+	LobbyTypeInvisible   uint32 = 3
+)
+
 var (
 	ErrLobbyNotFound    = errors.New("lobby not found")
 	ErrLobbyUnavailable = errors.New("lobby full or not joinable")
+	ErrLobbyNotOwner    = errors.New("only the lobby owner may change it")
 )
 
 // AddFriend records both directions so either side can resolve the other.
@@ -396,20 +404,46 @@ func (s *Store) CreateLobby(owner uint64, appid, lobbyType, memberLimit uint32) 
 	return id, err
 }
 
-func (s *Store) JoinLobby(lobbyID, steamID uint64) error {
+// JoinLobby enforces the lobby's visibility, joinable flag, appid and member
+// limit. A repeat join is a no-op so retried client JOIN packets stay harmless.
+func (s *Store) JoinLobby(lobbyID, steamID uint64, appid uint32) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var joinable int
-	var limit uint32
-	err := s.db.QueryRow(`SELECT joinable, member_limit FROM lobbies WHERE lobby_id = ?`, lobbyID).Scan(&joinable, &limit)
+	var limit, lobbyType, lobbyAppid uint32
+	var owner uint64
+	err := s.db.QueryRow(`SELECT joinable, member_limit, type, appid, owner_id FROM lobbies WHERE lobby_id = ?`, lobbyID).
+		Scan(&joinable, &limit, &lobbyType, &lobbyAppid, &owner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrLobbyNotFound
 	}
 	if err != nil {
 		return err
 	}
+	var already uint32
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM lobby_members WHERE lobby_id = ? AND steam_id = ?`, lobbyID, steamID).Scan(&already); err != nil {
+		return err
+	}
+	if already > 0 {
+		return nil
+	}
 	if joinable == 0 {
 		return ErrLobbyUnavailable
+	}
+	if appid != 0 && lobbyAppid != 0 && appid != lobbyAppid {
+		return ErrLobbyUnavailable
+	}
+	switch lobbyType {
+	case LobbyTypePrivate:
+		return ErrLobbyUnavailable // invite-only; invites are not persisted
+	case LobbyTypeFriendsOnly:
+		var friends uint32
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM friendships WHERE steam_id = ? AND friend_id = ?`, owner, steamID).Scan(&friends); err != nil {
+			return err
+		}
+		if friends == 0 {
+			return ErrLobbyUnavailable
+		}
 	}
 	var members uint32
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM lobby_members WHERE lobby_id = ?`, lobbyID).Scan(&members); err != nil {
@@ -418,7 +452,115 @@ func (s *Store) JoinLobby(lobbyID, steamID uint64) error {
 	if members >= limit {
 		return ErrLobbyUnavailable
 	}
-	_, err = s.db.Exec(`INSERT OR IGNORE INTO lobby_members (lobby_id, steam_id) VALUES (?, ?)`, lobbyID, steamID)
+	_, err = s.db.Exec(`INSERT INTO lobby_members (lobby_id, steam_id) VALUES (?, ?)`, lobbyID, steamID)
+	return err
+}
+
+// UpsertLobby records the snapshot an owner sends over the game socket so the
+// router and the HTTP list see client-created lobbies. Existing snapshots are
+// merged by adding members; removals arrive as LEAVE packets.
+func (s *Store) UpsertLobby(sender uint64, l Lobby) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	joinable := 0
+	if l.Joinable {
+		joinable = 1
+	}
+	var owner uint64
+	err := s.db.QueryRow(`SELECT owner_id FROM lobbies WHERE lobby_id = ?`, l.LobbyID).Scan(&owner)
+	switch {
+	case err == nil:
+		if owner != sender || l.Owner != owner {
+			return ErrLobbyNotOwner
+		}
+		_, err = s.db.Exec(`UPDATE lobbies SET appid = ?, type = ?, member_limit = ?, joinable = ? WHERE lobby_id = ?`,
+			l.Appid, l.Type, l.MemberLimit, joinable, l.LobbyID)
+	case errors.Is(err, sql.ErrNoRows):
+		if l.Owner != sender {
+			return ErrLobbyNotOwner
+		}
+		_, err = s.db.Exec(`INSERT INTO lobbies (lobby_id, owner_id, appid, type, member_limit, joinable)
+			VALUES (?, ?, ?, ?, ?, ?)`, l.LobbyID, l.Owner, l.Appid, l.Type, l.MemberLimit, joinable)
+	}
+	if err != nil {
+		return err
+	}
+	for _, id := range l.Members {
+		if _, err := s.db.Exec(`INSERT OR IGNORE INTO lobby_members (lobby_id, steam_id) VALUES (?, ?)`, l.LobbyID, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) DeleteLobby(lobbyID, sender uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(`DELETE FROM lobbies WHERE lobby_id = ? AND owner_id = ?`, lobbyID, sender)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrLobbyNotOwner
+	}
+	return nil
+}
+
+// LeaveLobby removes a member and hands an empty-owner lobby to its lowest
+// remaining SteamID, or deletes it when the last member leaves.
+func (s *Store) LeaveLobby(lobbyID, steamID uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var owner uint64
+	if err := s.db.QueryRow(`SELECT owner_id FROM lobbies WHERE lobby_id = ?`, lobbyID).Scan(&owner); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrLobbyNotFound
+		}
+		return err
+	}
+	if _, err := s.db.Exec(`DELETE FROM lobby_members WHERE lobby_id = ? AND steam_id = ?`, lobbyID, steamID); err != nil {
+		return err
+	}
+	if owner != steamID {
+		return nil
+	}
+	var next sql.NullInt64
+	if err := s.db.QueryRow(`SELECT MIN(steam_id) FROM lobby_members WHERE lobby_id = ?`, lobbyID).Scan(&next); err != nil {
+		return err
+	}
+	if !next.Valid {
+		_, err := s.db.Exec(`DELETE FROM lobbies WHERE lobby_id = ?`, lobbyID)
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE lobbies SET owner_id = ? WHERE lobby_id = ?`, uint64(next.Int64), lobbyID)
+	return err
+}
+
+func (s *Store) ChangeLobbyOwner(lobbyID, sender, newOwner uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var owner uint64
+	if err := s.db.QueryRow(`SELECT owner_id FROM lobbies WHERE lobby_id = ?`, lobbyID).Scan(&owner); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrLobbyNotFound
+		}
+		return err
+	}
+	if owner != sender {
+		return ErrLobbyNotOwner
+	}
+	var members uint32
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM lobby_members WHERE lobby_id = ? AND steam_id = ?`, lobbyID, newOwner).Scan(&members); err != nil {
+		return err
+	}
+	if members == 0 {
+		return ErrLobbyUnavailable
+	}
+	_, err := s.db.Exec(`UPDATE lobbies SET owner_id = ? WHERE lobby_id = ?`, newOwner, lobbyID)
 	return err
 }
 

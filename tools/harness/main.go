@@ -111,6 +111,23 @@ func (c *gameClient) received(match func(*protocol.Frame) bool, wait time.Durati
 
 func (c *gameClient) send(frame *protocol.Frame) error { return protocol.WriteFrame(c.conn, frame) }
 
+func waitLobby(store *state.Store, lobbyID uint64, members int) (state.Lobby, error) {
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		lobby, err := store.Lobby(lobbyID)
+		if err == nil && len(lobby.Members) == members {
+			return lobby, nil
+		}
+		if time.Now().After(deadline) {
+			if err == nil {
+				err = fmt.Errorf("members = %d, want %d", len(lobby.Members), members)
+			}
+			return state.Lobby{}, err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func (c *gameClient) login(username, password string) (*protocol.LoginResponse, error) {
 	frame := &protocol.Frame{Payload: &protocol.Frame_Login{Login: &protocol.LoginRequest{
 		Username: username, Password: password, Appid: 480, ClientVersion: "harness",
@@ -393,7 +410,7 @@ func run() error {
 	fmt.Println("PASS M2 socket-sent invite routed and source_id stamped")
 
 	status, body, err = apiCall(client, http.MethodPost, adminURL+"/api/v1/lobbies", aliceToken,
-		map[string]any{"appid": 480, "type": 0, "member_limit": 4})
+		map[string]any{"appid": 480, "type": 2, "member_limit": 4})
 	if err != nil || status != http.StatusCreated {
 		return fmt.Errorf("create lobby = %d: %s (%v)", status, body, err)
 	}
@@ -468,6 +485,96 @@ func run() error {
 		return fmt.Errorf("lobby chat not routed to bob: %v", err)
 	}
 	fmt.Println("PASS M3 socket-sent lobby message routed to members")
+
+	const socketLobbyID uint64 = 76561198000000001
+	aliceSnapshot := &protocol.Lobby{
+		RoomId: socketLobbyID, Owner: alice.SteamID, Appid: 480,
+		MemberLimit: 2, Type: 2, Joinable: true,
+		Members: []*protocol.Lobby_Member{{Id: alice.SteamID}},
+	}
+	if err := aliceClient.send(&protocol.Frame{Payload: &protocol.Frame_Steam{Steam: &protocol.Common_Message{
+		Messages: &protocol.Common_Message_Lobby{Lobby: aliceSnapshot},
+	}}}); err != nil {
+		return err
+	}
+	if _, err := waitLobby(store, socketLobbyID, 1); err != nil {
+		return fmt.Errorf("socket lobby snapshot: %w", err)
+	}
+	fmt.Printf("PASS M9 client-created lobby_id=%d mirrored from game socket\n", socketLobbyID)
+
+	joinPacket := func() *protocol.Frame {
+		return &protocol.Frame{Payload: &protocol.Frame_Steam{Steam: &protocol.Common_Message{
+			DestId: alice.SteamID,
+			Messages: &protocol.Common_Message_LobbyMessages{LobbyMessages: &protocol.Lobby_Messages{
+				Id: socketLobbyID, Type: protocol.Lobby_Messages_JOIN,
+			}},
+		}}}
+	}
+	if err := bobClient.send(joinPacket()); err != nil {
+		return err
+	}
+	if _, err := waitLobby(store, socketLobbyID, 2); err != nil {
+		return fmt.Errorf("socket join: %w", err)
+	}
+	frame, err = aliceClient.next(func(f *protocol.Frame) bool {
+		msg := steamMessage(f)
+		return msg != nil && msg.GetLobbyMessages() != nil &&
+			msg.GetLobbyMessages().GetId() == socketLobbyID &&
+			msg.GetLobbyMessages().GetType() == protocol.Lobby_Messages_JOIN &&
+			msg.GetSourceId() == bob.SteamID
+	})
+	if err != nil {
+		return fmt.Errorf("JOIN not routed to owner: %w", err)
+	}
+	fmt.Println("PASS M9 join-friend JOIN recorded and routed to owner")
+
+	aliceSnapshot.Members = append(aliceSnapshot.Members, &protocol.Lobby_Member{Id: bob.SteamID})
+	if err := aliceClient.send(&protocol.Frame{Payload: &protocol.Frame_Steam{Steam: &protocol.Common_Message{
+		Messages: &protocol.Common_Message_Lobby{Lobby: aliceSnapshot},
+	}}}); err != nil {
+		return err
+	}
+	frame, err = bobClient.next(func(f *protocol.Frame) bool {
+		msg := steamMessage(f)
+		return msg != nil && msg.GetLobby() != nil && msg.GetLobby().GetRoomId() == socketLobbyID &&
+			len(msg.GetLobby().GetMembers()) == 2
+	})
+	if err != nil || len(steamMessage(frame).GetLobby().GetMembers()) != 2 {
+		return fmt.Errorf("roster not routed to joiner: %v", err)
+	}
+	fmt.Println("PASS M9 joiner receives lobby roster through server routing")
+
+	if err := bobClient.send(joinPacket()); err != nil {
+		return err
+	}
+	lobby, err := waitLobby(store, socketLobbyID, 2)
+	if err != nil || lobby.Members[1] != bob.SteamID {
+		return fmt.Errorf("duplicate join changed roster: %+v, %v", lobby, err)
+	}
+	fmt.Println("PASS M9 duplicate JOIN leaves roster unchanged")
+
+	if err := bobClient.send(&protocol.Frame{Payload: &protocol.Frame_Steam{Steam: &protocol.Common_Message{
+		DestId: alice.SteamID,
+		Messages: &protocol.Common_Message_LobbyMessages{LobbyMessages: &protocol.Lobby_Messages{
+			Id: socketLobbyID, Type: protocol.Lobby_Messages_LEAVE,
+		}},
+	}}}); err != nil {
+		return err
+	}
+	if _, err := waitLobby(store, socketLobbyID, 1); err != nil {
+		return fmt.Errorf("socket leave: %w", err)
+	}
+	frame, err = aliceClient.next(func(f *protocol.Frame) bool {
+		msg := steamMessage(f)
+		return msg != nil && msg.GetLobbyMessages() != nil &&
+			msg.GetLobbyMessages().GetId() == socketLobbyID &&
+			msg.GetLobbyMessages().GetType() == protocol.Lobby_Messages_LEAVE &&
+			msg.GetSourceId() == bob.SteamID
+	})
+	if err != nil {
+		return fmt.Errorf("LEAVE not routed to owner: %w", err)
+	}
+	fmt.Println("PASS M9 leave removes member and notifies owner")
 
 	if err := aliceClient.send(&protocol.Frame{Payload: &protocol.Frame_AchievementUnlock{
 		AchievementUnlock: &protocol.AchievementUnlock{

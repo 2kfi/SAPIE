@@ -126,11 +126,11 @@ func TestAchievementStore(t *testing.T) {
 		t.Fatalf("bob stats = %+v, %v", other, err)
 	}
 
-	lobbyID, err := store.CreateLobby(alice, 480, 0, 2)
+	lobbyID, err := store.CreateLobby(alice, 480, LobbyTypePublic, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.JoinLobby(lobbyID, bob); err != nil {
+	if err := store.JoinLobby(lobbyID, bob, 480); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []uint64{alice, bob} {
@@ -338,11 +338,11 @@ func TestSocialStore(t *testing.T) {
 		t.Fatalf("resolve missing = %v", err)
 	}
 
-	lobbyID, err := store.CreateLobby(alice, 480, 0, 2)
+	lobbyID, err := store.CreateLobby(alice, 480, LobbyTypePublic, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.JoinLobby(lobbyID, bob); err != nil {
+	if err := store.JoinLobby(lobbyID, bob, 480); err != nil {
 		t.Fatal(err)
 	}
 	lobby, err := store.Lobby(lobbyID)
@@ -352,14 +352,160 @@ func TestSocialStore(t *testing.T) {
 	if len(lobby.Members) != 2 || lobby.Members[0] != alice || lobby.Members[1] != bob {
 		t.Fatalf("lobby members = %v", lobby.Members)
 	}
-	if err := store.JoinLobby(lobbyID, carol); !errors.Is(err, ErrLobbyUnavailable) {
+	if err := store.JoinLobby(lobbyID, carol, 480); !errors.Is(err, ErrLobbyUnavailable) {
 		t.Fatalf("over-limit join = %v", err)
 	}
-	if err := store.JoinLobby(999, carol); !errors.Is(err, ErrLobbyNotFound) {
+	if err := store.JoinLobby(999, carol, 480); !errors.Is(err, ErrLobbyNotFound) {
 		t.Fatalf("missing lobby join = %v", err)
 	}
 	lobbies, err := store.Lobbies()
 	if err != nil || len(lobbies) != 1 || len(lobbies[0].Members) != 2 {
 		t.Fatalf("lobbies = %+v, %v", lobbies, err)
+	}
+}
+
+func TestLobbyJoinRules(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	alice, err := store.CreateAccount("alice", "h1", "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := store.CreateAccount("bob", "h2", "Bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	carol, err := store.CreateAccount("carol", "h3", "Carol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddFriend(alice, bob); err != nil {
+		t.Fatal(err)
+	}
+
+	lobbyID, err := store.CreateLobby(alice, 480, LobbyTypePublic, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinLobby(lobbyID, bob, 900); !errors.Is(err, ErrLobbyUnavailable) {
+		t.Fatalf("wrong appid join = %v", err)
+	}
+	if err := store.JoinLobby(lobbyID, bob, 480); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinLobby(lobbyID, bob, 480); err != nil {
+		t.Fatalf("repeat join = %v", err)
+	}
+	if err := store.JoinLobby(lobbyID, carol, 480); !errors.Is(err, ErrLobbyUnavailable) {
+		t.Fatalf("over-limit join = %v", err)
+	}
+	snapshot, err := store.Lobby(lobbyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot.Joinable = false
+	if err := store.UpsertLobby(alice, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinLobby(lobbyID, carol, 480); !errors.Is(err, ErrLobbyUnavailable) {
+		t.Fatalf("unjoinable lobby join = %v", err)
+	}
+
+	private, err := store.CreateLobby(alice, 480, LobbyTypePrivate, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinLobby(private, bob, 480); !errors.Is(err, ErrLobbyUnavailable) {
+		t.Fatalf("private lobby join = %v", err)
+	}
+	friends, err := store.CreateLobby(alice, 480, LobbyTypeFriendsOnly, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinLobby(friends, bob, 480); err != nil {
+		t.Fatalf("friend-only join = %v", err)
+	}
+	if err := store.JoinLobby(friends, carol, 480); !errors.Is(err, ErrLobbyUnavailable) {
+		t.Fatalf("stranger friends-only join = %v", err)
+	}
+}
+
+func TestLobbySnapshotAndOwnership(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	alice, err := store.CreateAccount("alice", "h1", "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := store.CreateAccount("bob", "h2", "Bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	carol, err := store.CreateAccount("carol", "h3", "Carol")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lobbyID := uint64(9001)
+	snapshot := Lobby{
+		LobbyID: lobbyID, Owner: alice, Appid: 480, Type: LobbyTypePublic,
+		MemberLimit: 3, Joinable: true, Members: []uint64{alice},
+	}
+	if err := store.UpsertLobby(bob, snapshot); !errors.Is(err, ErrLobbyNotOwner) {
+		t.Fatalf("non-owner snapshot = %v", err)
+	}
+	if err := store.UpsertLobby(alice, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinLobby(lobbyID, bob, 480); err != nil {
+		t.Fatal(err)
+	}
+	snapshot.Members = []uint64{alice, bob}
+	if err := store.UpsertLobby(alice, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	lobby, err := store.Lobby(lobbyID)
+	if err != nil || len(lobby.Members) != 2 || lobby.Owner != alice {
+		t.Fatalf("synced lobby = %+v, %v", lobby, err)
+	}
+	if err := store.ChangeLobbyOwner(lobbyID, bob, carol); !errors.Is(err, ErrLobbyNotOwner) {
+		t.Fatalf("non-owner change = %v", err)
+	}
+	if err := store.ChangeLobbyOwner(lobbyID, alice, carol); !errors.Is(err, ErrLobbyUnavailable) {
+		t.Fatalf("change to non-member = %v", err)
+	}
+	if err := store.ChangeLobbyOwner(lobbyID, alice, bob); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.LeaveLobby(lobbyID, alice); err != nil {
+		t.Fatal(err)
+	}
+	lobby, err = store.Lobby(lobbyID)
+	if err != nil || lobby.Owner != bob || len(lobby.Members) != 1 || lobby.Members[0] != bob {
+		t.Fatalf("after owner left = %+v, %v", lobby, err)
+	}
+	if err := store.LeaveLobby(lobbyID, bob); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Lobby(lobbyID); !errors.Is(err, ErrLobbyNotFound) {
+		t.Fatalf("empty lobby survived: %v", err)
+	}
+	if err := store.UpsertLobby(alice, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteLobby(lobbyID, bob); !errors.Is(err, ErrLobbyNotOwner) {
+		t.Fatalf("non-owner delete = %v", err)
+	}
+	if err := store.DeleteLobby(lobbyID, alice); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Lobby(lobbyID); !errors.Is(err, ErrLobbyNotFound) {
+		t.Fatalf("deleted lobby survived: %v", err)
 	}
 }
