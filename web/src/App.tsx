@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Login from './screens/Login'
 import Register from './screens/Register'
 import Shell from './screens/Shell'
+import PlainHttpNotice from './components/PlainHttpNotice'
 import Toast from './components/Toast'
 import { navigate, readRoute, type Route } from './routes'
 import {
@@ -68,6 +69,7 @@ export default function App() {
 
   return (
     <>
+      <PlainHttpNotice />
       {route === 'login' ? (
         <Login onConnected={connected} onNavigate={go} reason={loginReason} />
       ) : route === 'register' ? (

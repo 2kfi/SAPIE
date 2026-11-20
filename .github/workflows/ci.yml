@@ -152,3 +152,66 @@ jobs:
         run: cd web && npm ci && npm run build
       - name: Web UI tests
         run: cd web && npm test
+
+  dependency-audits:
+    runs-on: ubuntu-latest
+    env:
+      # Accepted only because the fix is a major vitest bump in both UI packages.
+      # Each advisory is named in docs/SECURITY.md. Any new advisory fails the job.
+      ACCEPTED_NPM_ADVISORIES: >-
+        GHSA-4w7w-66w2-5vf9 GHSA-v6wh-96g9-6wx3 GHSA-698v-4r3x-3vcv
+        GHSA-r825-w8mm-5pxw GHSA-587h-7wmj-h5pm GHSA-9jrq-w75r-8gcw
+        GHSA-rq7h-c2jc-7f22 GHSA-fx2h-pf6j-xcff GHSA-5gmw-xhrv-c9v3
+        GHSA-85c8-ppgw-ccpr GHSA-5xrq-8626-4rwp GHSA-82fw-gwwq-j7x9
+        GHSA-qxg6-89mg-rqv8 GHSA-67mh-4wv8-2f99
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: server/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install audit tools
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          cargo install cargo-audit --locked
+      - name: Go vulnerabilities
+        run: cd server && govulncheck ./...
+      - name: Cargo vulnerabilities
+        run: cd client/src-tauri && cargo audit
+      - name: npm vulnerabilities
+        run: |
+          set -euo pipefail
+          for dir in web client/src-tauri/ui; do
+            echo "== npm audit: $dir =="
+            (
+              cd "$dir"
+              npm ci --ignore-scripts
+              npm audit --json > audit.json || true
+              ACCEPTED_NPM_ADVISORIES="$ACCEPTED_NPM_ADVISORIES" python3 -c '
+          import json, os, sys
+          accepted = set(os.environ["ACCEPTED_NPM_ADVISORIES"].split())
+          data = json.load(open("audit.json"))
+          seen = set()
+          for name, vuln in data.get("vulnerabilities", {}).items():
+              for via in vuln.get("via", []):
+                  if not isinstance(via, dict):
+                      continue
+                  gid = via.get("url", "").rsplit("/", 1)[-1]
+                  if not gid.startswith("GHSA-"):
+                      continue
+                  seen.add(gid)
+                  state = "accepted" if gid in accepted else "NEW"
+                  print("%s %s (%s) via %s" % (state, gid, via.get("severity", ""), name))
+          new = sorted(seen - accepted)
+          if new:
+              print("Unaccepted advisories: " + ", ".join(new), file=sys.stderr)
+              sys.exit(1)
+          print("No unaccepted advisories")
+          '
+            )
+            rm -f "$dir/audit.json"
+          done

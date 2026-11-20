@@ -63,7 +63,10 @@ An attacker on the LAN cannot:
 ## TLS for the web UI
 
 The Go server serves the SPA over plain HTTP. On an untrusted LAN, session tokens cross 8081 in
-cleartext. Terminate TLS in front of it. The server code does not need a change.
+cleartext. Terminate TLS in front of it. The server code does not need a change. The web UI shows a
+fixed notice at the top of every page when `window.location.protocol` is `http:`
+(`web/src/components/PlainHttpNotice.tsx`). It names cleartext session tokens, has no dismiss control
+and does not cover sign in. It warns without blocking HTTP use.
 
 1. Bind the UI to loopback so the plain port is not on the LAN:
    `sapie-server --ui-listen 127.0.0.1:8081`.
@@ -128,25 +131,28 @@ command returns the token over Tauri IPC to the UI by the command contract (`Ses
 `client/src-tauri/ui/src/api.ts`). That crossing into UI memory is an accepted 0.4 boundary, not a
 disk write.
 
-Game handoff status: `launch_game` writes `steam_settings/sapie_client.json` mode `0600` on Unix
-immediately before spawn and passes no credential env vars (`client/src-tauri/src/game.rs`). The
+Game handoff status (M16, shipped): `launch_game` writes `steam_settings/sapie_client.json` mode
+`0600` on Unix immediately before spawn and passes no credential env vars
+(`client/src-tauri/src/game.rs`). The
 file holds only `session_token`; the launcher removes it if spawn fails. Windows has no explicit
 ACL change, so the file inherits the game directory's default ACL. The DLL reads the file once,
 removes it after the read attempt, rejects files older than 10 minutes, and sends the token in
 `LoginRequest.session_token` (`client/dll/settings_parser.cpp`, `client/dll/network.cpp`). The
 server resolves the token hash against unexpired sessions (`server/internal/session/session.go`).
 When no token file exists, the DLL falls back to `SAPIE_SESSION_TOKEN`, then to
-`SAPIE_USERNAME`/`SAPIE_PASSWORD` for compatibility. Env values remain visible under the same OS
-account and in `/proc` on Linux; no password is read from the token file, and neither credential is
-logged.
+`SAPIE_USERNAME`/`SAPIE_PASSWORD` for compatibility. The launcher does not set those variables; the
+fallback serves older setups that still do. Env values remain visible under the same OS account and
+in `/proc` on Linux; no password is read from the token file, and neither credential is logged.
 
 ## Webview boundary
 
 `client/src-tauri/tauri.conf.json` bundles the UI from `../ui/dist` and sets a strict CSP with
 `default-src 'self'`, no `object-src`, no `frame-src`, no `base-uri` and no `form-action`. The asset
 protocol is disabled. The `devUrl` of `http://127.0.0.1:1420` is for development only. The updater
-has no endpoints. The `main` capability declares no permissions
-(`client/src-tauri/capabilities/default.json`). There is no remote URL in the production bundle.
+has no endpoints. The `main` capability grants only `core:event:allow-listen` and
+`core:event:allow-unlisten` so the UI can receive the M15 `sapie-progress` events
+(`client/src-tauri/capabilities/default.json`, `client/src-tauri/ui/src/api.ts`). It declares no other
+native permission. There is no remote URL in the production bundle.
 
 The launcher is dark only. `design/DESIGN.md` records a user decision with no theme toggle and no
 system-theme following. Do not claim a light theme or a second contrast pass.
@@ -183,4 +189,27 @@ Operator guidance for when the UI is containerized:
   and no revoke-on-password-change path in this tree.
 - The admin token is written to the server log once at first start. Treat first-run logs as
   sensitive.
-- Dependency audits (`govulncheck`, `npm audit`, `cargo audit`) were not run for this document.
+## Dependency audits
+
+CI runs all three audits in the `dependency-audits` job of `.github/workflows/ci.yml`. Dependabot
+opens weekly updates for the Go module, npm in both UIs, Cargo and GitHub Actions
+(`.github/dependabot.yml`).
+
+Results from this tree on 2026-11-21:
+
+- `govulncheck ./...` in `server/`: no vulnerabilities found.
+- `cargo audit` in `client/src-tauri/`: exit 0, no vulnerabilities across 535 crate dependencies.
+  Six warnings, all printed by the tool: `chrono` 0.4.45 (RUSTSEC-2026-0543, unmaintained),
+  `proc-macro-error` 1.0.4 (RUSTSEC-2024-0370, unmaintained), `zbus_names` 3.0.0
+  (RUSTSEC-2026-0371, unmaintained), `zvariant` 4.2.0 (RUSTSEC-2026-0370, unmaintained),
+  `zvariant_derive` 4.2.0 (RUSTSEC-2026-0372, unmaintained) and `glib` 0.18.5
+  (RUSTSEC-2024-0429, unsound, fixed in 0.20.0). The `glib` upgrade is a transitive dependency
+  change, not made in this lane.
+- `npm audit` in `web/` and `client/src-tauri/ui/`: six findings each, all in dev tooling that is not
+  bundled into the shipped SPA or launcher UI. One high (`vite`, GHSA-587h-7wmj-h5pm plus seven
+  other advisory IDs), two critical (`tinypool` GHSA-5gmw-xhrv-c9v3 and GHSA-85c8-ppgw-ccpr,
+  `vitest` GHSA-5xrq-8626-4rwp and GHSA-82fw-gwwq-j7x9), three moderate (`@vitest/mocker`,
+  `esbuild`, `vite-node`). npm only offers `vitest@4.1.12`, a major bump of both UI test stacks,
+  which is outside this lane. The CI step prints every advisory on each run, accepts only the 14
+  IDs listed in the workflow and fails on any new advisory. These findings are reported, not
+  silently ignored.
