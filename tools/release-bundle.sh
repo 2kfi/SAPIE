@@ -38,9 +38,9 @@ for target in windows-x86 windows-x64 linux-x86 linux-x64 linux-arm64; do
   done
 done
 
-launcher_win="$artifacts/launcher-x86_64-pc-windows-msvc/sapie.exe"
-launcher_x64="$artifacts/launcher-x86_64-unknown-linux-gnu/sapie"
-launcher_arm64="$artifacts/launcher-aarch64-unknown-linux-gnu/sapie"
+launcher_win="$artifacts/launcher-x86_64-pc-windows-msvc/sapie-launcher.exe"
+launcher_x64="$artifacts/launcher-x86_64-unknown-linux-gnu/sapie-launcher"
+launcher_arm64="$artifacts/launcher-aarch64-unknown-linux-gnu/sapie-launcher"
 require_file "$launcher_win"
 require_file "$launcher_x64"
 require_file "$launcher_arm64"
