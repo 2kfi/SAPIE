@@ -47,7 +47,8 @@ export type Achievement = {
   hidden: boolean
   icon: string
   achieved: boolean
-  unlock_time: number
+  unlock_time_unix?: number
+  unlock_time?: number
 }
 
 export type UserStats = {

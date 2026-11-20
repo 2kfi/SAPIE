@@ -7,6 +7,13 @@ on:
     branches: ['dev-client', 'main-client', 'dev-server', 'main-server']
 
 jobs:
+  proto-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Proto copies in sync
+        run: bash tools/check-proto-sync.sh
+
   client:
     if: endsWith(github.ref, '-client')
     runs-on: ubuntu-latest

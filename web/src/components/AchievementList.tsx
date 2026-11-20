@@ -12,7 +12,9 @@ export default function AchievementList({ achievements }: { achievements: Achiev
         const spoiler = achievement.hidden && !achievement.achieved
         const name = spoiler ? 'Hidden achievement' : (achievement.display_name || achievement.id)
         const description = spoiler ? '' : achievement.description
-        const unlocked = achievement.achieved ? new Date(achievement.unlock_time * 1000) : null
+        const seconds = achievement.unlock_time_unix ?? achievement.unlock_time
+        const unlocked =
+          achievement.achieved && typeof seconds === 'number' ? new Date(seconds * 1000) : null
         const validTime = unlocked !== null && !Number.isNaN(unlocked.getTime())
 
         return (
