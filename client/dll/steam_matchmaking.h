@@ -244,6 +244,7 @@ bool change_owner(Lobby *lobby, CSteamID new_owner)
     message->set_type(Lobby_Messages::CHANGE_OWNER);
     message->set_idata(new_owner.ConvertToUint64());
     lobby->set_owner(new_owner.ConvertToUint64());
+    sapie::local_mirror().upsert_lobby(*lobby);
     send_owner_packet((uint64)lobby->room_id(), message);
     trigger_lobby_dataupdate((uint64)lobby->room_id(), (uint64)lobby->room_id(), true);
     return true;
@@ -267,6 +268,7 @@ void remove_lobbies()
         if (g->members().size() == 0 || (g->deleted() && (g->time_deleted() + LOBBY_DELETED_TIMEOUT < current_time))) {
             PRINT_DEBUG("REMOVING LOBBY %llu\n", g->room_id());
             self_lobby_member_data.erase(g->room_id());
+            sapie::local_mirror().erase_lobby(g->room_id());
             g = lobbies.erase(g);
         } else {
             ++g;
@@ -577,6 +579,7 @@ void Create_pending_lobbies()
             lobby.set_appid(settings->get_local_game_id().AppID());
             enter_lobby(&lobby, settings->get_local_steam_id());
             lobbies.push_back(lobby);
+            sapie::local_mirror().upsert_lobby(lobby);
 
             if (settings->disable_lobby_creation) {
                 LobbyCreated_t data;
@@ -695,6 +698,7 @@ void LeaveLobby( CSteamID steamIDLobby )
             if (lobby->owner() != settings->get_local_steam_id().ConvertToUint64()) {
                 PRINT_DEBUG("LeaveLobby not owner\n");
                 leave_lobby(&(*lobby), settings->get_local_steam_id());
+                sapie::local_mirror().upsert_lobby(*lobby);
                 Lobby_Messages *message = new Lobby_Messages();
                 message->set_type(Lobby_Messages::LEAVE);
                 send_owner_packet(steamIDLobby, message);
@@ -711,6 +715,7 @@ void LeaveLobby( CSteamID steamIDLobby )
                     send_clients_packet(steamIDLobby, message);
                     lobby->set_deleted(true);
                     lobby->set_time_deleted(std::chrono::duration_cast<std::chrono::duration<uint64>>(std::chrono::system_clock::now().time_since_epoch()).count());
+                    sapie::local_mirror().upsert_lobby(*lobby);
                 }
             }
         }
@@ -825,6 +830,7 @@ bool SetLobbyData( CSteamID steamIDLobby, const char *pchKey, const char *pchVal
             if (result->second == std::string(pchValue)) changed = false;
             (*lobby->mutable_values())[result->first] = pchValue;
         }
+        sapie::local_mirror().upsert_lobby(*lobby);
     }
 
     if (changed)
@@ -885,6 +891,7 @@ bool DeleteLobbyData( CSteamID steamIDLobby, const char *pchKey )
     }
 
     lobby->mutable_values()->erase(pchKey);
+    sapie::local_mirror().upsert_lobby(*lobby);
     trigger_lobby_dataupdate(steamIDLobby, steamIDLobby, true);
     
     return true;
@@ -940,6 +947,7 @@ void SetLobbyMemberData( CSteamID steamIDLobby, const char *pchKey, const char *
             } else {
                 (*member->mutable_values())[result->first] = pchValue;
             }
+            sapie::local_mirror().upsert_lobby(*lobby);
             trigger_lobby_dataupdate(steamIDLobby, (uint64)member->id(), true);
         } else {
             Lobby_Messages *message = new Lobby_Messages();
@@ -1042,6 +1050,7 @@ void SetLobbyGameServer( CSteamID steamIDLobby, uint32 unGameServerIP, uint16 un
         lobby->mutable_gameserver()->set_ip(unGameServerIP);
         lobby->mutable_gameserver()->set_port(unGameServerPort);
         lobby->mutable_gameserver()->set_num_update(lobby->gameserver().num_update() + 1);
+        sapie::local_mirror().upsert_lobby(*lobby);
 
         send_gameservercreated_cb(lobby->room_id(), lobby->gameserver().id(), lobby->gameserver().ip(), lobby->gameserver().port());
         trigger_lobby_dataupdate(steamIDLobby, steamIDLobby, true);
@@ -1087,6 +1096,7 @@ bool SetLobbyMemberLimit( CSteamID steamIDLobby, int cMaxMembers )
     }
 
     lobby->set_member_limit(cMaxMembers);
+    sapie::local_mirror().upsert_lobby(*lobby);
     trigger_lobby_dataupdate(steamIDLobby, steamIDLobby, true);
     
     return true;
@@ -1127,6 +1137,7 @@ bool SetLobbyType( CSteamID steamIDLobby, ELobbyType eLobbyType )
         if (eLobbyType == k_ELobbyTypeInvisible) on_self_enter_leave_lobby(steamIDLobby, lobby->type(), true);
 
         lobby->set_type(eLobbyType);
+        sapie::local_mirror().upsert_lobby(*lobby);
         trigger_lobby_dataupdate(steamIDLobby, steamIDLobby, true);
     }
 
@@ -1147,6 +1158,7 @@ bool SetLobbyJoinable( CSteamID steamIDLobby, bool bLobbyJoinable )
 
     if (lobby->joinable() != bLobbyJoinable) {
         lobby->set_joinable(bLobbyJoinable);
+        sapie::local_mirror().upsert_lobby(*lobby);
         trigger_lobby_dataupdate(steamIDLobby, steamIDLobby, true);
     }
 
@@ -1552,8 +1564,10 @@ void Callback(Common_Message *msg)
 
         if (msg->low_level().type() == Low_Level::DISCONNECT) {
             for (auto & l: lobbies) {
-                if (leave_lobby(&(l), (uint64)msg->source_id()))
+                if (leave_lobby(&(l), (uint64)msg->source_id())) {
+                    sapie::local_mirror().upsert_lobby(l);
                     trigger_lobby_member_join_leave((uint64)l.room_id(), (uint64)msg->source_id(), true, true, 0.0);
+                }
             }
         }
     }
