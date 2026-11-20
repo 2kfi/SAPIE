@@ -139,8 +139,7 @@ jobs:
       - name: Build launcher UI
         run: cd client/src-tauri/ui && npm ci && npm run build
       - name: Launcher UI tests
-        # No test script exists in the launcher UI yet; --if-present avoids a fake suite.
-        run: cd client/src-tauri/ui && npm test --if-present
+        run: cd client/src-tauri/ui && npm test
 
   web:
     runs-on: ubuntu-latest
