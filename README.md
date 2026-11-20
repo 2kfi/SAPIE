@@ -8,7 +8,7 @@ Plan: see `plan.md`. Developer rules: see `note.md`.
 
 ## Status
 
-M0 foundation in progress. Not yet playable.
+0.1 release. Friends, lobbies and achievements are served by the Go server; no live two-client game run has been done yet. See `docs/QUICKSTART.md`.
 
 ## Layout
 
