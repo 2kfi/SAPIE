@@ -6,6 +6,7 @@ import type { Route } from '../routes'
 type Props = {
   onConnected: (session: Session) => void
   onNavigate: (route: Route) => void
+  reason?: string | null
 }
 
 type FieldErrors = { username?: string; password?: string }
@@ -14,7 +15,7 @@ function currentServer(): string {
   return window.location.host
 }
 
-export default function Login({ onConnected, onNavigate }: Props) {
+export default function Login({ onConnected, onNavigate, reason }: Props) {
   const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
@@ -59,11 +60,9 @@ export default function Login({ onConnected, onNavigate }: Props) {
     try {
       const result = await login(currentServer(), username, password)
       signedIn = true
-      setNotice({ text: `Signed in as ${username}.`, error: false })
       onConnected({
         server: currentServer(),
         username,
-        password,
         ...result,
       })
     } catch (reason) {
@@ -84,10 +83,12 @@ export default function Login({ onConnected, onNavigate }: Props) {
             S
           </span>
           <div>
-            <h1 id="login-title">Steam API Emulator</h1>
+            <h1 id="login-title">SAPIE</h1>
             <p className="muted">Sign in to continue.</p>
           </div>
         </div>
+
+        {reason ? <p className="sign-in-reason" role="alert">{reason}</p> : null}
 
         <form onSubmit={(event) => void handleSubmit(event)} noValidate>
           <div className="field">

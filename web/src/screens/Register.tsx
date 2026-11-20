@@ -64,7 +64,6 @@ export default function Register({ onConnected, onBack }: Props) {
       onConnected({
         server: currentServer(),
         username,
-        password,
         ...result,
       })
     } catch (reason) {

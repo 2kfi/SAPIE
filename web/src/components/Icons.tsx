@@ -32,15 +32,6 @@ export function FriendsIcon(props: IconProps) {
   )
 }
 
-export function GamesIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <rect x="2.5" y="6.5" width="19" height="11" rx="3" />
-      <path d="M6.5 10v4M4.5 12h4M15.5 11h.01M18 13.5h.01" />
-    </Icon>
-  )
-}
-
 export function ProfileIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -54,6 +45,15 @@ export function LiveIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M3 12h3.5l2.2-5 3.1 10 2.2-5H21" />
+    </Icon>
+  )
+}
+
+export function SignOutIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
+      <path d="M10 8l-4 4 4 4M6 12h9" />
     </Icon>
   )
 }

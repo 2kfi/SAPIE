@@ -81,3 +81,14 @@ mark, workspace heading and detail heading over roughly 0.3s. Nav icons use a `c
 tween on click so event-created motion is reverted with the component. `useGSAP` receives a scope
 ref and handles cleanup. When `prefers-reduced-motion: reduce` is set, the timeline and pulse are
 skipped. There are no per-card reveals, no fake delays and no looping animation.
+
+## Theme
+
+Dark only. There is no light theme and no theme toggle in 0.4.
+
+Reason: this is a LAN control surface for a self-hosted game server. It is read beside a running
+game, often in a dim room, and the product has one authored palette. A second light palette would
+split the single token source in `design/tokens.css`, add a preference to persist and maintain, and
+needs its own contrast and state verification. The user chose dark-only for 0.4, so the web UI
+consumes the one dark token set and spends the saved effort on real social and session flows.
+The OS `color-scheme` stays `dark` in the tokens. There is no setting claiming a toggle exists.
