@@ -2,6 +2,7 @@ package state
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -179,6 +180,95 @@ func TestLegacyAchievementSchemaUpgrade(t *testing.T) {
 			t.Fatalf("unlock on legacy schema = %+v, %v", unlock, err)
 		}
 		store.Close()
+	}
+}
+
+func TestStatsOfIncludesAppid(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	id, err := store.CreateAccount("alice", "h", "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		appid uint32
+		name  string
+	}{
+		{480, "kills"}, {900, "wins"},
+	} {
+		if _, err := store.db.Exec(`INSERT INTO stats (steam_id, appid, name, value) VALUES (?, ?, ?, ?)`,
+			id, row.appid, row.name, []byte("1")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stats, err := store.StatsOf(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats.Stats) != 2 || stats.Stats[0].Appid != 480 || stats.Stats[1].Appid != 900 {
+		t.Fatalf("stats appids = %+v", stats.Stats)
+	}
+	body, err := json.Marshal(stats)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "appid") {
+		t.Fatalf("admin stats JSON changed: %s", body)
+	}
+}
+
+func TestPresenceMutationsAreAtomic(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	id, err := store.CreateAccount("alice", "h", "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertPresence(Presence{SteamID: id, Appid: 1, LobbyID: 1,
+		RichPresence: map[string][]byte{"map": []byte("de_dust2")}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetConnectStr(id, "connect=127.0.0.1:27015"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := store.PresenceOf(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Appid != 1 || p.LobbyID != 1 || p.ConnectStr != "connect=127.0.0.1:27015" {
+		t.Fatalf("connect write clobbered presence: %+v", p)
+	}
+
+	if err := store.UpdatePresence(id, "", 480, 42, map[string][]byte{"map": []byte("de_nuke")}); err != nil {
+		t.Fatal(err)
+	}
+	p, err = store.PresenceOf(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Appid != 480 || p.LobbyID != 42 || p.ConnectStr != "connect=127.0.0.1:27015" ||
+		string(p.RichPresence["map"]) != "de_nuke" {
+		t.Fatalf("presence update clobbered connect string: %+v", p)
+	}
+
+	store.mu.Lock()
+	done := make(chan error, 1)
+	go func() { done <- store.SetConnectStr(id, "connect=late") }()
+	select {
+	case err := <-done:
+		store.mu.Unlock()
+		t.Fatalf("SetConnectStr ran while the store lock was held: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	store.mu.Unlock()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -293,11 +293,29 @@ func (s *Store) UpsertPresence(p Presence) error {
 }
 
 func (s *Store) SetConnectStr(steamID uint64, connect string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	p, err := s.PresenceOf(steamID)
 	if err != nil {
 		return err
 	}
 	p.ConnectStr = connect
+	return s.UpsertPresence(p)
+}
+
+func (s *Store) UpdatePresence(steamID uint64, name string, appid uint32, lobbyID uint64, rich map[string][]byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.PresenceOf(steamID)
+	if err != nil {
+		return err
+	}
+	p.Appid = appid
+	p.LobbyID = lobbyID
+	if name != "" {
+		p.PersonaName = name
+	}
+	p.RichPresence = rich
 	return s.UpsertPresence(p)
 }
 
@@ -432,6 +450,7 @@ type Achievement struct {
 type Stat struct {
 	Name  string `json:"name"`
 	Value []byte `json:"value"`
+	Appid uint32 `json:"-"`
 }
 
 type UserStats struct {
@@ -477,14 +496,14 @@ func (s *Store) AchievementOf(steamID uint64, appid uint32, name string) (Achiev
 
 func (s *Store) StatsOf(steamID uint64) (UserStats, error) {
 	result := UserStats{SteamID: steamID, Stats: []Stat{}, Achievements: []Achievement{}}
-	rows, err := s.db.Query(`SELECT name, value FROM stats WHERE steam_id = ? ORDER BY name`, steamID)
+	rows, err := s.db.Query(`SELECT name, value, appid FROM stats WHERE steam_id = ? ORDER BY name`, steamID)
 	if err != nil {
 		return UserStats{}, err
 	}
 	for rows.Next() {
 		var stat Stat
 		var value []byte
-		if err := rows.Scan(&stat.Name, &value); err != nil {
+		if err := rows.Scan(&stat.Name, &value, &stat.Appid); err != nil {
 			rows.Close()
 			return UserStats{}, err
 		}

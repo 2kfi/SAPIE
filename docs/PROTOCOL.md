@@ -24,7 +24,9 @@ a zero length is invalid. A truncated header or body closes the connection.
 3. On success the server creates a 32-byte session token (stored hashed, 24 h
    lifetime) and replies `LoginResponse{status: OK, steam_id, persona_name,
    session_token, friends}`. `friends` lists the account's friends with their
-   stored name, appid, lobby and rich presence (offline friends included).
+   stored name, appid, lobby and rich presence (offline friends included), plus
+   the `persona_state` key (`1` online, `0` offline). `connect_str` is stripped
+   from the rich-presence map.
 
 `BANNED`, `SERVER_FULL` and `VERSION_MISMATCH` statuses exist in the contract but
 are never emitted.
@@ -54,9 +56,9 @@ cannot be verified or redeemed yet.
 | `Common_Message{Lobby}`, `{Lobby_Messages}` | Fan out to the lobby's members |
 | Other `Common_Message` variants | `source_id` stamped, logged and dropped |
 | `TicketRequest` | Reply `TicketResponse` (see App tickets) |
-| `StatsGet` | Reply `StatsResponse` for `steam_id` (0 means self) |
+| `StatsGet` | Reply `StatsResponse` for `steam_id` (0 means self), filtered by `appid` |
 | `AchievementUnlock` | Persist the unlock and push it to friends and lobby mates |
-| `StatsSet`, other variants | Logged and ignored (no-op acknowledgement) |
+| `StatsSet`, other variants | Logged and ignored; no response frame is sent |
 
 Server pushes use `Common_Message` frames: presence is a `Friend` with a
 `persona_state` rich-presence key (`1` online, `0` offline), invites are
@@ -79,9 +81,13 @@ message is the same value. The `unlock_time` in the push is the exact integer
 stored in the database and returned by the admin API.
 
 `StatsGet{appid, names, steam_id}` queries another user by `steam_id`; zero
-means the caller. The reply is `StatsResponse{stats, achievements, steam_id}`.
-Each achievement has both the legacy `unlock_time` (`uint32`) and the canonical
-`unlock_time_unix` (`int64`). Use the latter for new clients.
+means the caller. A nonzero `appid` limits both stats and achievements to that
+app; zero returns every app. When the caller is not the owner, achievements
+marked `hidden` are omitted entirely, including their names and unlock times.
+The reply is `StatsResponse{stats, achievements, steam_id}`. Each achievement
+has both the legacy `unlock_time` (`uint32`) and the canonical
+`unlock_time_unix` (`int64`). Use the latter for new clients. The admin HTTP
+stats endpoint is unaffected by these game-socket filters and returns all apps.
 
 ## Not supported yet
 

@@ -142,10 +142,7 @@ func (s *Server) handle(conn net.Conn) {
 	session.steamID = account.SteamID
 	session.personaName = account.PersonaName
 	s.register(session)
-	defer func() {
-		s.unregister(session)
-		s.pushPresence(session, false)
-	}()
+	defer s.disconnect(session)
 	go s.heartbeat(session)
 
 	s.sendLoginResult(session, protocol.LoginResponse_OK, account.SteamID,
@@ -207,6 +204,11 @@ func (s *Server) friendSnapshots(steamID uint64) []*protocol.FriendSnapshot {
 	}
 	snapshots := make([]*protocol.FriendSnapshot, 0, len(friends))
 	for _, friend := range friends {
+		personaState := []byte("0")
+		if s.IsOnline(friend.SteamID) {
+			personaState = []byte("1")
+		}
+		friend.RichPresence[state.PersonaStateKey] = personaState
 		snapshots = append(snapshots, &protocol.FriendSnapshot{
 			SteamId:      friend.SteamID,
 			PersonaName:  []byte(friend.PersonaName),
@@ -251,18 +253,7 @@ func (s *Server) handleSteam(session *Session, msg *protocol.Common_Message) {
 			return
 		}
 		friend.Id = session.steamID
-		presence, err := s.store.PresenceOf(session.steamID)
-		if err != nil {
-			log.Printf("session %d: presence: %v", session.steamID, err)
-			return
-		}
-		presence.Appid = friend.Appid
-		presence.LobbyID = friend.LobbyId
-		if len(friend.Name) > 0 {
-			presence.PersonaName = string(friend.Name)
-		}
-		presence.RichPresence = friend.RichPresence
-		if err := s.store.UpsertPresence(presence); err != nil {
+		if err := s.store.UpdatePresence(session.steamID, string(friend.Name), friend.Appid, friend.LobbyId, friend.RichPresence); err != nil {
 			log.Printf("session %d: store presence: %v", session.steamID, err)
 			return
 		}
@@ -290,11 +281,23 @@ func (s *Server) handleStatsGet(session *Session, req *protocol.StatsGet) {
 		log.Printf("session %d: stats for %d: %v", session.steamID, steamID, err)
 		return
 	}
+	appid := req.GetAppid()
+	owner := steamID == session.steamID
 	response := &protocol.StatsResponse{SteamId: steamID}
 	for _, stat := range stats.Stats {
+		if appid != 0 && stat.Appid != appid {
+			continue
+		}
 		response.Stats = append(response.Stats, &protocol.StatValue{Name: stat.Name, Value: stat.Value})
 	}
 	for _, a := range stats.Achievements {
+		if appid != 0 && a.Appid != appid {
+			continue
+		}
+		// Hidden definitions are private to the owner.
+		if a.Hidden && !owner {
+			continue
+		}
 		response.Achievements = append(response.Achievements, &protocol.AchievementState{
 			Name: a.ID, Achieved: a.Achieved,
 			UnlockTime: uint32(a.UnlockTime), UnlockTimeUnix: a.UnlockTime,
@@ -402,6 +405,14 @@ func (s *Server) unregister(session *Session) {
 	if s.peers[session.steamID] == session {
 		delete(s.peers, session.steamID)
 	}
+}
+
+func (s *Server) disconnect(session *Session) {
+	s.unregister(session)
+	if peer, ok := s.PeerFor(session.steamID); ok && peer != session {
+		return // a newer session already pushed its own presence
+	}
+	s.pushPresence(session, false)
 }
 
 func hostFromAddr(addr net.Addr) string {

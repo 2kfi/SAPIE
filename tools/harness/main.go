@@ -132,6 +132,43 @@ func (c *gameClient) requestTicket(appid uint32) (*protocol.TicketResponse, erro
 	return result.TicketResponse, nil
 }
 
+func (c *gameClient) requestStats(appid uint32, steamID uint64) (*protocol.StatsResponse, error) {
+	frame := &protocol.Frame{Payload: &protocol.Frame_StatsGet{StatsGet: &protocol.StatsGet{
+		Appid: appid, SteamId: steamID,
+	}}}
+	if err := c.send(frame); err != nil {
+		return nil, fmt.Errorf("send stats get: %w", err)
+	}
+	response, err := c.next(func(f *protocol.Frame) bool {
+		_, ok := f.Payload.(*protocol.Frame_StatsResponse)
+		return ok
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read stats response: %w", err)
+	}
+	result, ok := response.Payload.(*protocol.Frame_StatsResponse)
+	if !ok {
+		return nil, fmt.Errorf("got %T, want StatsResponse", response.Payload)
+	}
+	return result.StatsResponse, nil
+}
+
+func expectAchievements(resp *protocol.StatsResponse, want ...string) error {
+	got := map[string]bool{}
+	for _, a := range resp.GetAchievements() {
+		got[a.GetName()] = true
+	}
+	if len(got) != len(want) {
+		return fmt.Errorf("achievements = %v, want %v", got, want)
+	}
+	for _, name := range want {
+		if !got[name] {
+			return fmt.Errorf("achievements = %v, want %v", got, want)
+		}
+	}
+	return nil
+}
+
 func steamMessage(frame *protocol.Frame) *protocol.Common_Message {
 	steam, ok := frame.Payload.(*protocol.Frame_Steam)
 	if !ok {
@@ -458,6 +495,75 @@ func run() error {
 		return fmt.Errorf("admin stats unlock_time differs from push: %s", body)
 	}
 	fmt.Printf("PASS M4 admin API shows same unlock_time=%d\n", unlockTime)
+
+	for _, unlock := range []struct {
+		appid uint32
+		def   protocol.AchievementDef
+	}{
+		{480, protocol.AchievementDef{Id: "hidden_relic", DisplayName: "Hidden Relic", Hidden: true}},
+		{900, protocol.AchievementDef{Id: "other_game_win", DisplayName: "Other Game Win"}},
+	} {
+		def := unlock.def
+		frame := &protocol.Frame{Payload: &protocol.Frame_AchievementUnlock{AchievementUnlock: &protocol.AchievementUnlock{
+			Appid: unlock.appid, Def: &def,
+		}}}
+		if err := aliceClient.send(frame); err != nil {
+			return fmt.Errorf("send extra unlock: %w", err)
+		}
+		frame, err = bobClient.next(func(f *protocol.Frame) bool {
+			msg := steamMessage(f)
+			return msg != nil && msg.GetAchievementUnlock() != nil &&
+				msg.GetAchievementUnlock().GetDef().GetId() == unlock.def.Id
+		})
+		if err != nil {
+			return fmt.Errorf("extra unlock push %s: %w", unlock.def.Id, err)
+		}
+	}
+
+	bobView, err := bobClient.requestStats(0, alice.SteamID)
+	if err != nil {
+		return err
+	}
+	if err := expectAchievements(bobView, "first_kill", "other_game_win"); err != nil {
+		return fmt.Errorf("bob stats: %w", err)
+	}
+	fmt.Println("PASS MR1 hidden achievement omitted from other user's StatsGet")
+
+	aliceView, err := aliceClient.requestStats(0, 0)
+	if err != nil {
+		return err
+	}
+	if err := expectAchievements(aliceView, "first_kill", "hidden_relic", "other_game_win"); err != nil {
+		return fmt.Errorf("alice own stats: %w", err)
+	}
+	fmt.Println("PASS MR1 owner still sees hidden achievement")
+
+	appView, err := bobClient.requestStats(900, alice.SteamID)
+	if err != nil {
+		return err
+	}
+	if err := expectAchievements(appView, "other_game_win"); err != nil {
+		return fmt.Errorf("appid-filtered stats: %w", err)
+	}
+	fmt.Println("PASS MR1 StatsGet appid filter")
+
+	status, body, err = apiCall(client, http.MethodGet,
+		fmt.Sprintf("%s/api/v1/users/%d/stats", adminURL, alice.SteamID), adminToken, nil)
+	if err != nil || status != http.StatusOK {
+		return fmt.Errorf("admin stats after filters = %d: %s (%v)", status, body, err)
+	}
+	stats = state.UserStats{}
+	if err := json.Unmarshal(body, &stats); err != nil {
+		return fmt.Errorf("decode admin stats: %w", err)
+	}
+	adminNames := map[string]bool{}
+	for _, a := range stats.Achievements {
+		adminNames[a.ID] = true
+	}
+	if len(adminNames) != 3 || !adminNames["first_kill"] || !adminNames["hidden_relic"] || !adminNames["other_game_win"] {
+		return fmt.Errorf("admin stats after filters = %s", body)
+	}
+	fmt.Println("PASS MR1 admin stats API still returns all apps and hidden achievements")
 	return nil
 }
 
