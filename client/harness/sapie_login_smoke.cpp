@@ -2,6 +2,7 @@
 
 #include <steam_api.h>
 #include "sapie.pb.h"
+#include "../dll/network.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -332,6 +333,17 @@ struct StubServer {
 
 int main(int argc, char **argv)
 {
+    {
+        IP_PORT endpoint = {};
+        if (peer_endpoint_from_hint(0, 0, &endpoint) ||
+            peer_endpoint_from_hint(0x7F000001, 0, &endpoint) ||
+            !peer_endpoint_from_hint(0x7F000001, 47584, &endpoint) ||
+            ntohl(endpoint.ip) != 0x7F000001 || ntohs(endpoint.port) != 47584) {
+            fprintf(stderr, "FAIL: peer endpoint hint self-check\n");
+            return 2;
+        }
+    }
+
     std::string mode = argc > 1 ? argv[1] : "";
     bool reject = mode == "--reject";
     bool mirror = mode == "--mirror";

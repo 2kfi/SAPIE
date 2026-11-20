@@ -51,6 +51,16 @@ struct IP_PORT {
     }
 };
 
+// Server-stamped signaling hint (host byte order) to a wire-ready UDP endpoint.
+// 0/0 means no usable hint; never fabricate an endpoint from it.
+inline bool peer_endpoint_from_hint(uint32 source_ip, uint32 source_port, IP_PORT *out)
+{
+    if (!source_ip || !source_port) return false;
+    out->ip = htonl(source_ip);
+    out->port = htons(source_port);
+    return true;
+}
+
 struct Network_Callback {
     void (*message_callback)(void *object, Common_Message *msg);
     void *object;
@@ -145,6 +155,7 @@ public:
     void setAppID(uint32 appid);
     void Run();
     bool sendTo(Common_Message *msg, bool reliable, Connection *conn = NULL);
+    bool sendToPeer(Common_Message *msg, IP_PORT endpoint);
     bool sendToAllIndividuals(Common_Message *msg, bool reliable);
     bool send_steam(Common_Message *msg, bool reliable, bool all = false);
     bool send_frame(const google::protobuf::MessageLite &message);

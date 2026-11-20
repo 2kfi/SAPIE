@@ -1552,6 +1552,23 @@ uint32 Networking::getIP(CSteamID id)
     return 0;
 }
 
+bool Networking::sendToPeer(Common_Message *msg, IP_PORT endpoint)
+{
+    if (!enabled) return false;
+
+    size_t size = msg->ByteSizeLong();
+    if (size >= MAX_UDP_SIZE) return false;
+
+    char *buffer = new char[size];
+    if (!msg->SerializeToArray(buffer, size)) {
+        delete[] buffer;
+        return false;
+    }
+    send_packet_to(udp_socket, endpoint, buffer, size);
+    delete[] buffer;
+    return true;
+}
+
 bool Networking::sendTo(Common_Message *msg, bool reliable, Connection *conn)
 {
     if (!enabled) return false;
