@@ -1,10 +1,12 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use eframe::egui;
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Connection {
@@ -66,14 +68,25 @@ const INTERFACE_NAMES: &[&str] = &[
     "STEAMVIDEO_INTERFACE_V",
 ];
 
-fn state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+const BG: egui::Color32 = egui::Color32::from_rgb(0x11, 0x19, 0x27);
+const SURFACE: egui::Color32 = egui::Color32::from_rgb(0x1b, 0x24, 0x32);
+const FIELD: egui::Color32 = egui::Color32::from_rgb(0x0b, 0x11, 0x1c);
+const TEXT: egui::Color32 = egui::Color32::from_rgb(0xe9, 0xef, 0xf7);
+const MUTED: egui::Color32 = egui::Color32::from_rgb(0xb3, 0xc3, 0xd6);
+const EMBER: egui::Color32 = egui::Color32::from_rgb(0xff, 0x9b, 0x6a);
+const OK: egui::Color32 = egui::Color32::from_rgb(0x8f, 0xe3, 0xb0);
+const ERROR: egui::Color32 = egui::Color32::from_rgb(0xff, 0xb3, 0xa7);
+
+fn state_path() -> Result<PathBuf, String> {
+    let dir = dirs::data_dir()
+        .ok_or("Could not find the per-user data directory.")?
+        .join("com.sapie.launcher");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join("launcher-state.json"))
 }
 
-fn load_state(app: &tauri::AppHandle) -> Result<PersistedState, String> {
-    let path = state_path(app)?;
+fn load_state() -> Result<PersistedState, String> {
+    let path = state_path()?;
     if !path.is_file() {
         return Ok(PersistedState::default());
     }
@@ -81,9 +94,9 @@ fn load_state(app: &tauri::AppHandle) -> Result<PersistedState, String> {
     serde_json::from_str(&text).map_err(|e| e.to_string())
 }
 
-fn save_state(app: &tauri::AppHandle, state: &PersistedState) -> Result<(), String> {
+fn save_state(state: &PersistedState) -> Result<(), String> {
     let text = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
-    fs::write(state_path(app)?, text).map_err(|e| e.to_string())
+    fs::write(state_path()?, text).map_err(|e| e.to_string())
 }
 
 fn new_record(exe_path: &str) -> GameRecord {
@@ -220,20 +233,24 @@ fn find_original_steam_api(dir: &Path) -> Option<PathBuf> {
     candidates.into_iter().next()
 }
 
-fn steamless_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let root = app.path().resource_dir().ok()?;
-    for candidate in [root.join("resources/steamless"), root.join("steamless")] {
-        if candidate.is_dir() {
-            return Some(candidate);
-        }
-    }
-    None
+fn executable_dir() -> Option<PathBuf> {
+    std::env::current_exe().ok()?.parent().map(Path::to_path_buf)
 }
 
-fn dll_search_dirs(app: &tauri::AppHandle, target: &str, era: &str) -> Vec<PathBuf> {
+fn steamless_dir() -> Option<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(root) = executable_dir() {
+        dirs.push(root.join("steamless"));
+        dirs.push(root.join("resources/steamless"));
+    }
+    dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/steamless"));
+    dirs.into_iter().find(|dir| dir.is_dir())
+}
+
+fn dll_search_dirs(target: &str, era: &str) -> Vec<PathBuf> {
     let suffix = format!("{target}-{era}");
     let mut dirs = Vec::new();
-    if let Ok(root) = app.path().resource_dir() {
+    if let Some(root) = executable_dir() {
         dirs.push(root.join("steam_api").join(&suffix));
         dirs.push(root.join("resources/steam_api").join(&suffix));
     }
@@ -261,19 +278,13 @@ fn validate_server(server: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-fn pick_executable(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    app.run_on_main_thread(move || {
-        let picked = rfd::FileDialog::new().pick_file();
-        let _ = tx.send(picked.map(|path| path.to_string_lossy().into_owned()));
-    })
-    .map_err(|e| e.to_string())?;
-    rx.recv().map_err(|e| e.to_string())
+fn pick_executable() -> Option<String> {
+    rfd::FileDialog::new()
+        .pick_file()
+        .map(|path| path.to_string_lossy().into_owned())
 }
 
-#[tauri::command]
-fn detect_game(exe_path: String, app: tauri::AppHandle) -> Result<DetectResult, String> {
+fn detect_game(exe_path: String) -> Result<DetectResult, String> {
     let exe = PathBuf::from(&exe_path);
     if !exe.is_file() {
         return Err(format!("Executable not found: {exe_path}"));
@@ -301,13 +312,13 @@ fn detect_game(exe_path: String, app: tauri::AppHandle) -> Result<DetectResult, 
     let era = era_from_interfaces(&interfaces);
     let steam_api_path = steam_api.map(|p| p.to_string_lossy().into_owned());
 
-    let mut state = load_state(&app)?;
+    let mut state = load_state()?;
     let record = state.games.entry(exe_path.clone()).or_insert_with(|| new_record(&exe_path));
     record.arch = arch.clone();
     record.era = era.clone();
     record.interfaces = interfaces.clone();
     record.steam_api_path = steam_api_path.clone();
-    save_state(&app, &state)?;
+    save_state(&state)?;
 
     Ok(DetectResult {
         arch,
@@ -317,8 +328,7 @@ fn detect_game(exe_path: String, app: tauri::AppHandle) -> Result<DetectResult, 
     })
 }
 
-#[tauri::command]
-fn unpack_steamstub(exe_path: String, app: tauri::AppHandle) -> Result<Option<String>, String> {
+fn unpack_steamstub(exe_path: String) -> Result<Option<String>, String> {
     if cfg!(not(target_os = "windows")) {
         return Err("SteamStub unpacking is available on Windows only.".into());
     }
@@ -326,7 +336,7 @@ fn unpack_steamstub(exe_path: String, app: tauri::AppHandle) -> Result<Option<St
     if !exe.is_file() {
         return Err(format!("Executable not found: {exe_path}"));
     }
-    let dir = steamless_dir(&app)
+    let dir = steamless_dir()
         .ok_or_else(|| "Steamless resource folder is missing from this launcher.".to_string())?;
     let cli = dir.join("Steamless.CLI.exe");
     if !cli.is_file() {
@@ -366,12 +376,11 @@ fn unpack_steamstub(exe_path: String, app: tauri::AppHandle) -> Result<Option<St
     ))
 }
 
-#[tauri::command]
-fn copy_dll(exe_path: String, era: String, app: tauri::AppHandle) -> Result<String, String> {
+fn copy_dll(exe_path: String, era: String) -> Result<String, String> {
     if era != "legacy" && era != "modern" {
         return Err("Game era could not be determined; refusing to guess a DLL.".into());
     }
-    let mut state = load_state(&app)?;
+    let mut state = load_state()?;
     let record = state
         .games
         .get(&exe_path)
@@ -392,7 +401,7 @@ fn copy_dll(exe_path: String, era: String, app: tauri::AppHandle) -> Result<Stri
             return Err(format!("No SAPIE client artifact for {os}/{detected}."));
         }
     };
-    let dirs = dll_search_dirs(&app, target, &era);
+    let dirs = dll_search_dirs(target, &era);
     let source = dirs
         .iter()
         .map(|dir| dir.join(dll_name))
@@ -427,32 +436,29 @@ fn copy_dll(exe_path: String, era: String, app: tauri::AppHandle) -> Result<Stri
         .get_mut(&exe_path)
         .ok_or("Detect the game before copying the DLL.")?;
     record.dll_path = Some(dest_string.clone());
-    save_state(&app, &state)?;
+    save_state(&state)?;
     Ok(dest_string)
 }
 
-#[tauri::command]
-fn set_ld_preload(exe_path: String, lib_path: String, app: tauri::AppHandle) -> Result<(), String> {
+fn set_ld_preload(exe_path: String, lib_path: String) -> Result<(), String> {
     let lib = PathBuf::from(&lib_path);
     if !lib.is_file() {
         return Err(format!("Library not found: {lib_path}"));
     }
-    let mut state = load_state(&app)?;
+    let mut state = load_state()?;
     let record = state
         .games
         .get_mut(&exe_path)
         .ok_or("Detect the game before setting LD_PRELOAD.")?;
     record.ld_preload = Some(lib_path);
-    save_state(&app, &state)
+    save_state(&state)
 }
 
-#[tauri::command]
 fn configure_server(
     exe_path: String,
     server: String,
     username: String,
     password: String,
-    app: tauri::AppHandle,
 ) -> Result<(), String> {
     validate_server(&server)?;
     if username.trim().is_empty() {
@@ -472,7 +478,7 @@ fn configure_server(
     fs::write(dir.join("sapie_server.txt"), format!("{server}\n"))
         .map_err(|e| e.to_string())?;
 
-    let mut state = load_state(&app)?;
+    let mut state = load_state()?;
     state.server = Some(Connection {
         server: server.clone(),
         username,
@@ -483,12 +489,11 @@ fn configure_server(
         .entry(exe_path.clone())
         .or_insert_with(|| new_record(&exe_path));
     record.configured = true;
-    save_state(&app, &state)
+    save_state(&state)
 }
 
-#[tauri::command]
-fn launch_game(exe_path: String, app: tauri::AppHandle) -> Result<(), String> {
-    let state = load_state(&app)?;
+fn launch_game(exe_path: String) -> Result<(), String> {
+    let state = load_state()?;
     let record = state
         .games
         .get(&exe_path)
@@ -523,19 +528,396 @@ fn launch_game(exe_path: String, app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn main() {
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![
-            pick_executable,
-            detect_game,
-            unpack_steamstub,
-            copy_dll,
-            set_ld_preload,
-            configure_server,
-            launch_game,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running SAPIE launcher");
+#[derive(Clone, Copy, PartialEq)]
+enum Tab {
+    Connect,
+    Games,
+}
+
+struct LogLine {
+    level: &'static str,
+    text: String,
+}
+
+struct LauncherApp {
+    tab: Tab,
+    state: PersistedState,
+    selected: Option<String>,
+    connection: Connection,
+    remember: bool,
+    password_visible: bool,
+    preload: String,
+    log: Vec<LogLine>,
+    error: Option<String>,
+}
+
+impl LauncherApp {
+    fn new() -> Self {
+        let (initial_state, load_error) = match load_state() {
+            Ok(state) => (state, None),
+            Err(err) => (PersistedState::default(), Some(err)),
+        };
+        let connection = initial_state
+            .server
+            .clone()
+            .unwrap_or_else(|| Connection { server: String::new(), username: String::new(), password: String::new() });
+        let remember = initial_state.server.is_some();
+        let mut app = Self {
+            tab: Tab::Connect,
+            state: PersistedState::default(),
+            selected: None,
+            connection,
+            remember,
+            password_visible: false,
+            preload: String::new(),
+            log: Vec::new(),
+            error: None,
+        };
+        app.log("INFO", "Ready. Add a game executable to begin.".into());
+        if let Some(err) = load_error {
+            app.log("ERROR", format!("Could not load saved launcher state: {err}"));
+        }
+        app.state = initial_state;
+        app
+    }
+
+    fn log(&mut self, level: &'static str, text: String) {
+        self.log.push(LogLine { level, text });
+    }
+
+    fn result(&mut self, action: &str, result: Result<String, String>) {
+        match result {
+            Ok(text) => {
+                self.error = None;
+                self.log("OK", format!("{action}: {text}"));
+            }
+            Err(err) => {
+                let text = format!("{action}: {err}");
+                self.error = Some(text.clone());
+                self.log("ERROR", text);
+            }
+        }
+        self.refresh();
+    }
+
+    fn refresh(&mut self) {
+        match load_state() {
+            Ok(state) => self.state = state,
+            Err(err) => self.log("ERROR", format!("Could not reload launcher state: {err}")),
+        }
+    }
+
+    fn connect(&mut self) {
+        let conn = self.connection.clone();
+        let result = validate_server(&conn.server)
+            .and_then(|_| if conn.username.trim().is_empty() { Err("Username is required.".into()) } else { Ok(()) })
+            .and_then(|_| if conn.password.is_empty() { Err("Password is required.".into()) } else { Ok(()) });
+        if let Err(err) = result {
+            self.result("Connect", Err(err));
+            return;
+        }
+        if self.remember {
+            let mut state = match load_state() {
+                Ok(state) => state,
+                Err(err) => {
+                    self.result("Connect", Err(err));
+                    return;
+                }
+            };
+            state.server = Some(conn);
+            self.result("Connect", save_state(&state).map(|_| "Connection details saved on this device.".into()));
+        } else {
+            let server = conn.server.trim().to_string();
+            self.result("Connect", Ok(format!("Connection to {server} ready for this session.")));
+        }
+    }
+
+    fn add_game(&mut self) {
+        if let Some(path) = pick_executable() {
+            self.selected = Some(path.clone());
+            let result = detect_game(path.clone()).map(|info| {
+                format!("{} detected as {}/{} with {} interfaces", Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(path), info.arch, info.era, info.interfaces.len())
+            });
+            self.result("Detect", result);
+        } else {
+            self.log("INFO", "No executable selected.".into());
+        }
+    }
+
+    fn unpack(&mut self) {
+        let Some(path) = self.selected.clone() else { return };
+        match unpack_steamstub(path.clone()) {
+            Ok(Some(unpacked)) => {
+                self.selected = Some(unpacked.clone());
+                self.log("OK", format!("Steamless: unpacked to {unpacked}"));
+                let result = detect_game(unpacked).map(|info| {
+                    format!("{} detected as {}/{}", info.arch, info.era, info.interfaces.join(", "))
+                });
+                self.result("Detect unpacked executable", result);
+            }
+            Ok(None) => self.result("Steamless", Ok("No SteamStub found in this executable.".into())),
+            Err(err) => self.result("Steamless", Err(err)),
+        }
+    }
+
+    fn install_dll(&mut self) {
+        let Some(path) = self.selected.clone() else { return };
+        let era = self.state.games.get(&path).map(|r| r.era.clone()).unwrap_or_default();
+        self.result("Install DLL", copy_dll(path, era));
+    }
+
+    fn configure(&mut self) {
+        let Some(path) = self.selected.clone() else { return };
+        let conn = self.connection.clone();
+        self.result("Configure server", configure_server(path, conn.server, conn.username, conn.password).map(|_| "sapie_server.txt written.".into()));
+    }
+
+    fn set_preload(&mut self) {
+        let Some(path) = self.selected.clone() else { return };
+        self.result("Set LD_PRELOAD", set_ld_preload(path, self.preload.clone()).map(|_| "Library recorded for Linux launches.".into()));
+    }
+
+    fn launch(&mut self) {
+        let Some(path) = self.selected.clone() else { return };
+        self.result("Launch", launch_game(path).map(|_| "Game process started.".into()));
+    }
+
+    fn ui_connect(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Connect to a server");
+        ui.add_space(6.0);
+        ui.label(egui::RichText::new("These details are sent to the game as SAPIE_USERNAME and SAPIE_PASSWORD when you launch it.").color(MUTED));
+        ui.add_space(10.0);
+
+        egui::Grid::new("connect-grid")
+            .num_columns(2)
+            .spacing([12.0, 10.0])
+            .show(ui, |ui| {
+                ui.label("Server (host:port)");
+                ui.add(egui::TextEdit::singleline(&mut self.connection.server).desired_width(360.0).hint_text("127.0.0.1:7777"));
+                ui.end_row();
+
+                ui.label("Username");
+                ui.add(egui::TextEdit::singleline(&mut self.connection.username).desired_width(220.0));
+                ui.end_row();
+
+                ui.label("Password");
+                ui.horizontal(|ui| {
+                    ui.add(egui::TextEdit::singleline(&mut self.connection.password).password(!self.password_visible).desired_width(220.0));
+                    if ui.button(if self.password_visible { "Hide" } else { "Show" }).clicked() {
+                        self.password_visible = !self.password_visible;
+                    }
+                });
+                ui.end_row();
+            });
+
+        ui.add_space(10.0);
+        ui.checkbox(&mut self.remember, "Remember details on this device");
+        ui.add_space(10.0);
+        if ui.button("Connect").clicked() {
+            self.connect();
+            self.tab = Tab::Games;
+        }
+
+        ui.add_space(16.0);
+        ui.separator();
+        ui.add_space(8.0);
+        ui.label(egui::RichText::new("Saved connection").strong());
+        match &self.state.server {
+            Some(conn) => {
+                ui.label(format!("Server: {}", conn.server));
+                ui.label(format!("Username: {}", conn.username));
+                ui.label(egui::RichText::new("Password: saved in launcher-state.json").color(MUTED));
+            }
+            None => {
+                ui.label(egui::RichText::new("No connection saved yet.").color(MUTED));
+            }
+        }
+    }
+
+    fn ui_games(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Games");
+        ui.add_space(6.0);
+        if ui.button("Add executable").clicked() {
+            self.add_game();
+        }
+        ui.add_space(10.0);
+
+        if self.state.games.is_empty() {
+            ui.label(egui::RichText::new("No games yet. Add a game executable to detect its architecture and interface era.").color(MUTED));
+        } else {
+            egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
+                for record in self.state.games.values() {
+                    let label = format!(
+                        "{}  ({}/{}, {})",
+                        Path::new(&record.exe_path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| record.exe_path.clone()),
+                        record.arch,
+                        record.era,
+                        if record.configured { "configured" } else { "not configured" }
+                    );
+                    if ui.selectable_label(self.selected.as_deref() == Some(record.exe_path.as_str()), label).clicked() {
+                        self.selected = Some(record.exe_path.clone());
+                        self.preload = record.ld_preload.clone().unwrap_or_default();
+                    }
+                }
+            });
+        }
+
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(6.0);
+
+        let has_game = self.selected.is_some();
+        let era_known = self.selected.as_ref()
+            .and_then(|path| self.state.games.get(path))
+            .map(|r| r.era == "legacy" || r.era == "modern")
+            .unwrap_or(false);
+        ui.horizontal_wrapped(|ui| {
+            if ui.add_enabled(has_game, egui::Button::new("Detect again")).clicked() {
+                let path = self.selected.clone().unwrap();
+                let result = detect_game(path).map(|info| format!("{}/{} with {} interfaces", info.arch, info.era, info.interfaces.len()));
+                self.result("Detect", result);
+            }
+            if ui.add_enabled(has_game, egui::Button::new("Unpack SteamStub")).clicked() {
+                self.unpack();
+            }
+            if ui.add_enabled(has_game && era_known, egui::Button::new("Install DLL")).clicked() {
+                self.install_dll();
+            }
+            if ui.add_enabled(has_game, egui::Button::new("Configure server")).clicked() {
+                self.configure();
+            }
+            if ui.add_enabled(has_game, egui::Button::new("Launch game")).clicked() {
+                self.launch();
+            }
+        });
+
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            ui.label("LD_PRELOAD library (Linux launches)");
+            ui.add(egui::TextEdit::singleline(&mut self.preload).desired_width(280.0));
+            if ui.add_enabled(has_game, egui::Button::new("Set")).clicked() {
+                self.set_preload();
+            }
+        });
+
+        ui.add_space(10.0);
+        if let Some(path) = &self.selected {
+            if let Some(record) = self.state.games.get(path) {
+                ui.label(egui::RichText::new("Selected game").strong());
+                ui.label(format!("Path: {}", record.exe_path));
+                ui.label(format!("Architecture: {}   Era: {}", record.arch, record.era));
+                ui.label(format!("Interfaces: {}", if record.interfaces.is_empty() { "none scanned".into() } else { record.interfaces.join(", ") }));
+                ui.label(format!("DLL: {}", record.dll_path.as_deref().unwrap_or("not installed")));
+                ui.label(format!("Configured: {}", if record.configured { "yes" } else { "no" }));
+            }
+        } else {
+            ui.label(egui::RichText::new("Select a game to see its details.").color(MUTED));
+        }
+    }
+
+    fn ui_log(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Activity").strong());
+            if ui.button("Clear").clicked() {
+                self.log.clear();
+                self.error = None;
+            }
+        });
+        ui.separator();
+        let (level_color, error_text) = match &self.error {
+            Some(text) => (ERROR, text.clone()),
+            None => (OK, String::new()),
+        };
+        if !error_text.is_empty() {
+            ui.label(egui::RichText::new(format!("[ERROR] {error_text}")).color(level_color));
+        }
+        egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
+            for line in &self.log {
+                let color = match line.level {
+                    "ERROR" => ERROR,
+                    "OK" => OK,
+                    _ => MUTED,
+                };
+                ui.label(egui::RichText::new(format!("[{}] {}", line.level, line.text)).color(color));
+            }
+        });
+    }
+}
+
+impl eframe::App for LauncherApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::TopBottomPanel::top("header").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.heading(egui::RichText::new("SAPIE Launcher").color(EMBER).strong());
+                ui.add_space(12.0);
+                ui.selectable_value(&mut self.tab, Tab::Connect, "Connect");
+                ui.selectable_value(&mut self.tab, Tab::Games, "Games");
+            });
+        });
+
+        egui::TopBottomPanel::bottom("activity")
+            .resizable(true)
+            .default_height(180.0)
+            .min_height(90.0)
+            .show(ctx, |ui| self.ui_log(ui));
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            match self.tab {
+                Tab::Connect => self.ui_connect(ui),
+                Tab::Games => self.ui_games(ui),
+            }
+        });
+    }
+}
+
+fn configure_style(ctx: &egui::Context) {
+    let mut style = (*ctx.style()).clone();
+    style.visuals = egui::Visuals::dark();
+    style.visuals.window_fill = BG;
+    style.visuals.panel_fill = BG;
+    style.visuals.extreme_bg_color = FIELD;
+    style.visuals.faint_bg_color = SURFACE;
+    style.visuals.code_bg_color = FIELD;
+    style.visuals.widgets.noninteractive.bg_fill = SURFACE;
+    style.visuals.widgets.inactive.bg_fill = SURFACE;
+    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(0x2c, 0x39, 0x4f);
+    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(0x36, 0x44, 0x5c);
+    style.visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(0x36, 0x44, 0x5c);
+    style.visuals.widgets.active.bg_stroke = egui::Stroke::new(2.0_f32, EMBER);
+    let text_stroke = egui::Stroke::new(1.0_f32, TEXT);
+    style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, MUTED);
+    style.visuals.widgets.inactive.fg_stroke = text_stroke;
+    style.visuals.widgets.hovered.fg_stroke = text_stroke;
+    style.visuals.widgets.active.fg_stroke = text_stroke;
+    style.visuals.selection.bg_fill = egui::Color32::from_rgb(0x7a, 0x2f, 0x13);
+    style.visuals.selection.stroke = egui::Stroke::new(2.0_f32, EMBER);
+    style.visuals.hyperlink_color = EMBER;
+    style.visuals.text_cursor.stroke = egui::Stroke::new(2.0_f32, EMBER);
+
+    let body = egui::FontId::proportional(15.0);
+    style.text_styles.insert(egui::TextStyle::Body, body.clone());
+    style.text_styles.insert(egui::TextStyle::Button, body);
+    style.text_styles.insert(egui::TextStyle::Heading, egui::FontId::proportional(22.0));
+    style.text_styles.insert(egui::TextStyle::Small, egui::FontId::proportional(13.0));
+    style.text_styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(13.0));
+    ctx.set_style(style);
+}
+
+fn main() -> eframe::Result<()> {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1100.0, 720.0])
+            .with_min_inner_size([860.0, 560.0]),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "SAPIE Launcher",
+        options,
+        Box::new(|cc| {
+            configure_style(&cc.egui_ctx);
+            Ok(Box::new(LauncherApp::new()))
+        }),
+    )
 }
 
 #[cfg(test)]
