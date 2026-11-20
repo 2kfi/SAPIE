@@ -19,6 +19,20 @@ steam_interfaces.txt
 .env
 .env.local
 
+# Server runtime database (default -db sapie.db in the working directory)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Local `go build` output (CI builds into out/); anchored so the
+# server/cmd/sapie-server source directory is not ignored.
+/sapie-server
+/sapie-server.exe
+/server/sapie-server
+/server/sapie-server.exe
+
 # In-source CMake output
 CMakeCache.txt
 CMakeFiles/

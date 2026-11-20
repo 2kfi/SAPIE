@@ -579,11 +579,11 @@ func allowedOrigin(raw string) string {
 	if err != nil || u.Host == "" {
 		return ""
 	}
-	if u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "tauri" {
+	if u.Scheme != "http" && u.Scheme != "https" {
 		return ""
 	}
 	switch strings.ToLower(u.Hostname()) {
-	case "localhost", "127.0.0.1", "tauri.localhost":
+	case "localhost", "127.0.0.1":
 		return u.Scheme + "://" + u.Host
 	}
 	return ""

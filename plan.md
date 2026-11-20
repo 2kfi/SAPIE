@@ -150,8 +150,8 @@ Direction: quiet glass instrument panel, not a game store. Cool neutral acrylic,
 - Screens: login, main shell (rail/friends/detail), game detail + launch, live sessions admin, account (shared). Each has empty/loading/error states.
 - Presence dots always have text labels. Focus = 2px ember ring at 2px offset. Toasts `aria-live="polite"`, errors `role="alert"`. 44×44 targets.
 - Motion: only rail selection (120ms), modal (160ms), toast (200ms), focus ring. No pulsing dots, no staggered rows; `prefers-reduced-motion` collapses to opacity.
-- P2P placeholder text: "Peer-to-peer play is not available in this version." No dead buttons.
-  This is frozen 0.1 text. 0.2 ships P2P in code, but the line stays until the user accepts G0; changing it is gated on G0 acceptance.
+- P2P text: "Friends can play directly with each other, and the server relays traffic when a direct connection is not possible." No dead buttons.
+  The old 0.1 line "Peer-to-peer play is not available in this version." is superseded as of M12; G0 no longer gates the wording.
 
 ## 9. Agents
 

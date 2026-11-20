@@ -80,6 +80,8 @@ current game client.
 | `Common_Message{Networking_Sockets}`, `{Networking_Messages}` with `DATA` | Relay fallback: forwarded to the explicit `dest_id` peer only (friend/lobby gate, no broadcast). See P2P traffic. |
 | Other `Common_Message` variants | `source_id` stamped, logged and dropped |
 | `TicketRequest` | Reply `TicketResponse` (see App tickets); not sent by the shipped client |
+| `ContentServerRequest` | Post-login only; reply `ContentServerResponse{ok: true}` as a neutral acknowledgement. No content data is served. |
+| `ContentServerResponse` | Server-to-client reply to `ContentServerRequest`; carries only `ok`. |
 | `StatsGet` | Reply `StatsResponse` for `steam_id` (0 means self), filtered by `appid` and, when `names` is supplied, to those stat names |
 | `AchievementUnlock` | Persist the unlock; push visible unlocks to friends and lobby mates, never push hidden ones |
 | `StatsSet`, other variants | Logged and ignored; no response frame is sent |
@@ -157,8 +159,9 @@ has been run.
 
 Tickets can be checked for issuance by an admin but are not redeemed or
 consumed, and no Steam ownership check exists. Tickets are not one-time nor
-bound to a peer. P2P game traffic (direct and relay) ships in 0.2; the 0.1 P2P notice stays
-until G0 acceptance.
+bound to a peer. P2P game traffic (direct and relay) ships in 0.2; the old 0.1
+P2P notice is superseded and G0 no longer gates the wording. Live two-client
+verification is still pending.
 
 Known 0.1 limit, closed in 0.2 code:
 
@@ -171,8 +174,8 @@ Known 0.1 limit, closed in 0.2 code:
 
 Base `/api/v1`, JSON bodies, Bearer auth. Admin calls use the token generated on first start and
 stored in `sapie.db` (override with `--admin-token`); user calls use the `session_token` from login. The same per-IP login limiter guards
-game and HTTP login. CORS allows only localhost, 127.0.0.1 and tauri.localhost
-origins over http, https or tauri.
+game and HTTP login. CORS allows only `localhost` and `127.0.0.1` origins over
+`http` or `https`.
 
 The admin API listens on `--admin-listen` (default `127.0.0.1:8080`, loopback).
 The 0.2 web UI listens separately on `--ui-listen` (default `0.0.0.0:8081`) and

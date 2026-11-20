@@ -105,6 +105,15 @@ Windows DLL; the DLL itself is the artifact to copy next to the game exe.
 `CMAKE_LIBRARY_OUTPUT_DIRECTORY` is mirrored to
 `CMAKE_RUNTIME_OUTPUT_DIRECTORY` so Windows DLLs land in the same directory.
 
+## Windows runtime dependencies
+
+The Windows toolchains (`windows-x86.cmake`, `windows-x64.cmake`) link with
+`-static-libgcc -static-libstdc++ -static`, so `steam_api.dll` and
+`steam_api64.dll` import no `libwinpthread-1.dll` and ship self-contained.
+If a future toolchain change drops those flags, the launcher warns about the
+missing runtime DLL, which is never bundled. Linux x64 is not static: it uses
+the host `libprotobuf-lite.so` by design.
+
 ## Known gaps and build notes
 
 - Cross `protobuf-lite` is the hard prerequisite. A cross build with no
