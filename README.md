@@ -1,76 +1,91 @@
 # SAPIE
 
-Old games, no Steam client, your own server. SAPIE is a non-commercial Steam API replacement for games you already own, for gamers by gamers.
-
-0.1 is published and frozen at tag `0.1` (`62007f5`); its assets and GHCR image are unchanged. 0.2 is tagged `0.2` and published at https://github.com/2kfi/SAPIE/releases/tag/0.2. G0 is deferred to the user.
-
-## Get 0.1
-
-Download one asset from the [SAPIE 0.1 release](https://github.com/2kfi/SAPIE/releases/tag/0.1):
-
-- `SAPIE-0.1-linux-x64.tar.gz`
-- `SAPIE-0.1-linux-arm64.tar.gz`
-- `SAPIE-0.1-windows-x64.zip`
-
-Or pull the container: `ghcr.io/2kfi/sapie-server:0.1` or `ghcr.io/2kfi/sapie-server:0.2`. `latest` tracks 0.2.
-
-Each archive contains the launcher `sapie` (`sapie.exe` on Windows), the server `sapie-server` (`sapie-server.exe`), `steam_api/<target>-<era>/` with all 10 DLL/SO variants, and `QUICKSTART.md` at the root. `samples/sapie_server.txt` and `samples/steam_appid.txt` are included. The Windows zip also has `steamless/` with its own NOTICE. The 0.2 assets are published at https://github.com/2kfi/SAPIE/releases/tag/0.2.
+Old Steam games, no Steam client, your own server. SAPIE is a non-commercial Steam API replacement
+for games you already own, for gamers by gamers.
 
 ## Quick start
 
-Unpack an archive and start the server:
+Download an archive from the [0.2 release](https://github.com/2kfi/SAPIE/releases/tag/0.2), unpack it,
+and start the server from the unpacked directory:
 
 ```sh
-./sapie-server --listen=:47584 --admin-listen=127.0.0.1:8080 --db=sapie.db --admin-token=<your-token>
+./sapie-server \
+  --listen=:47584 \
+  --admin-listen=127.0.0.1:8080 \
+  --ui-listen=0.0.0.0:8081 \
+  --ui-dir=./web/dist \
+  --admin-token=<your-token> \
+  --allow-register \
+  --db=sapie.db
 ```
 
-On Windows, run `sapie-server.exe` with the same flags. The game protocol listens on TCP port `47584`. The admin API stays on loopback at `127.0.0.1:8080`; send your token as a `Bearer` header.
+Open `http://<server-ip>:8081`, register two accounts, and log in. Then, next to each game executable:
 
-From 0.2 source the server also takes `--ui-listen 0.0.0.0:8081` (LAN web UI), `--ui-dir ./web/dist` and `--allow-register` (off by default). Port 47584 carries the binary protobuf game protocol, not HTTP; a browser pointed at it shows a connection reset, which is expected. The web UI on 8081 proxies user API routes only, so admin paths return 404 there and still work on 8080. Plain HTTP on the LAN means session tokens cross it in cleartext.
+- `sapie_server.txt` containing `<server-ip>:47584`
+- `steam_appid.txt` containing the game's appid
+- `SAPIE_USERNAME` and `SAPIE_PASSWORD` in the game's environment
 
-Docker alternative, from the repo root where `compose.yaml` lives:
+Copy the matching library from `steam_api/<target>-<era>/` beside the executable, or use the native
+`sapie` launcher (`sapie.exe` on Windows), then start the game.
+
+Port 47584 is the binary game protocol, not HTTP. A browser pointed at it showing "connection reset"
+is normal.
+
+## Downloads
+
+| Release | Assets | Notes |
+| --- | --- | --- |
+| [0.2](https://github.com/2kfi/SAPIE/releases/tag/0.2) | `SAPIE-0.2-linux-x64.tar.gz`, `SAPIE-0.2-linux-arm64.tar.gz`, `SAPIE-0.2-windows-x64.zip` | Current release |
+| [0.1](https://github.com/2kfi/SAPIE/releases/tag/0.1) | Same three files with `0.1` in place of `0.2` | Frozen, no P2P or web UI |
+
+Each archive contains the launcher, the server, all ten `steam_api/<target>-<era>` variants,
+`QUICKSTART.md`, and sample config files. The Windows zip also includes Steamless and its NOTICE.
+
+Container images: `ghcr.io/2kfi/sapie-server:0.2` (also `:latest`); the frozen 0.1 image is `:0.1`.
+With Docker Compose, run `SAPIE_ADMIN_TOKEN=<your-token> docker compose up --build` from the repo root.
+
+## What you get
+
+- Accounts with server-assigned SteamIDs, friends, presence, and invites with connect strings.
+- Lobbies you can create, list, and join.
+- Achievements and stats, with hidden achievements kept from non-owners.
+- A LAN web UI on 8081 for login, registration, friends, and lobbies.
+- Direct UDP peer-to-peer game traffic when a peer hint is available, with a server relay fallback.
+
+## Server options
+
+`--listen` is the game protocol (default `:47584`), `--admin-listen` is the admin API
+(default `127.0.0.1:8080`, requires a `Bearer` token), `--ui-listen` is the web UI
+(default `0.0.0.0:8081`), and `--ui-dir` points at the built SPA (default `./web/dist`).
+Registration is off unless `--allow-register` is passed. Only user API routes are proxied through
+8081; admin paths return 404 there and still work on 8080. The UI is plain HTTP, so session tokens
+cross the LAN in cleartext.
+
+## Friends
+
+There is no add-friend endpoint yet. To link two accounts, stop the server and add both directions
+to the database:
 
 ```sh
-SAPIE_ADMIN_TOKEN=<your-token> docker compose up --build
+sqlite3 sapie.db "INSERT OR IGNORE INTO friendships(steam_id,friend_id) VALUES (<A>,<B>), (<B>,<A>);"
 ```
 
-## Configure your game
+Restart the server afterward. Friends lists, invites, and friend-gated P2P need this row.
 
-`QUICKSTART.md` ships at the root of every archive and is also at [`docs/QUICKSTART.md`](docs/QUICKSTART.md). It covers `sapie_server.txt` (use `127.0.0.1:47584` for a local server), `steam_appid.txt`, and setting `SAPIE_USERNAME` and `SAPIE_PASSWORD` in the game's environment. The launcher copies the right `steam_api` variant next to the game executable, or you can copy it yourself.
+## Steamless
 
-## What 0.1 does
+The launcher can unpack SteamStub-packed Windows executables. Steamless is an unmodified Windows-only
+sidecar with its own NOTICE in the Windows archive. Do not modify it.
 
-- Issues SteamIDs from your own account list.
-- Shows friends online or offline and carries invites with a connect string.
-- Creates and joins lobbies visible to clients and the web UI.
-- Unlocks achievements once, keeps the first unlock time, and shows it to admins.
+## More
 
-## What 0.2 adds
+[Game setup and flags](docs/QUICKSTART.md) · [Building and CI](docs/BUILD.md) ·
+[Protocol](docs/PROTOCOL.md) · [Known limits](dev_notes.md)
 
-- A native Rust egui/eframe launcher (`sapie-launcher`): no webview, localhost dependency or terminal window.
-- A LAN browser web UI hosted by the server on 8081, with login and opt-in registration gated by `GET /api/v1/config`.
-- Persona completeness: `StatsGet.names`, hidden unlock pushes skipped, tickets recorded with a 10-minute expiry and verified by admin.
-- Enforced lobby rules and client lobby flows.
-- Direct UDP P2P when a peer hint exists, with a server relay fallback for peers without one; direct stays preferred.
-
-None of this is live-tested. See `dev_notes.md` and `docs/PROTOCOL.md` for limits.
-
-## Fine print (0.1)
-
-Peer-to-peer play is not available in this version.
-
-This 0.1 line stays unchanged until the user accepts G0; P2P ships in 0.2 but is not live-verified.
-
-Non-commercial, for gamers by gamers. CI is green across all targets and release assets were verified, but no live two-client C++↔Go session, no real-game run and no browser click-through has been done yet. Steamless is an unmodified Windows-only sidecar under its own NOTICE.
-
-## Branches
-
-`dev-client` is the default and `main-client` is the release branch. 0.1 is tagged at `62007f5`; 0.2 is tagged `0.2` and published at https://github.com/2kfi/SAPIE/releases/tag/0.2. G0 is deferred to the user.
-
-## Building / CI
-
-See [`docs/BUILD.md`](docs/BUILD.md) for toolchains, the client matrix, the native launcher build, the CI `web` job and release plumbing.
+Direct P2P is implemented but has not yet been verified in a live two-client game run. Development
+happens on `dev-client` (default), released from `main-client`.
 
 ## License
 
-Goldberg fork, LGPLv3 (`LICENSE`). Steamless NOTICE: `client/src-tauri/resources/steamless/NOTICE.md`.
+Goldberg fork, LGPLv3 ([LICENSE](LICENSE)). Steamless NOTICE:
+`client/src-tauri/resources/steamless/NOTICE.md`.

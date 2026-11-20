@@ -1,10 +1,13 @@
 # SAPIE Quickstart
 
-SAPIE is a non-commercial project for running old Steam games without the Steam client. A Go server provides the account, friend, lobby and stats endpoints, and a modified `steam_api` library in the game forwards calls to it. The launcher is a native Rust egui/eframe app; 0.2 also lets the Go server host a browser web UI on the LAN.
+SAPIE is a non-commercial project for running old Steam games without the Steam client. A Go server
+provides accounts, friends, lobbies and stats; a modified `steam_api` library in the game forwards
+calls to it. The launcher is a native Rust egui/eframe app, and the server also hosts a browser UI on
+the LAN.
 
 Peer-to-peer play is not available in this version.
 
-P2P ships in 0.2, but the frozen 0.1 text stays until G0 acceptance.
+This line is frozen 0.1 text. P2P ships in 0.2 but has not yet been verified in a live two-client game.
 
 ## Download
 
@@ -14,20 +17,24 @@ Get a 0.2 archive from the [SAPIE 0.2 release](https://github.com/2kfi/SAPIE/rel
 - `SAPIE-0.2-linux-arm64.tar.gz`
 - `SAPIE-0.2-windows-x64.zip`
 
-The frozen 0.1 assets remain available at https://github.com/2kfi/SAPIE/releases/tag/0.1:
-`SAPIE-0.1-linux-x64.tar.gz`, `SAPIE-0.1-linux-arm64.tar.gz` and `SAPIE-0.1-windows-x64.zip`.
-0.1 is frozen at `62007f5`; G0 is deferred to the user.
-
-Unpack the archive for your operating system. It contains the launcher `sapie` (`sapie.exe` on
-Windows), the server `sapie-server` (`sapie-server.exe` on Windows), `steam_api/<target>-<era>/`
-libraries, and `QUICKSTART.md` at the archive root.
+The frozen 0.1 assets remain at https://github.com/2kfi/SAPIE/releases/tag/0.1. Unpack the archive
+for your operating system: it contains the launcher `sapie` (`sapie.exe` on Windows), the server
+`sapie-server` (`sapie-server.exe` on Windows), `steam_api/<target>-<era>/` libraries, `web/dist/`,
+and this file at the archive root.
 
 ## Start the server
 
-Run the server binary from the archive, or run it from a source checkout:
+Run the server binary **from the archive root** so `./web/dist` resolves:
 
 ```sh
-./sapie-server --listen=:47584 --admin-listen=127.0.0.1:8080 --db=sapie.db --admin-token=<your-token>
+./sapie-server \
+  --listen=:47584 \
+  --admin-listen=127.0.0.1:8080 \
+  --ui-listen=0.0.0.0:8081 \
+  --ui-dir=./web/dist \
+  --admin-token=<your-token> \
+  --allow-register \
+  --db=sapie.db
 ```
 
 From source, use `go run ./cmd/sapie-server` with the same flags from the `server/` directory.
@@ -39,13 +46,24 @@ With Docker, set the token in the environment and run Compose from the repositor
 SAPIE_ADMIN_TOKEN=<your-token> docker compose up --build
 ```
 
-The admin API is reachable only from the host at `http://127.0.0.1:8080`. Pass the same value as a `Bearer` token. If `--admin-token` is empty, the server generates a token and withholds its value. The game protocol listens on TCP port 47584.
+The admin API is reachable only from the host at `http://127.0.0.1:8080`; pass the token as a `Bearer` token. If `--admin-token` is empty, the server generates one and does not print it. Port 47584 is the binary protobuf game protocol, not HTTP — a browser pointed at it shows a connection reset.
 
-From 0.2 source the server also takes `--ui-listen 0.0.0.0:8081` (default), `--ui-dir ./web/dist` and `--allow-register` (off by default). Port 47584 is the binary protobuf game protocol, not HTTP; a browser pointed at it shows a connection reset, which is expected. The web UI on 8081 serves the SPA and proxies only user API routes (config, register, login, friends, invite, lobbies, join, own stats). Admin-only paths such as `/api/v1/users` and account CRUD return 404 on 8081 and still work on 8080. Plain HTTP on the LAN means session tokens cross it in cleartext.
+The web UI on 8081 serves the SPA and proxies only user API routes (config, register, login, friends, invite, lobbies, join, own stats). Admin-only paths such as `/api/v1/users` and account CRUD return 404 on 8081 and still work on 8080. Plain HTTP on the LAN means session tokens cross it in cleartext.
 
-## Web UI (0.2 source)
+## Web UI
 
-With `--ui-listen` enabled, open `http://<server-host>:8081` in a browser. Login uses `POST /api/v1/login`; registration is offered only when `GET /api/v1/config` reports `allow_register: true`, which requires `--allow-register`. The SPA uses a relative `/api/v1` base when served this way. No browser click-through has been done yet.
+With `--ui-listen` enabled, open `http://<server-host>:8081` in a browser. Login uses `POST /api/v1/login`; registration is offered only when `GET /api/v1/config` reports `allow_register: true`, which requires `--allow-register`. The SPA uses a relative `/api/v1` base when served this way.
+
+## Friends
+
+There is no add-friend endpoint yet. Stop the server and link the two accounts in the database, in
+both directions:
+
+```sh
+sqlite3 sapie.db "INSERT OR IGNORE INTO friendships(steam_id,friend_id) VALUES (<A>,<B>), (<B>,<A>);"
+```
+
+Restart the server afterward. Friends lists, invites, and friend-gated P2P need this row.
 
 ## Game setup
 
