@@ -28,7 +28,7 @@ const INTERFACE_NAMES: &[&str] = &[
     "STEAMVIDEO_INTERFACE_V",
 ];
 
-fn detect_arch(bytes: &[u8]) -> String {
+pub(crate) fn detect_arch(bytes: &[u8]) -> String {
     if bytes.len() >= 0x40 && &bytes[..2] == b"MZ" {
         let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
         if pe + 6 <= bytes.len() && &bytes[pe..pe + 4] == b"PE\0\0" {
@@ -64,7 +64,7 @@ fn find_all(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
 }
 
 // Mirrors client/generate_interfaces_file.cpp: literal name + exactly three digits.
-fn scan_interfaces(bytes: &[u8]) -> Vec<String> {
+pub(crate) fn scan_interfaces(bytes: &[u8]) -> Vec<String> {
     let mut found = Vec::new();
     for name in INTERFACE_NAMES {
         for start in find_all(bytes, name.as_bytes()) {
@@ -98,7 +98,7 @@ fn scan_interfaces(bytes: &[u8]) -> Vec<String> {
 }
 
 // Display-only: SAPIE_INTERFACE_ERA is a no-op in the DLL, so this never picks a DLL variant.
-fn era_from_interfaces(interfaces: &[String]) -> String {
+pub(crate) fn era_from_interfaces(interfaces: &[String]) -> String {
     let version = interfaces
         .iter()
         .find_map(|s| s.strip_prefix("SteamUser"))
@@ -117,7 +117,7 @@ fn era_from_interfaces(interfaces: &[String]) -> String {
     .into()
 }
 
-fn find_original_steam_api(dir: &Path) -> Option<PathBuf> {
+pub(crate) fn find_original_steam_api(dir: &Path) -> Option<PathBuf> {
     for name in ["steam_api.dll", "steam_api64.dll", "libsteam_api.so"] {
         // Prefer the preserved original: the current DLL may be our own copy.
         let backup = dir.join(format!("{name}.sapie-original.bak"));
@@ -151,7 +151,10 @@ fn find_original_steam_api(dir: &Path) -> Option<PathBuf> {
     candidates.into_iter().next()
 }
 
-fn ensure_steam_appid(dir: &Path, exe_path: &str) -> Result<String, String> {
+pub(crate) fn ensure_steam_appid(
+    dir: &Path,
+    exe_path: &str,
+) -> std::result::Result<String, String> {
     let path = dir.join("steam_appid.txt");
     if path.is_file() {
         let existing = fs::read_to_string(&path).map_err(|e| e.to_string())?;
@@ -172,7 +175,7 @@ fn ensure_steam_appid(dir: &Path, exe_path: &str) -> Result<String, String> {
     Ok("steam_appid.txt left untouched (not an MW2 executable)".into())
 }
 
-fn check_runtime_deps(dir: &Path, dll_name: &str) -> Option<String> {
+pub(crate) fn check_runtime_deps(dir: &Path, dll_name: &str) -> Option<String> {
     if dir.join("libwinpthread-1.dll").is_file() {
         None
     } else {
