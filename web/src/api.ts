@@ -69,7 +69,8 @@ export function messageOf(reason: unknown): string {
 }
 
 function baseUrl(server: string): string {
-  return `http://${server}/api/v1`
+  if (!('__TAURI_INTERNALS__' in window)) return '/api/v1'
+  return server ? `http://${server}/api/v1` : '/api/v1'
 }
 
 async function errorDetail(response: Response): Promise<string> {
@@ -130,7 +131,7 @@ async function request<T>(
   } catch (reason) {
     if (reason instanceof ApiError) throw reason
     if (controller.signal.aborted) throw new ApiError('The server did not respond in time.')
-    throw new ApiError(`Could not reach the server at ${server}. Check the address and try again.`)
+    throw new ApiError('Could not reach the server. Check your connection and try again.')
   } finally {
     window.clearTimeout(timer)
   }
@@ -140,6 +141,26 @@ export type LoginResult = {
   token: string
   steamId: string
   personaName: string
+}
+
+export function getConfig(server: string): Promise<{ allow_register?: unknown }> {
+  return request(server, '/config')
+}
+
+export function register(
+  server: string,
+  username: string,
+  password: string,
+  personaName?: string,
+): Promise<unknown> {
+  return request(server, '/register', {
+    method: 'POST',
+    body: {
+      username,
+      password,
+      ...(personaName ? { persona_name: personaName } : {}),
+    },
+  })
 }
 
 export async function login(

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import Login from './screens/Login'
+import Register from './screens/Register'
 import Shell from './screens/Shell'
 import Toast from './components/Toast'
 import { navigate, readRoute, type Route } from './routes'
@@ -29,7 +30,9 @@ export default function App() {
   return (
     <>
       {route === 'login' ? (
-        <Login onConnected={connected} />
+        <Login onConnected={connected} onNavigate={go} />
+      ) : route === 'register' ? (
+        <Register onConnected={connected} onBack={() => go('login')} />
       ) : (
         <Shell
           route={route}

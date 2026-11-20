@@ -51,6 +51,25 @@ struct IP_PORT {
     }
 };
 
+// Server-stamped signaling hint (host byte order) to a wire-ready UDP endpoint.
+// 0/0 means no usable hint; never fabricate an endpoint from it.
+inline bool peer_endpoint_from_hint(uint32 source_ip, uint32 source_port, IP_PORT *out)
+{
+    if (!source_ip || !source_port) return false;
+    out->ip = htonl(source_ip);
+    out->port = htons(source_port);
+    return true;
+}
+
+// A direct hint is trusted only while inbound DATA keeps confirming it; stale or absent proof uses the server relay.
+inline bool should_use_relay(bool has_direct_endpoint,
+                             std::chrono::steady_clock::time_point last_inbound_data,
+                             std::chrono::steady_clock::time_point now)
+{
+    const auto direct_confirm_window = std::chrono::seconds(5);
+    return !has_direct_endpoint || now - last_inbound_data > direct_confirm_window;
+}
+
 struct Network_Callback {
     void (*message_callback)(void *object, Common_Message *msg);
     void *object;
@@ -145,6 +164,7 @@ public:
     void setAppID(uint32 appid);
     void Run();
     bool sendTo(Common_Message *msg, bool reliable, Connection *conn = NULL);
+    bool sendToPeer(Common_Message *msg, IP_PORT endpoint);
     bool sendToAllIndividuals(Common_Message *msg, bool reliable);
     bool send_steam(Common_Message *msg, bool reliable, bool all = false);
     bool send_frame(const google::protobuf::MessageLite &message);
@@ -152,6 +172,7 @@ public:
     bool sendToIPPort(Common_Message *msg, uint32 ip, uint16 port, bool reliable);
 
     bool setCallback(Callback_Ids id, CSteamID steam_id, void (*message_callback)(void *object, Common_Message *msg), void *object);
+    uint16 get_udp_port() const { return udp_port; } // host order, the port this client actually bound
     uint32 getIP(CSteamID id);
     uint32 getOwnIP();
 };
