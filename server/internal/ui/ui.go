@@ -21,6 +21,7 @@ func Handler(dir, adminAddr string) http.Handler {
 	api := http.NewServeMux()
 	for _, route := range []string{
 		"POST /api/v1/login",
+		"POST /api/v1/register",
 		"GET /api/v1/config",
 		"GET /api/v1/friends",
 		"POST /api/v1/friends/{id}/invite",

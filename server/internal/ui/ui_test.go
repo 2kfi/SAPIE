@@ -88,7 +88,8 @@ func TestProxyAllowsUserRoutesOnly(t *testing.T) {
 	if err := store.AddFriend(alice, bob); err != nil {
 		t.Fatal(err)
 	}
-	admin := httptest.NewServer(api.New(store, "admin-token", auth.NewLimiter(nil), nil).Handler())
+	backend := api.New(store, "admin-token", auth.NewLimiter(nil), nil)
+	admin := httptest.NewServer(backend.Handler())
 	defer admin.Close()
 
 	dir := t.TempDir()
@@ -149,6 +150,16 @@ func TestProxyAllowsUserRoutesOnly(t *testing.T) {
 	status, body = call(http.MethodPost, "/api/v1/lobbies/1/join", login.Token, "")
 	if status != http.StatusOK {
 		t.Fatalf("join lobby = %d: %s", status, body)
+	}
+	register := `{"username":"newuser","password":"pw"}`
+	status, body = call(http.MethodPost, "/api/v1/register", "", register)
+	if status != http.StatusForbidden {
+		t.Fatalf("register with flag off = %d: %s", status, body)
+	}
+	backend.SetAllowRegister(true)
+	status, body = call(http.MethodPost, "/api/v1/register", "", register)
+	if status != http.StatusCreated || strings.Contains(body, "password") {
+		t.Fatalf("register with flag on = %d: %s", status, body)
 	}
 	for _, path := range []string{
 		"/api/v1/users",
