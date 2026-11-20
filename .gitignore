@@ -10,6 +10,7 @@ third_party/
 # Runtime files written next to games or by the DLL
 STEAM_LOG.txt
 sapie_server.txt
+!docs/samples/sapie_server.txt
 steam_interfaces.txt
 *.sapie-original.bak
 *.unpacked.exe

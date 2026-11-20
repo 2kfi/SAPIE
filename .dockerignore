@@ -1,0 +1,11 @@
+.git
+.sapie-state
+out
+build
+third_party
+web/node_modules
+web/dist
+client/src-tauri/target
+*.db
+node_modules
+.env*

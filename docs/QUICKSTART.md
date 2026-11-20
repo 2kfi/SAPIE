@@ -1,0 +1,39 @@
+# SAPIE 0.1 Quickstart
+
+SAPIE is a non-commercial project for running old Steam games without the Steam client. A Go server provides the account, friend, lobby and stats endpoints, and a modified `steam_api` library in the game forwards calls to it.
+
+Peer-to-peer play is not available in this version.
+
+## Download
+
+Download the archive for your operating system from the 0.1 Release and unpack it.
+
+## Start the server
+
+Run the server binary from the archive, or run it from a source checkout:
+
+```sh
+./sapie-server --listen=:47584 --admin-listen=127.0.0.1:8080 --db=sapie.db --admin-token=<your-token>
+```
+
+From source, use `go run ./cmd/sapie-server` with the same flags from the `server/` directory.
+
+With Docker, set the token in the environment and run Compose from the repository root:
+
+```sh
+SAPIE_ADMIN_TOKEN=<your-token> docker compose up --build
+```
+
+The admin API is reachable only from the host at `http://127.0.0.1:8080`. Pass the same value as a `Bearer` token. If `--admin-token` is empty, the server generates a token and withholds its value. The game protocol listens on TCP port 47584.
+
+## Game setup
+
+Set `SAPIE_USERNAME` and `SAPIE_PASSWORD` in the environment where the game runs. Without both, the client falls back to Goldberg LAN mode.
+
+Put `host:port` in `sapie_server.txt` next to the game executable. For a server on the same machine that is `127.0.0.1:47584`. Put the game's appid in `steam_appid.txt` on its own line. Sample files are in the archive's `samples/` directory (and in `docs/samples/` in the source tree).
+
+Use the launcher to copy the matching `steam_api` DLL or shared object next to the game executable, or copy the file there manually.
+
+## Steamless
+
+The launcher can unpack SteamStub-packed Windows executables. Steamless is an unmodified Windows-only sidecar distributed under its own NOTICE at `client/src-tauri/resources/steamless/NOTICE.md`. Do not modify it.
