@@ -178,6 +178,8 @@ int main(int argc, char **argv) {
         }
         const uint64_t lobby = seen.created_lobby;
         printf("PASS host lobby_created lobby_id=%llu\n", (unsigned long long)lobby);
+        const std::string done_file = lobby_file + ".guest_done";
+        std::filesystem::remove(done_file);
         if (!write_file(lobby_file, std::to_string(lobby) + "\n")) {
             printf("FAIL host: cannot write lobby file\n");
             return 1;
@@ -206,6 +208,13 @@ int main(int argc, char **argv) {
         }
         printf("PASS host joined_lobby lobby_id=%llu members=%d achievement_stored=%d\n",
                (unsigned long long)lobby, matchmaking->GetNumLobbyMembers(CSteamID(static_cast<uint64>(lobby))), seen.achievement_stored);
+        fflush(stdout);
+        // Leaving now makes the server drop this peer from the guest's roster.
+        if (!wait_for(25000, [&] { return !read_file(done_file).empty(); })) {
+            printf("FAIL host: guest did not finish before teardown\n");
+            return 1;
+        }
+        printf("PASS host guest_completed lobby_id=%llu\n", (unsigned long long)lobby);
         fflush(stdout);
     } else {
         uint64_t lobby = 0;
@@ -253,6 +262,10 @@ int main(int argc, char **argv) {
         printf("PASS guest achievement_from_host name=%s unlock_time=%u stats_received=%d\n", kAchievement,
                unlock_time, seen.stats_received);
         fflush(stdout);
+        if (!write_file(lobby_file + ".guest_done", "ok\n")) {
+            printf("FAIL guest: cannot write completion file\n");
+            return 1;
+        }
     }
 
     drain_callbacks(seen);
