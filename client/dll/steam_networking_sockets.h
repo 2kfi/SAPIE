@@ -215,6 +215,8 @@ bool send_packet_new_connection(HSteamNetConnection m_hConn)
     uint64_t steam_id = connect_socket->second.remote_identity.GetSteamID64();
     if (steam_id) {
         msg.set_dest_id(steam_id);
+        // host order; server stamps it onto the peer hint as-is
+        msg.set_source_port(network->get_udp_port());
         return network->send_steam(&msg, true);
     }
 

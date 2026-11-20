@@ -163,6 +163,7 @@ public:
     bool sendToIPPort(Common_Message *msg, uint32 ip, uint16 port, bool reliable);
 
     bool setCallback(Callback_Ids id, CSteamID steam_id, void (*message_callback)(void *object, Common_Message *msg), void *object);
+    uint16 get_udp_port() const { return udp_port; } // host order, the port this client actually bound
     uint32 getIP(CSteamID id);
     uint32 getOwnIP();
 };
