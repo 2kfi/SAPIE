@@ -167,16 +167,18 @@ fn scan_interfaces(bytes: &[u8]) -> Vec<String> {
     }
 
     let key = b"STEAMCONTROLLER_INTERFACE_VERSION";
-    if !found.iter().any(|s| s.starts_with("STEAMCONTROLLER_INTERFACE_VERSION")) {
+    if !found
+        .iter()
+        .any(|s| s.starts_with("STEAMCONTROLLER_INTERFACE_VERSION"))
+    {
         if let Some(&start) = find_all(bytes, key).first() {
             let end = start + key.len();
-            let digits = if end + 3 <= bytes.len()
-                && bytes[end..end + 3].iter().all(u8::is_ascii_digit)
-            {
-                3
-            } else {
-                0
-            };
+            let digits =
+                if end + 3 <= bytes.len() && bytes[end..end + 3].iter().all(u8::is_ascii_digit) {
+                    3
+                } else {
+                    0
+                };
             found.push(String::from_utf8_lossy(&bytes[start..end + digits]).into_owned());
         }
     }
@@ -238,7 +240,10 @@ fn find_original_steam_api(dir: &Path) -> Option<PathBuf> {
 }
 
 fn executable_dir() -> Option<PathBuf> {
-    std::env::current_exe().ok()?.parent().map(Path::to_path_buf)
+    std::env::current_exe()
+        .ok()?
+        .parent()
+        .map(Path::to_path_buf)
 }
 
 fn steamless_dir() -> Option<PathBuf> {
@@ -348,7 +353,10 @@ fn detect_game(exe_path: String) -> Result<DetectResult, String> {
     let steam_api_path = steam_api.map(|p| p.to_string_lossy().into_owned());
 
     let mut state = load_state()?;
-    let record = state.games.entry(exe_path.clone()).or_insert_with(|| new_record(&exe_path));
+    let record = state
+        .games
+        .entry(exe_path.clone())
+        .or_insert_with(|| new_record(&exe_path));
     record.arch = arch.clone();
     record.era = era.clone();
     record.interfaces = interfaces.clone();
@@ -510,8 +518,7 @@ fn configure_server(
         .parent()
         .ok_or_else(|| format!("Executable has no parent directory: {exe_path}"))?;
     let server = server.trim().to_string();
-    fs::write(dir.join("sapie_server.txt"), format!("{server}\n"))
-        .map_err(|e| e.to_string())?;
+    fs::write(dir.join("sapie_server.txt"), format!("{server}\n")).map_err(|e| e.to_string())?;
     let appid_note = ensure_steam_appid(dir, &exe_path)?;
 
     let mut state = load_state()?;
@@ -624,10 +631,11 @@ impl LauncherApp {
             Ok(state) => (state, None),
             Err(err) => (PersistedState::default(), Some(err)),
         };
-        let connection = initial_state
-            .server
-            .clone()
-            .unwrap_or_else(|| Connection { server: String::new(), username: String::new(), password: String::new() });
+        let connection = initial_state.server.clone().unwrap_or_else(|| Connection {
+            server: String::new(),
+            username: String::new(),
+            password: String::new(),
+        });
         let remember = initial_state.server.is_some();
         let selected = initial_state.games.keys().next().cloned();
         let preload = selected
@@ -652,7 +660,10 @@ impl LauncherApp {
         };
         app.log("INFO", "Start with the server details.".into());
         if let Some(err) = load_error {
-            app.log("ERROR", format!("Could not load saved launcher state: {err}"));
+            app.log(
+                "ERROR",
+                format!("Could not load saved launcher state: {err}"),
+            );
         }
         app.state = initial_state;
         app
@@ -675,7 +686,9 @@ impl LauncherApp {
             Step::Detect => self.record().map_or(false, |record| {
                 (record.era == "legacy" || record.era == "modern") && !record.interfaces.is_empty()
             }),
-            Step::Install => self.record().map_or(false, |record| record.dll_path.is_some()),
+            Step::Install => self
+                .record()
+                .map_or(false, |record| record.dll_path.is_some()),
             Step::Configure => self.record().map_or(false, |record| record.configured),
             Step::Launch => false,
         }
@@ -718,8 +731,20 @@ impl LauncherApp {
     fn connect(&mut self) {
         let conn = self.connection.clone();
         let validated = validate_server(&conn.server)
-            .and_then(|_| if conn.username.trim().is_empty() { Err("Username is required.".into()) } else { Ok(()) })
-            .and_then(|_| if conn.password.is_empty() { Err("Password is required.".into()) } else { Ok(()) });
+            .and_then(|_| {
+                if conn.username.trim().is_empty() {
+                    Err("Username is required.".into())
+                } else {
+                    Ok(())
+                }
+            })
+            .and_then(|_| {
+                if conn.password.is_empty() {
+                    Err("Password is required.".into())
+                } else {
+                    Ok(())
+                }
+            });
         if let Err(err) = validated {
             self.result("Connect details", Err(err));
             return;
@@ -763,7 +788,10 @@ impl LauncherApp {
             .file_name()
             .map(|value| value.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.clone());
-        state.games.entry(path.clone()).or_insert_with(|| new_record(&path));
+        state
+            .games
+            .entry(path.clone())
+            .or_insert_with(|| new_record(&path));
         let outcome = save_state(&state).map(|_| format!("{name} selected."));
         if self.result("Select game", outcome) {
             self.selected = Some(path);
@@ -773,7 +801,9 @@ impl LauncherApp {
     }
 
     fn detect(&mut self) {
-        let Some(path) = self.selected.clone() else { return };
+        let Some(path) = self.selected.clone() else {
+            return;
+        };
         let result = detect_game(path).map(|info| {
             format!(
                 "{} detected as {}/{} with {} interfaces",
@@ -793,17 +823,27 @@ impl LauncherApp {
     }
 
     fn unpack(&mut self) {
-        let Some(path) = self.selected.clone() else { return };
+        let Some(path) = self.selected.clone() else {
+            return;
+        };
         match unpack_steamstub(path) {
             Ok(Some(unpacked)) => {
                 self.selected = Some(unpacked);
                 let result = detect_game(self.selected.clone().unwrap()).map(|info| {
-                    format!("{} detected as {}/{}", info.arch, info.era, info.interfaces.join(", "))
+                    format!(
+                        "{} detected as {}/{}",
+                        info.arch,
+                        info.era,
+                        info.interfaces.join(", ")
+                    )
                 });
                 self.result("Detect unpacked executable", result);
             }
             Ok(None) => {
-                self.result("Steamless", Ok("No SteamStub found in this executable.".into()));
+                self.result(
+                    "Steamless",
+                    Ok("No SteamStub found in this executable.".into()),
+                );
             }
             Err(err) => {
                 self.result("Steamless", Err(err));
@@ -812,10 +852,17 @@ impl LauncherApp {
     }
 
     fn install(&mut self) {
-        let Some(path) = self.selected.clone() else { return };
-        let era = self.record().map(|record| record.era.clone()).unwrap_or_default();
+        let Some(path) = self.selected.clone() else {
+            return;
+        };
+        let era = self
+            .record()
+            .map(|record| record.era.clone())
+            .unwrap_or_default();
         let outcome = copy_dll(path, era).map(|destination| {
-            let dir = Path::new(&destination).parent().unwrap_or_else(|| Path::new("."));
+            let dir = Path::new(&destination)
+                .parent()
+                .unwrap_or_else(|| Path::new("."));
             let name = Path::new(&destination)
                 .file_name()
                 .map(|value| value.to_string_lossy().into_owned())
@@ -832,7 +879,9 @@ impl LauncherApp {
     }
 
     fn configure(&mut self) {
-        let Some(path) = self.selected.clone() else { return };
+        let Some(path) = self.selected.clone() else {
+            return;
+        };
         let conn = self.connection.clone();
         let outcome = configure_server(path, conn.server, conn.username, conn.password);
         if let Ok(message) = &outcome {
@@ -844,13 +893,24 @@ impl LauncherApp {
     }
 
     fn set_preload(&mut self) {
-        let Some(path) = self.selected.clone() else { return };
-        self.result("Set LD_PRELOAD", set_ld_preload(path, self.preload.clone()).map(|_| "Library recorded for Linux launches.".into()));
+        let Some(path) = self.selected.clone() else {
+            return;
+        };
+        self.result(
+            "Set LD_PRELOAD",
+            set_ld_preload(path, self.preload.clone())
+                .map(|_| "Library recorded for Linux launches.".into()),
+        );
     }
 
     fn launch(&mut self) {
-        let Some(path) = self.selected.clone() else { return };
-        self.result("Launch", launch_game(path).map(|_| "Game process started.".into()));
+        let Some(path) = self.selected.clone() else {
+            return;
+        };
+        self.result(
+            "Launch",
+            launch_game(path).map(|_| "Game process started.".into()),
+        );
     }
 
     fn ui_current(&mut self, ui: &mut egui::Ui) {
@@ -880,17 +940,34 @@ impl LauncherApp {
             .spacing([12.0, 6.0])
             .show(ui, |ui| {
                 ui.label("Server (host:port)");
-                ui.add(egui::TextEdit::singleline(&mut self.connection.server).desired_width(300.0).hint_text("127.0.0.1:7777"));
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.connection.server)
+                        .desired_width(300.0)
+                        .hint_text("127.0.0.1:7777"),
+                );
                 ui.end_row();
 
                 ui.label("Username");
-                ui.add(egui::TextEdit::singleline(&mut self.connection.username).desired_width(200.0));
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.connection.username).desired_width(200.0),
+                );
                 ui.end_row();
 
                 ui.label("Password");
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut self.connection.password).password(!self.password_visible).desired_width(200.0));
-                    if ui.button(if self.password_visible { "Hide" } else { "Show" }).clicked() {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.connection.password)
+                            .password(!self.password_visible)
+                            .desired_width(200.0),
+                    );
+                    if ui
+                        .button(if self.password_visible {
+                            "Hide"
+                        } else {
+                            "Show"
+                        })
+                        .clicked()
+                    {
                         self.password_visible = !self.password_visible;
                     }
                 });
@@ -911,7 +988,10 @@ impl LauncherApp {
     }
 
     fn ui_select(&mut self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("Picking a file only records its path. Nothing is written yet.").color(MUTED));
+        ui.label(
+            egui::RichText::new("Picking a file only records its path. Nothing is written yet.")
+                .color(MUTED),
+        );
         ui.add_space(8.0);
         if primary(ui, "Choose executable") {
             self.select_game();
@@ -923,31 +1003,40 @@ impl LauncherApp {
         }
         ui.label(egui::RichText::new("Known games").strong());
         let paths: Vec<String> = self.state.games.keys().cloned().collect();
-        egui::ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
-            for path in paths {
-                let name = Path::new(&path)
-                    .file_name()
-                    .map(|value| value.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| path.clone());
-                if ui.selectable_label(self.selected.as_deref() == Some(path.as_str()), name).clicked() {
-                    self.preload = self
-                        .state
-                        .games
-                        .get(&path)
-                        .and_then(|record| record.ld_preload.clone())
-                        .unwrap_or_default();
-                    self.selected = Some(path);
-                    self.advance();
+        egui::ScrollArea::vertical()
+            .max_height(120.0)
+            .show(ui, |ui| {
+                for path in paths {
+                    let name = Path::new(&path)
+                        .file_name()
+                        .map(|value| value.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| path.clone());
+                    if ui
+                        .selectable_label(self.selected.as_deref() == Some(path.as_str()), name)
+                        .clicked()
+                    {
+                        self.preload = self
+                            .state
+                            .games
+                            .get(&path)
+                            .and_then(|record| record.ld_preload.clone())
+                            .unwrap_or_default();
+                        self.selected = Some(path);
+                        self.advance();
+                    }
                 }
-            }
-        });
+            });
     }
 
     fn ui_detect(&mut self, ui: &mut egui::Ui) {
         ui.label(egui::RichText::new("Reads the original steam_api DLL beside the executable and writes steam_interfaces.txt.").color(MUTED));
         if let Some(record) = self.record() {
             ui.add_space(4.0);
-            ui.label(egui::RichText::new(record.exe_path.clone()).monospace().small());
+            ui.label(
+                egui::RichText::new(record.exe_path.clone())
+                    .monospace()
+                    .small(),
+            );
         } else {
             ui.add_space(4.0);
             ui.label(egui::RichText::new("Select a game first.").color(WARN));
@@ -965,8 +1054,16 @@ impl LauncherApp {
     }
 
     fn ui_install(&mut self, ui: &mut egui::Ui) {
-        let era = self.record().map(|record| record.era.clone()).unwrap_or_else(|| "unknown".into());
-        ui.label(egui::RichText::new("Copies the DLL for the detected architecture and era, backing up the original.").color(MUTED));
+        let era = self
+            .record()
+            .map(|record| record.era.clone())
+            .unwrap_or_else(|| "unknown".into());
+        ui.label(
+            egui::RichText::new(
+                "Copies the DLL for the detected architecture and era, backing up the original.",
+            )
+            .color(MUTED),
+        );
         ui.add_space(4.0);
         ui.label(format!("Detected era: {era}"));
         ui.add_space(8.0);
@@ -980,9 +1077,18 @@ impl LauncherApp {
     }
 
     fn ui_configure(&mut self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("Writes sapie_server.txt and steam_appid.txt beside the executable.").color(MUTED));
+        ui.label(
+            egui::RichText::new(
+                "Writes sapie_server.txt and steam_appid.txt beside the executable.",
+            )
+            .color(MUTED),
+        );
         ui.add_space(4.0);
-        ui.label(egui::RichText::new(format!("Server: {}", self.connection.server.trim())).monospace().small());
+        ui.label(
+            egui::RichText::new(format!("Server: {}", self.connection.server.trim()))
+                .monospace()
+                .small(),
+        );
         ui.add_space(8.0);
         if primary(ui, "Write game config") {
             self.configure();
@@ -994,11 +1100,23 @@ impl LauncherApp {
     }
 
     fn ui_launch(&mut self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("Starts the game with the saved credentials. Success means the process spawned.").color(MUTED));
+        ui.label(
+            egui::RichText::new(
+                "Starts the game with the saved credentials. Success means the process spawned.",
+            )
+            .color(MUTED),
+        );
         if let Some(record) = self.record() {
             ui.add_space(4.0);
-            ui.label(egui::RichText::new(record.exe_path.clone()).monospace().small());
-            ui.label(format!("Configured: {}", if record.configured { "yes" } else { "no" }));
+            ui.label(
+                egui::RichText::new(record.exe_path.clone())
+                    .monospace()
+                    .small(),
+            );
+            ui.label(format!(
+                "Configured: {}",
+                if record.configured { "yes" } else { "no" }
+            ));
         }
         ui.add_space(8.0);
         if primary(ui, "Launch game") {
@@ -1025,7 +1143,15 @@ impl LauncherApp {
                 ui.label(egui::RichText::new(value).monospace().small());
             });
         };
-        field(ui, "Connect", if self.connect_ready { "ready".into() } else { "pending".into() });
+        field(
+            ui,
+            "Connect",
+            if self.connect_ready {
+                "ready".into()
+            } else {
+                "pending".into()
+            },
+        );
         let name = self
             .selected
             .as_deref()
@@ -1034,10 +1160,38 @@ impl LauncherApp {
             .unwrap_or_else(|| "none".into());
         field(ui, "Game", name);
         let record = self.record();
-        field(ui, "Arch / era", format!("{} / {}", record.map_or("unknown", |r| r.arch.as_str()), record.map_or("unknown", |r| r.era.as_str())));
-        field(ui, "Interfaces", record.map_or("0".into(), |r| r.interfaces.len().to_string()));
-        field(ui, "DLL", record.and_then(|r| r.dll_path.as_deref()).unwrap_or("not installed").into());
-        field(ui, "Config", if record.map_or(false, |r| r.configured) { "written" } else { "pending" }.into());
+        field(
+            ui,
+            "Arch / era",
+            format!(
+                "{} / {}",
+                record.map_or("unknown", |r| r.arch.as_str()),
+                record.map_or("unknown", |r| r.era.as_str())
+            ),
+        );
+        field(
+            ui,
+            "Interfaces",
+            record.map_or("0".into(), |r| r.interfaces.len().to_string()),
+        );
+        field(
+            ui,
+            "DLL",
+            record
+                .and_then(|r| r.dll_path.as_deref())
+                .unwrap_or("not installed")
+                .into(),
+        );
+        field(
+            ui,
+            "Config",
+            if record.map_or(false, |r| r.configured) {
+                "written"
+            } else {
+                "pending"
+            }
+            .into(),
+        );
         ui.add_space(8.0);
         ui.label(egui::RichText::new(&self.font_note).small().color(MUTED));
     }
@@ -1054,17 +1208,21 @@ impl LauncherApp {
         if let Some(text) = &self.error {
             ui.label(egui::RichText::new(format!("[ERROR] {text}")).color(ERROR));
         }
-        egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
-            for line in &self.log {
-                let color = match line.level {
-                    "ERROR" => ERROR,
-                    "OK" => OK,
-                    "WARN" => WARN,
-                    _ => MUTED,
-                };
-                ui.label(egui::RichText::new(format!("[{}] {}", line.level, line.text)).color(color));
-            }
-        });
+        egui::ScrollArea::vertical()
+            .stick_to_bottom(true)
+            .show(ui, |ui| {
+                for line in &self.log {
+                    let color = match line.level {
+                        "ERROR" => ERROR,
+                        "OK" => OK,
+                        "WARN" => WARN,
+                        _ => MUTED,
+                    };
+                    ui.label(
+                        egui::RichText::new(format!("[{}] {}", line.level, line.text)).color(color),
+                    );
+                }
+            });
     }
 }
 
@@ -1088,7 +1246,10 @@ impl eframe::App for LauncherApp {
                     };
                     let text = format!("{}. {}\n{}", index + 1, label, status);
                     if ui
-                        .add_enabled(self.can_open(*step), egui::Button::new(egui::RichText::new(text).small()))
+                        .add_enabled(
+                            self.can_open(*step),
+                            egui::Button::new(egui::RichText::new(text).small()),
+                        )
                         .clicked()
                     {
                         self.step = *step;
@@ -1148,7 +1309,10 @@ fn font_bytes(family: &str) -> Option<Vec<u8>> {
     if cfg!(windows) {
         if let Ok(root) = std::env::var("WINDIR") {
             let dir = PathBuf::from(root).join("Fonts");
-            for name in [format!("{family}-Regular.ttf"), format!("{family} Regular.ttf")] {
+            for name in [
+                format!("{family}-Regular.ttf"),
+                format!("{family} Regular.ttf"),
+            ] {
                 let path = dir.join(name);
                 if path.is_file() {
                     candidate = Some(path);
@@ -1168,11 +1332,16 @@ fn font_bytes(family: &str) -> Option<Vec<u8>> {
                 break;
             }
         }
-    } else if let Ok(output) = Command::new("fc-match").args(["-f", "%{file}|%{family}", family]).output() {
+    } else if let Ok(output) = Command::new("fc-match")
+        .args(["-f", "%{file}|%{family}", family])
+        .output()
+    {
         if output.status.success() {
             let text = String::from_utf8_lossy(&output.stdout);
             if let Some((file, matched)) = text.trim().split_once('|') {
-                if matched.to_lowercase().contains(&family.to_lowercase()) && Path::new(file).is_file() {
+                if matched.to_lowercase().contains(&family.to_lowercase())
+                    && Path::new(file).is_file()
+                {
                     candidate = Some(PathBuf::from(file));
                 }
             }
@@ -1185,14 +1354,18 @@ fn configure_style(ctx: &egui::Context) -> String {
     let mut fonts = egui::FontDefinitions::default();
     let mut loaded = Vec::new();
     if let Some(bytes) = font_bytes("Manrope") {
-        fonts.font_data.insert("Manrope".into(), egui::FontData::from_owned(bytes));
+        fonts
+            .font_data
+            .insert("Manrope".into(), egui::FontData::from_owned(bytes));
         if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
             family.insert(0, "Manrope".into());
         }
         loaded.push("Manrope");
     }
     if let Some(bytes) = font_bytes("IBM Plex Mono") {
-        fonts.font_data.insert("IBM Plex Mono".into(), egui::FontData::from_owned(bytes));
+        fonts
+            .font_data
+            .insert("IBM Plex Mono".into(), egui::FontData::from_owned(bytes));
         if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
             family.insert(0, "IBM Plex Mono".into());
         }
@@ -1225,11 +1398,19 @@ fn configure_style(ctx: &egui::Context) -> String {
     style.visuals.text_cursor.stroke = egui::Stroke::new(2.0_f32, EMBER);
 
     let body = egui::FontId::proportional(14.0);
-    style.text_styles.insert(egui::TextStyle::Body, body.clone());
+    style
+        .text_styles
+        .insert(egui::TextStyle::Body, body.clone());
     style.text_styles.insert(egui::TextStyle::Button, body);
-    style.text_styles.insert(egui::TextStyle::Heading, egui::FontId::proportional(19.0));
-    style.text_styles.insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
-    style.text_styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.0));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Heading, egui::FontId::proportional(19.0));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Monospace, egui::FontId::monospace(12.0));
 
     ctx.set_fonts(fonts);
     ctx.set_style(style);
@@ -1314,11 +1495,21 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("sapie-appid-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        assert!(ensure_steam_appid(&dir, "/games/iw4mp.exe").unwrap().contains("10190"));
-        assert_eq!(fs::read_to_string(dir.join("steam_appid.txt")).unwrap(), "10190\n");
+        assert!(ensure_steam_appid(&dir, "/games/iw4mp.exe")
+            .unwrap()
+            .contains("10190"));
+        assert_eq!(
+            fs::read_to_string(dir.join("steam_appid.txt")).unwrap(),
+            "10190\n"
+        );
         fs::write(dir.join("steam_appid.txt"), "999\n").unwrap();
-        assert!(ensure_steam_appid(&dir, "/games/iw4sp.exe").unwrap().contains("999"));
-        assert_eq!(fs::read_to_string(dir.join("steam_appid.txt")).unwrap(), "999\n");
+        assert!(ensure_steam_appid(&dir, "/games/iw4sp.exe")
+            .unwrap()
+            .contains("999"));
+        assert_eq!(
+            fs::read_to_string(dir.join("steam_appid.txt")).unwrap(),
+            "999\n"
+        );
 
         let other = std::env::temp_dir().join(format!("sapie-appid-other-{}", std::process::id()));
         let _ = fs::remove_dir_all(&other);

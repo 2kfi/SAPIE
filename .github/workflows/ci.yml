@@ -1,0 +1,137 @@
+name: ci
+
+on:
+  push:
+    branches: ['dev-client', 'main-client']
+  pull_request:
+    branches: ['dev-client', 'main-client']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proto-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Proto copies in sync
+        run: bash tools/check-proto-sync.sh
+
+  no-tracked-build-products:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject tracked build products
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r file; do
+            case "$file" in
+              client/src-tauri/resources/steamless/*) continue ;;
+            esac
+            if printf '%s\n' "$file" | grep -Eiq '\.(dll|so|dylib|exe|a|lib|o|obj|pdb)$'; then
+              echo "ERROR: tracked build product: $file" >&2
+              status=1
+            fi
+          done < <(git ls-files)
+          while IFS= read -r file; do
+            echo "ERROR: tracked path in generated directory: $file" >&2
+            status=1
+          done < <(git ls-files -- out/ build/ web/dist/ third_party/ client/src-tauri/target/)
+          exit "$status"
+
+  client:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [windows-x86, windows-x64, linux-x86, linux-x64, linux-arm64]
+        era: [legacy, modern]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: pacman -Syu --noconfirm cmake ninja git go python protobuf mingw-w64-gcc aarch64-linux-gnu-gcc lib32-glibc lib32-gcc-libs
+      - name: Protobuf for target
+        run: bash tools/build-protobuf.sh ${{ matrix.target }}
+      - name: Configure and build
+        run: |
+          cmake -S client -B build/${{ matrix.target }}-${{ matrix.era }} -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/client/cmake/toolchains/${{ matrix.target }}.cmake" \
+            -DSAPIE_INTERFACE_ERA=${{ matrix.era }} \
+            -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="$PWD/out/${{ matrix.target }}-${{ matrix.era }}" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/${{ matrix.target }}-${{ matrix.era }} --parallel
+
+  server:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - name: Vet
+        run: cd server && go vet ./...
+      - name: Test
+        run: cd server && go test ./...
+      - name: Build
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: cd server && go build -o ../out/server-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/sapie-server
+
+  launcher:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Native GUI dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libxrandr-dev libgl1-mesa-dev
+      - name: Native launcher build
+        run: cd client/src-tauri && cargo build --release --target ${{ matrix.target }}
+
+  rust-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Native GUI dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libxrandr-dev libgl1-mesa-dev
+      - name: Cargo check
+        run: cargo check --manifest-path client/src-tauri/Cargo.toml
+      - name: Cargo test
+        run: cargo test --manifest-path client/src-tauri/Cargo.toml
+      - name: Rust formatting
+        run: cargo fmt --check --manifest-path client/src-tauri/Cargo.toml
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build web UI
+        run: cd web && npm ci && npm run build
