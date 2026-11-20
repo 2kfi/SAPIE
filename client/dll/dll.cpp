@@ -982,13 +982,6 @@ ISteamUser_InitiateGameConnection
 ISteamUser_TerminateGameConnection
 ISteamUtils_GetAppID
 
-SteamContentServer
-SteamContentServerUtils
-SteamContentServer_Init
-SteamContentServer_RunCallbacks
-SteamContentServer_Shutdown
-
-
 SteamGameServer_BSecure
 SteamGameServer_GetHSteamPipe
 SteamGameServer_GetHSteamUser
@@ -1003,6 +996,36 @@ SteamMasterServerUpdater
 
 */
 
+// 2009 content-server exports. No ISteamContentServer implementation ships here,
+// so these stay neutral and never touch protobuf or the server.
+// shortcut: signatures are cdecl with no arguments, extra caller arguments are harmless on x86.
+STEAMAPI_API void *S_CALLTYPE SteamContentServer()
+{
+    PRINT_DEBUG("SteamContentServer\n");
+    return NULL;
+}
+
+STEAMAPI_API void *S_CALLTYPE SteamContentServerUtils()
+{
+    PRINT_DEBUG("SteamContentServerUtils\n");
+    return NULL;
+}
+
+STEAMAPI_API steam_bool S_CALLTYPE SteamContentServer_Init()
+{
+    PRINT_DEBUG("SteamContentServer_Init\n");
+    return 0;
+}
+
+STEAMAPI_API void S_CALLTYPE SteamContentServer_RunCallbacks()
+{
+    PRINT_DEBUG("SteamContentServer_RunCallbacks\n");
+}
+
+STEAMAPI_API void S_CALLTYPE SteamContentServer_Shutdown()
+{
+    PRINT_DEBUG("SteamContentServer_Shutdown\n");
+}
 
 STEAMCLIENT_API steam_bool Steam_BGetCallback( HSteamPipe hSteamPipe, CallbackMsg_t *pCallbackMsg )
 {

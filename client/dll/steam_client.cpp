@@ -1166,6 +1166,7 @@ ISteamMasterServerUpdater *Steam_Client::GetISteamMasterServerUpdater( HSteamUse
 ISteamContentServer *Steam_Client::GetISteamContentServer( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion )
 {
     PRINT_DEBUG("GetISteamContentServer %s\n", pchVersion);
+    // The SDK only forward-declares ISteamContentServer, so no safe vtable exists here.
     if (!steam_pipes.count(hSteamPipe) || !hSteamUser) return NULL;
     return NULL;
 }
