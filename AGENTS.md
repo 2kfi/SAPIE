@@ -5,7 +5,8 @@ accounts, presence, lobbies, achievements and stats. A forked Goldberg `steam_ap
 the game forwards calls to that server. A native launcher sets the game up and starts it.
 
 This file is the entry point for coding agents. Read it before changing code. For UI work also read
-`web/DESIGN.md` (the only written design direction today) and the antislop core rules.
+`web/DESIGN.md` (web UI direction), `design/DESIGN.md` (launcher direction), `design/tokens.css`
+(shared tokens) and the antislop core rules.
 
 ## Repository map
 
@@ -14,11 +15,11 @@ This file is the entry point for coding agents. Read it before changing code. Fo
 | `server/` | Go server, SQLite via `modernc.org/sqlite`, no cgo. Entry: `cmd/sapie-server`. |
 | `client/dll/` | Goldberg fork, minimal edits. Game-side Steam API emulation. |
 | `client/sapie/` | New client transport, mirror and stats code. |
-| `client/src-tauri/` | Current native launcher. Despite the name it is **egui/eframe**, not Tauri. |
+| `client/src-tauri/` | Native launcher: Tauri v2 shell in `src/`, React UI in `ui/`. The directory keeps its name. No egui source remains in this tree. |
 | `web/` | React 18 + TypeScript + Vite SPA served by the Go server on the LAN. |
 | `proto/` | `net.proto` (vendored) and `sapie.proto` (envelope). Copies in `client/dll` must stay in sync. |
 | `tools/` | Harness, protobuf build, release bundling, proto sync check. |
-| `docs/` | Protocol, build, quickstart, UI. |
+| `docs/` | Protocol, API, security, build, quickstart, UI, contributing, changelog and verification evidence. |
 | `plan.md` | Decision log and milestone history. Historical, not a live plan. |
 
 Branches: `dev-client` is the default and integration trunk. Release PRs go `dev-client` to
@@ -31,18 +32,26 @@ Branches: `dev-client` is the default and integration trunk. Release PRs go `dev
 cd server && go test ./... && go vet ./...
 cd server && go run ./cmd/sapie-server
 
-# launcher (current egui app)
-cd client/src-tauri && cargo test && cargo check
+# launcher Rust shell
+cd client/src-tauri && cargo test && cargo check && cargo clippy --all-targets -- -D warnings
+
+# launcher React UI
+cd client/src-tauri/ui && npm ci && npm run build && npm test
 
 # web
-cd web && npm install && npm run build
+cd web && npm install && npm run build && npm test
 
 # proto copies must match
 bash tools/check-proto-sync.sh
+
+# container (serves the web UI on 127.0.0.1:8081)
+docker compose up --build
 ```
 
-Linux launcher builds need `libxkbcommon`, `libwayland`, `libx11`, `libxi`, `libxrandr` and
-`libgl1-mesa` development packages. Python tooling always runs inside a virtual environment
+The release workflow installs `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`,
+`librsvg2-dev`, `libxkbcommon-dev`, `libwayland-dev`, `libx11-dev`, `libxi-dev`, `libxrandr-dev` and
+`libgl1-mesa-dev` on Linux. The pull-request workflow installs a narrower X11 set; see
+`dev_notes.md` for the unverified gap. Python tooling always runs inside a virtual environment
 (`note.md`). Never commit build products; CI rejects them.
 
 ## Non-negotiable rules
@@ -60,6 +69,13 @@ Linux launcher builds need `libxkbcommon`, `libwayland`, `libx11`, `libxi`, `lib
 ---
 
 # Launcher specification (0.4)
+
+Status at the 0.4 documentation refresh: the Tauri v2 shell and React UI in `client/src-tauri` are
+what this tree builds. The old egui source is gone. The launcher is dark only; that decision is
+recorded in `design/DESIGN.md` and supersedes the two-theme lines in the spec below. Game
+authentication uses a 0600 session-token file with environment fallback, described in
+`docs/PROTOCOL.md` and `docs/SECURITY.md`. No `0.4` tag or release has been published. The
+verification status is tracked in `docs/verification/0.4-rc-checklist.md` (draft).
 
 ## Diagnosis
 
@@ -186,9 +202,9 @@ Do not add friends, chat or a store to the launcher in 0.4. The LAN web UI owns 
 Reading this as: a native game library for players who already own their games, in a quiet dark
 instrument-panel language, dial ENERGY 2 / RHYTHM 2 / MOTION 2. Supersedes the 0.2 launcher look.
 
-- Reuse `web/DESIGN.md` colours, type scale, spacing and radius. The launcher is the same product.
-- Default follows the OS theme. Ship a working light theme and a working dark theme, both checked.
-  If only one ships, the reason must be written in `design/DESIGN.md`.
+- Reuse the shared tokens in `design/tokens.css`. The launcher is the same product as the web UI.
+- Superseded: the spec asked for light and dark with OS following. The shipped decision is dark only,
+  with the reason in `design/DESIGN.md`. There is no theme toggle and no light-token set.
 - The ember accent marks play actions, focus and live state. It is not a background wash.
 - Cover images are user-provided or an honest monogram tile. Never ship invented game art.
 - Glass is not used. A native app with a crisp surface reads better than a fake acrylic panel.
@@ -207,9 +223,11 @@ screen needs: checking, bad host, unreachable, unauthorized, success.
 - A returning user launches a configured game in one click from the library.
 - The password is never written to disk or to the launcher log.
 - Removing the launcher's library file restores the original game library.
-- Both themes pass WCAG AA contrast and keyboard-only use.
+- The shipped dark theme must pass WCAG AA contrast at every text size, and keyboard-only use must
+  work. Neither check is signed off here; screen-reader verification is also UNVERIFIED headless.
 - `cargo test`, `cargo clippy`, `tsc --noEmit` and the Vitest suite pass in CI.
-- A Windows build and a Linux AppImage are produced by CI and attached to the release.
+- A Windows build and a Linux AppImage must be produced by CI and attached to the release. This
+  acceptance criterion is UNVERIFIED; no release run has been confirmed.
 
 ## Migration
 
@@ -232,8 +250,8 @@ is in `plan.md` section 12. This section is the summary, not the source of truth
    password, restore flow.
 3. **Security pass.** TLS guidance and self-signed setup for the web UI, token handling, keychain,
    Docker web UI, logout and token revoke.
-4. **Social completeness.** Add-friend and remove-friend API and UI. Today friendship requires
-   editing SQLite by hand, which is not a feature.
+4. **Social completeness.** Add-friend and remove-friend API and UI are present in the tree; the
+   LAN web UI owns that surface. The old advice to edit SQLite by hand is stale.
 5. **Release hygiene.** One CI workflow, version stamping from the tag, changelog, container with
    `web/dist` and port 8081.
 

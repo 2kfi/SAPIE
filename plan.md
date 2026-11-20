@@ -255,6 +255,22 @@ Stage map:
 | M20 | CI and release | Tag produces signed, versioned artifacts |
 | M21 | Docs and cleanup | Egui launcher removed, docs match 0.4, tag pushed |
 
+### Current milestone status (2026-11-20 documentation refresh)
+
+This is a status readout of the tree at `b36e7ec` on `dev-client`, not a new decision. The stage map
+and phase specs below remain the historical plan.
+
+- M13: headless two-client C++ to Go evidence is recorded in `docs/verification/0.4-two-client.md`.
+  Real MW2 and two-network P2P/NAT runs are UNVERIFIED. The harness is not deterministic.
+- M14 to M18: the Tauri launcher, product UI, 0600 token handoff, social API and web UI are present
+  in the tree. Native window, IPC, keychain and browser click-through were not exercised headless.
+- M19: security guide and hardening are in `docs/SECURITY.md`; the container serves the web UI on
+  8081. Residual risks and dependency advisories are reported, not silently ignored.
+- M20: `ci.yml` and `build.yml` exist. `build.yml` fires only on plain numeric `0.*` tags. No
+  tag-triggered release run or Windows bundle has been confirmed here.
+- M21: docs refresh and the draft release-candidate checklist are in progress. No `0.4` tag or
+  publish has happened.
+
 ### 12.2 The launcher we are building
 
 #### 12.2.1 Product sentence
