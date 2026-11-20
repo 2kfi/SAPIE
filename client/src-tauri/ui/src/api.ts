@@ -67,6 +67,13 @@ export const PROGRESS_EVENT = 'sapie-progress'
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>
 
+type EventApi = {
+  listen?: (
+    event: string,
+    handler: (event: { payload: ProgressEvent }) => void,
+  ) => Promise<() => void>
+}
+
 function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const core = (
     window as Window & { __TAURI__?: { core?: { invoke?: Invoke } } }
@@ -92,4 +99,10 @@ export const api = {
   libraryList: () => invoke<GameRecord[]>('library_list'),
   libraryAdd: (path: string) => invoke<GameRecord>('library_add', { path }),
   libraryRemove: (path: string) => invoke<void>('library_remove', { path }),
+}
+
+export function listenProgress(onEvent: (event: ProgressEvent) => void): Promise<() => void> {
+  const events = (window as Window & { __TAURI__?: { event?: EventApi } }).__TAURI__?.event
+  if (!events?.listen) return Promise.resolve(() => {})
+  return events.listen(PROGRESS_EVENT, (event) => onEvent(event.payload))
 }

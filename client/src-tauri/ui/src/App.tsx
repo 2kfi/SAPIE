@@ -1,45 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { useGSAP } from '@gsap/react'
-import { ActivityIcon, LibraryIcon } from './icons'
+import { api, listenProgress, type GameRecord } from './api'
+import { clearCover, saveCover } from './covers'
+import { explain, readError, validServer } from './errors'
+import { executableName } from './library'
+import type { Level } from './types'
+import { ActivityIcon, LibraryIcon, SettingsIcon, SignInIcon } from './icons'
+import AddGameModal from './screens/AddGameModal'
+import GameDetails, { type Presence } from './screens/GameDetails'
+import LibraryScreen from './screens/LibraryScreen'
+import SettingsScreen from './screens/SettingsScreen'
+import SignIn, { type SignInStatus } from './screens/SignIn'
 
 gsap.registerPlugin(useGSAP)
 
-type Level = 'info' | 'ok' | 'error'
+type EventLine = { id: number; at: string; level: Level; text: string }
+type Toast = { id: number; level: Level; text: string }
+type Session = { personaName: string; steamId: number; server: string }
+type View = 'library' | 'settings' | 'signin'
 
-type EventLine = {
-  id: number
-  at: string
-  level: Level
-  text: string
-}
+type LibraryStatus = 'loading' | 'ready' | 'error'
 
-type Toast = {
-  id: number
-  level: Level
-  text: string
-}
+const SERVER_KEY = 'sapie.server'
 
-type LibraryState =
-  | { status: 'loading' }
-  | { status: 'ready' }
-  | { status: 'error'; message: string }
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-// M15 replaces this read with the real library loader. Reading now keeps the
-// storage failure path real instead of inventing a sample game list.
-function readLibraryState(): LibraryState {
+function cachedServer(): string {
   try {
-    localStorage.getItem('sapie.library')
-    return { status: 'ready' }
-  } catch (error) {
-    return {
-      status: 'error',
-      message: `Local storage is unavailable: ${describe(error)}`,
-    }
+    return localStorage.getItem(SERVER_KEY) ?? ''
+  } catch {
+    return ''
   }
 }
 
@@ -47,44 +36,91 @@ export default function App() {
   const shellRef = useRef<HTMLDivElement>(null)
   const markRef = useRef<HTMLDivElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
-  const detailRef = useRef<HTMLHeadingElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const nextId = useRef(1)
 
+  const [view, setView] = useState<View>(() => (cachedServer() ? 'library' : 'signin'))
+  const [server, setServer] = useState(cachedServer)
+  const [session, setSession] = useState<Session | null>(null)
+  const [auth, setAuth] = useState<{ status: SignInStatus; error: string | null }>({
+    status: 'idle',
+    error: null,
+  })
+  const [games, setGames] = useState<GameRecord[]>([])
+  const [libraryStatus, setLibraryStatus] = useState<LibraryStatus>('loading')
+  const [libraryError, setLibraryError] = useState<string | null>(null)
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [presence, setPresence] = useState<Presence>('unchecked')
+  const [presenceError, setPresenceError] = useState<string | null>(null)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [progress, setProgress] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
+  const [coverVersion, setCoverVersion] = useState(0)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [query, setQuery] = useState('')
   const [online, setOnline] = useState(() => navigator.onLine)
-  const [library, setLibrary] = useState<LibraryState>({ status: 'loading' })
   const [events, setEvents] = useState<EventLine[]>([])
   const [toasts, setToasts] = useState<Toast[]>([])
 
-  const makeEvent = useCallback((level: Level, text: string): EventLine => {
-    return { id: nextId.current++, at: new Date().toISOString(), level, text }
-  }, [])
-
-  const log = useCallback(
-    (level: Level, text: string) => {
-      setEvents((current) => [makeEvent(level, text), ...current])
-    },
-    [makeEvent],
-  )
-
-  const notify = useCallback((level: Level, text: string) => {
-    setToasts((current) => [
+  const log = useCallback((level: Level, text: string) => {
+    setEvents((current) => [
+      { id: nextId.current++, at: new Date().toISOString(), level, text },
       ...current,
-      { id: nextId.current++, level, text },
     ])
   }, [])
 
-  const reload = useCallback(() => {
-    setLibrary({ status: 'loading' })
-    setLibrary(readLibraryState())
+  const notify = useCallback((level: Level, text: string) => {
+    setToasts((current) => [...current, { id: nextId.current++, level, text }])
+  }, [])
+
+  const loadLibrary = useCallback(async (): Promise<GameRecord[]> => {
+    setLibraryStatus('loading')
+    setLibraryError(null)
+    try {
+      const list = await api.libraryList()
+      setGames(list)
+      setLibraryStatus('ready')
+      return list
+    } catch (error) {
+      const message = explain(error)
+      setLibraryError(message)
+      setLibraryStatus('error')
+      return []
+    }
   }, [])
 
   useEffect(() => {
-    log('info', 'Launcher shell opened.')
-    reload()
-  }, [log, reload])
+    let active = true
+    let unlisten: (() => void) | undefined
+    log('info', 'Launcher opened.')
+    listenProgress((event) => {
+      if (active) setProgress(event.message)
+    })
+      .then((stop) => {
+        if (active) unlisten = stop
+        else stop()
+      })
+      .catch(() => {})
+    void loadLibrary()
+    if (server) {
+      void api
+        .testConnection(server)
+        .then(() => {
+          if (!active) return
+          setOnline(true)
+          log('ok', 'SAPIE server is reachable.')
+        })
+        .catch((error) => {
+          if (!active) return
+          setOnline(false)
+          log('error', `Server check failed: ${explain(error)}`)
+        })
+    }
+    return () => {
+      active = false
+      unlisten?.()
+    }
+  }, [log, loadLibrary])
 
   useEffect(() => {
     const onOnline = () => {
@@ -110,16 +146,16 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setDrawerOpen(false)
+      if (event.key === 'Escape' && !addOpen) setDrawerOpen(false)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [addOpen])
 
   useGSAP(
     () => {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-      const targets = [markRef.current, headingRef.current, detailRef.current].filter(
+      const targets = [markRef.current, headingRef.current].filter(
         (node): node is HTMLDivElement | HTMLHeadingElement => node !== null,
       )
       gsap.fromTo(
@@ -128,20 +164,202 @@ export default function App() {
         { opacity: 1, y: 0, duration: 0.28, ease: 'power2.out' },
       )
     },
-    { scope: shellRef },
+    { dependencies: [view], scope: shellRef, revertOnUpdate: true },
   )
 
-  function openDrawer() {
-    setDrawerOpen(true)
-    log('info', 'Activity opened.')
+  async function selectGame(game: GameRecord) {
+    setSelectedPath(game.exe_path)
+    setPresence('checking')
+    setPresenceError(null)
+    setActionError(null)
+    try {
+      await api.detectGame(game.exe_path)
+      setPresence('present')
+    } catch (error) {
+      const kind = readError(error).kind
+      if (kind === 'not_found' || kind === 'invalid_path') setPresence('missing')
+      else {
+        setPresence('error')
+        setPresenceError(explain(error))
+      }
+    }
   }
 
-  function closeDrawer() {
-    setDrawerOpen(false)
-    log('info', 'Activity closed.')
+  async function signIn(targetServer: string, username: string, password: string) {
+    setAuth({ status: 'checking', error: null })
+    if (!validServer(targetServer)) {
+      setAuth({ status: 'error', error: explain({ kind: 'invalid_server' }) })
+      return
+    }
+    try {
+      await api.testConnection(targetServer)
+      setOnline(true)
+    } catch (error) {
+      const message = explain(error)
+      setOnline(false)
+      setAuth({ status: 'error', error: message })
+      log('error', `Server check failed: ${message}`)
+      return
+    }
+    setAuth({ status: 'signing_in', error: null })
+    try {
+      const result = await api.login(targetServer, username, password)
+      setSession({
+        personaName: result.persona_name,
+        steamId: result.steam_id,
+        server: result.server,
+      })
+      setServer(result.server)
+      try {
+        localStorage.setItem(SERVER_KEY, result.server)
+      } catch {
+        notify('info', 'The server address could not be saved on this device.')
+      }
+      setAuth({ status: 'idle', error: null })
+      setView('library')
+      log('ok', `Signed in as ${result.persona_name}.`)
+    } catch (error) {
+      const message = explain(error)
+      setAuth({ status: 'error', error: message })
+      log('error', `Sign in failed: ${message}`)
+    }
   }
 
-  async function copyLog() {
+  async function signOut() {
+    try {
+      await api.signOut()
+      localStorage.removeItem(SERVER_KEY)
+      setSession(null)
+      setServer('')
+      setAuth({ status: 'idle', error: null })
+      setView('signin')
+      log('ok', 'Signed out. The local token was revoked.')
+    } catch (error) {
+      const message = explain(error)
+      notify('error', message)
+      log('error', `Sign out failed: ${message}`)
+    }
+  }
+
+  async function play(game: GameRecord) {
+    setBusyAction('play')
+    setActionError(null)
+    setProgress(null)
+    try {
+      const pid = await api.launchGame(game.exe_path)
+      log('ok', `${executableName(game.exe_path)} started with process ${pid}.`)
+      notify('ok', 'Game started.')
+      await loadLibrary()
+      await selectGame(game)
+    } catch (error) {
+      const message = explain(error)
+      setActionError(message)
+      log('error', `Launch failed: ${message}`)
+      notify('error', message)
+      if (readError(error).kind === 'token_expired') {
+        setAuth({ status: 'error', error: message })
+        setView('signin')
+      }
+    } finally {
+      setBusyAction(null)
+      setProgress(null)
+    }
+  }
+
+  async function repair(game: GameRecord) {
+    setBusyAction('repair')
+    setActionError(null)
+    setProgress(null)
+    try {
+      await api.installLibrary(game.exe_path)
+      log('ok', 'Steam API library installed.')
+      notify('ok', 'Library repaired.')
+      await loadLibrary()
+      await selectGame(game)
+    } catch (error) {
+      const message = explain(error)
+      setActionError(message)
+      log('error', `Repair failed: ${message}`)
+      notify('error', message)
+    } finally {
+      setBusyAction(null)
+      setProgress(null)
+    }
+  }
+
+  async function restore(game: GameRecord) {
+    setBusyAction('restore')
+    setActionError(null)
+    setProgress(null)
+    try {
+      await api.restoreLibrary(game.exe_path)
+      log('ok', 'Original library restored.')
+      notify('ok', 'Original library restored.')
+      await loadLibrary()
+      await selectGame(game)
+    } catch (error) {
+      const message = explain(error)
+      setActionError(message)
+      log('error', `Restore failed: ${message}`)
+      notify('error', message)
+    } finally {
+      setBusyAction(null)
+      setProgress(null)
+    }
+  }
+
+  async function remove(game: GameRecord) {
+    const confirmed = window.confirm(
+      `Remove ${executableName(game.exe_path)} from the library? Any SAPIE library file is restored or removed.`,
+    )
+    if (!confirmed) return
+    setBusyAction('remove')
+    setActionError(null)
+    setProgress(null)
+    try {
+      await api.libraryRemove(game.exe_path)
+      if (selectedPath === game.exe_path) {
+        setSelectedPath(null)
+        setPresence('unchecked')
+      }
+      clearCover(game.exe_path)
+      setCoverVersion((version) => version + 1)
+      log('ok', 'Game removed from the library.')
+      notify('ok', 'Game removed.')
+      await loadLibrary()
+    } catch (error) {
+      const message = explain(error)
+      setActionError(message)
+      log('error', `Remove failed: ${message}`)
+      notify('error', message)
+    } finally {
+      setBusyAction(null)
+      setProgress(null)
+    }
+  }
+
+  function storeCover(game: GameRecord, dataUrl: string) {
+    try {
+      saveCover(game.exe_path, dataUrl)
+      setCoverVersion((version) => version + 1)
+      log('ok', 'Cover saved on this device.')
+    } catch (error) {
+      const message = explain(error)
+      notify('error', `Cover could not be saved: ${message}`)
+      log('error', `Cover could not be saved: ${message}`)
+    }
+  }
+
+  async function added(path: string) {
+    setAddOpen(false)
+    setProgress(null)
+    const list = await loadLibrary()
+    const game = list.find((item) => item.exe_path === path)
+    if (game) await selectGame(game)
+    notify('ok', 'Game is ready to play.')
+  }
+
+  function copyLog() {
     if (events.length === 0) {
       notify('info', 'No activity to copy.')
       return
@@ -149,25 +367,21 @@ export default function App() {
     const text = events
       .map((event) => `[${event.level.toUpperCase()}] ${event.at} ${event.text}`)
       .join('\n')
-    try {
-      await navigator.clipboard.writeText(text)
-      notify('ok', 'Activity copied to clipboard.')
-      log('ok', 'Activity copied to clipboard.')
-    } catch (error) {
-      notify('error', `Could not copy activity: ${describe(error)}`)
-    }
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        notify('ok', 'Activity copied to clipboard.')
+        log('ok', 'Activity copied to clipboard.')
+      })
+      .catch((error) => notify('error', `Could not copy activity: ${explain(error)}`))
   }
 
-  function clearLog() {
-    setEvents([])
-    notify('info', 'Activity cleared.')
-  }
-
-  const trimmedQuery = query.trim()
+  const selected = games.find((game) => game.exe_path === selectedPath) ?? null
+  const title = view === 'settings' ? 'Settings' : 'Library'
 
   return (
     <>
-      <div className="shell" ref={shellRef}>
+      <div className={`shell${view === 'library' ? '' : ' shell--wide'}`} ref={shellRef}>
         <nav className="rail" aria-label="Launcher">
           <div className="rail__mark" ref={markRef} aria-hidden="true">
             S
@@ -175,13 +389,34 @@ export default function App() {
           <div className="rail__group">
             <button
               type="button"
-              className={`rail__item${drawerOpen ? '' : ' is-active'}`}
-              aria-current={drawerOpen ? undefined : 'page'}
-              onClick={() => setDrawerOpen(false)}
+              className={`rail__item${view === 'library' ? ' is-active' : ''}`}
+              aria-current={view === 'library' ? 'page' : undefined}
+              onClick={() => setView('library')}
             >
               <LibraryIcon />
               <span>Library</span>
             </button>
+            <button
+              type="button"
+              className={`rail__item${view === 'settings' ? ' is-active' : ''}`}
+              aria-current={view === 'settings' ? 'page' : undefined}
+              onClick={() => setView('settings')}
+            >
+              <SettingsIcon />
+              <span>Settings</span>
+            </button>
+            {!session && (
+              <button
+                type="button"
+                className={`rail__item${view === 'signin' ? ' is-active' : ''}`}
+                aria-current={view === 'signin' ? 'page' : undefined}
+                aria-label="Sign in view"
+                onClick={() => setView('signin')}
+              >
+                <SignInIcon />
+                <span>Sign in</span>
+              </button>
+            )}
           </div>
           <div className="rail__group rail__group--foot">
             <button
@@ -189,7 +424,10 @@ export default function App() {
               className={`rail__item${drawerOpen ? ' is-active' : ''}`}
               aria-controls="activity-drawer"
               aria-expanded={drawerOpen}
-              onClick={openDrawer}
+              onClick={() => {
+                setDrawerOpen(true)
+                log('info', 'Activity opened.')
+              }}
             >
               <ActivityIcon />
               <span>Activity</span>
@@ -198,84 +436,95 @@ export default function App() {
         </nav>
 
         <main className="workspace">
-          <header className="topbar">
-            <div className="topbar__title">
-              <h1 ref={headingRef}>Library</h1>
-              <p>Games you add live here.</p>
-            </div>
-            <div className="topbar__tools">
-              <label className="search">
-                <span className="visually-hidden">Search games</span>
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search games"
-                />
-              </label>
-              <span
-                className={`status ${online ? 'status--online' : 'status--offline'}`}
-                aria-live="polite"
-              >
-                <span className="status__dot" aria-hidden="true" />
-                Network {online ? 'available' : 'unavailable'}
-              </span>
-            </div>
-          </header>
-
-          {!online && (
-            <div className="offline-banner" role="status">
-              Network unavailable. A configured game can still launch from cached settings.
-            </div>
-          )}
-
-          <section className="content" aria-label="Game library">
-            {library.status === 'loading' && (
-              <div className="state" role="status">
-                <p className="state__title">Reading the local library.</p>
-                <p>Checking saved state on this device.</p>
-              </div>
-            )}
-            {library.status === 'error' && (
-              <div className="state state--error" role="alert">
-                <div>
-                  <p className="state__title">The library could not be read.</p>
-                  <p>{library.message}</p>
-                </div>
-                <button type="button" className="btn" onClick={reload}>
-                  Retry
-                </button>
-              </div>
-            )}
-            {library.status === 'ready' && (
-              <div className="library">
-                <div className="section-head">
-                  <h2>All games</h2>
-                </div>
-                <div className="state state--empty">
-                  <p className="state__title">No games in the library yet.</p>
+          {view === 'signin' ? (
+            <SignIn
+              initialServer={server}
+              status={auth.status}
+              error={auth.error}
+              onSignIn={(target, username, password) => void signIn(target, username, password)}
+            />
+          ) : (
+            <>
+              <header className="topbar">
+                <div className="topbar__title">
+                  <h1 ref={headingRef}>{title}</h1>
                   <p>
-                    {trimmedQuery
-                      ? `No games match "${trimmedQuery}".`
-                      : 'A game appears here after you add it to the library.'}
+                    {view === 'library'
+                      ? 'Games you add live here.'
+                      : 'Account, server and build details.'}
                   </p>
-                  {!trimmedQuery && <p>Adding a game arrives with the library flow.</p>}
                 </div>
-              </div>
-            )}
-          </section>
+                <div className="topbar__tools">
+                  {session && (
+                    <span className="status" aria-live="polite">
+                      Signed in as {session.personaName}
+                    </span>
+                  )}
+                  <span
+                    className={`status ${online ? 'status--online' : 'status--offline'}`}
+                    aria-live="polite"
+                  >
+                    <span className="status__dot" aria-hidden="true" />
+                    Network {online ? 'available' : 'unavailable'}
+                  </span>
+                </div>
+              </header>
+
+              {!online && (
+                <div className="offline-banner" role="status">
+                  Network unavailable. A configured game can still launch from cached settings.
+                </div>
+              )}
+
+              {view === 'library' ? (
+                <LibraryScreen
+                  games={games}
+                  status={libraryStatus}
+                  error={libraryError}
+                  installingPath={busyAction === 'repair' ? selectedPath : null}
+                  progress={progress}
+                  onRetry={() => void loadLibrary()}
+                  onAdd={() => {
+                    setDrawerOpen(false)
+                    setAddOpen(true)
+                    setProgress(null)
+                  }}
+                  onSelect={(game) => void selectGame(game)}
+                  onPlay={(game) => void play(game)}
+                />
+              ) : (
+                <SettingsScreen
+                  session={session}
+                  cachedServer={server}
+                  onSignIn={() => setView('signin')}
+                  onSignOut={() => void signOut()}
+                />
+              )}
+            </>
+          )}
         </main>
 
-        <aside className="detail" aria-label="Game details">
-          <h2 ref={detailRef}>Game details</h2>
-          <div className="detail__monogram" aria-hidden="true">
-            ?
-          </div>
-          <div className="state state--compact">
-            <p className="state__title">No game selected.</p>
-            <p>Open a game from the library to see its path, architecture, interfaces and install state.</p>
-          </div>
-        </aside>
+        {view === 'library' && (
+          <GameDetails
+            key={`${selectedPath ?? 'none'}-${coverVersion}`}
+            game={selected}
+            presence={presence}
+            presenceError={presenceError}
+            busyAction={busyAction}
+            progress={progress}
+            actionError={actionError}
+            onPlay={(game) => void play(game)}
+            onRepair={(game) => void repair(game)}
+            onRestore={(game) => void restore(game)}
+            onRemove={(game) => void remove(game)}
+            onCover={(game, dataUrl) => storeCover(game, dataUrl)}
+            onClearCover={(game) => {
+              clearCover(game.exe_path)
+              setCoverVersion((version) => version + 1)
+              log('ok', 'Cover removed.')
+            }}
+          />
+        )}
       </div>
 
       <section
@@ -290,10 +539,25 @@ export default function App() {
             <button type="button" className="btn btn--quiet" onClick={copyLog}>
               Copy log
             </button>
-            <button type="button" className="btn btn--quiet" onClick={clearLog}>
+            <button
+              type="button"
+              className="btn btn--quiet"
+              onClick={() => {
+                setEvents([])
+                notify('info', 'Activity cleared.')
+              }}
+            >
               Clear
             </button>
-            <button type="button" className="btn" ref={closeRef} onClick={closeDrawer}>
+            <button
+              type="button"
+              className="btn"
+              ref={closeRef}
+              onClick={() => {
+                setDrawerOpen(false)
+                log('info', 'Activity closed.')
+              }}
+            >
               Close
             </button>
           </div>
@@ -312,6 +576,18 @@ export default function App() {
           </ol>
         )}
       </section>
+
+      {addOpen && (
+        <AddGameModal
+          progress={progress}
+          onClose={() => {
+            setAddOpen(false)
+            setProgress(null)
+          }}
+          onAdded={(path) => void added(path)}
+          onEvent={log}
+        />
+      )}
 
       <div className={`toast-region${drawerOpen ? ' toast-region--raised' : ''}`} aria-live="polite">
         {toasts.map((toast) => (
