@@ -41,7 +41,7 @@ jobs:
             -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="$PWD/out/${{ matrix.target }}-${{ matrix.era }}" \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build/${{ matrix.target }}-${{ matrix.era }} --parallel
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: client-${{ matrix.target }}-${{ matrix.era }}
           path: out/${{ matrix.target }}-${{ matrix.era }}
@@ -71,7 +71,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: cd server && go build -o ../out/server-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/sapie-server
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: server-${{ matrix.goos }}-${{ matrix.goarch }}
           path: out/server-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -109,7 +109,7 @@ jobs:
           echo "stamped $ver"
       - name: Native launcher build
         run: cd client/src-tauri && cargo build --release --target ${{ matrix.target }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: launcher-${{ matrix.target }}
           path: client/src-tauri/target/${{ matrix.target }}/release/sapie*
@@ -137,7 +137,7 @@ jobs:
           echo "stamped $ver"
       - name: Build web UI
         run: cd web && npm ci && npm run build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web-dist
           path: web/dist
@@ -170,7 +170,7 @@ jobs:
         run: cargo install tauri-cli --version "^2" --locked
       - name: Build NSIS and MSI installers
         run: cd client/src-tauri && cargo tauri build --bundles nsis,msi --config '{"build":{"beforeBuildCommand":"npm --prefix ui run build"}}'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: installer-windows
           path: |
@@ -207,7 +207,7 @@ jobs:
         run: cargo install tauri-cli --version "^2" --locked
       - name: Build AppImage
         run: cd client/src-tauri && cargo tauri build --bundles appimage --config '{"build":{"beforeBuildCommand":"npm --prefix ui run build"}}'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: installer-linux
           path: client/src-tauri/target/release/bundle/appimage/*.AppImage
