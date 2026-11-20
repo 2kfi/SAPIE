@@ -37,7 +37,7 @@ jobs:
       - name: Configure and build
         run: |
           cmake -S client -B build/${{ matrix.target }}-${{ matrix.era }} -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE=client/cmake/toolchains/${{ matrix.target }}.cmake \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/client/cmake/toolchains/${{ matrix.target }}.cmake" \
             -DSAPIE_INTERFACE_ERA=${{ matrix.era }} \
             -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=out/${{ matrix.target }}-${{ matrix.era }} \
             -DCMAKE_BUILD_TYPE=Release
