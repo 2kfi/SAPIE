@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -23,9 +24,62 @@ const (
 	loginTimeout   = 10 * time.Second
 	pingInterval   = 30 * time.Second
 	readTimeout    = 90 * time.Second
+	lockoutWindow  = time.Minute
 	tokenLifetime  = 24 * time.Hour
 	ticketLifetime = 10 * time.Minute
 )
+
+var errLoginLocked = errors.New("login temporarily locked after repeated failures")
+
+// accountLockout counts failed logins by account ID. Keys are real accounts, so
+// the map cannot be grown with arbitrary usernames. Counters reset on restart.
+type accountLockout struct {
+	mu       sync.Mutex
+	failures map[uint64][]time.Time
+}
+
+func newAccountLockout() *accountLockout {
+	return &accountLockout{failures: make(map[uint64][]time.Time)}
+}
+
+func (l *accountLockout) allow(steamID uint64) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.prune(time.Now())
+	return len(l.failures[steamID]) < auth.MaxFailures
+}
+
+func (l *accountLockout) record(steamID uint64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	l.prune(now)
+	l.failures[steamID] = append(l.failures[steamID], now)
+}
+
+func (l *accountLockout) prune(now time.Time) {
+	cutoff := now.Add(-lockoutWindow)
+	for id, times := range l.failures {
+		recent := times[:0]
+		for _, at := range times {
+			if at.After(cutoff) {
+				recent = append(recent, at)
+			}
+		}
+		if len(recent) == 0 {
+			delete(l.failures, id)
+		} else {
+			l.failures[id] = recent
+		}
+	}
+}
+
+func (s *Server) checkAccountLockout(steamID uint64) error {
+	if !s.accountLocks.allow(steamID) {
+		return errLoginLocked
+	}
+	return nil
+}
 
 type Session struct {
 	steamID      uint64
@@ -47,16 +101,21 @@ func (c *Session) Send(frame *protocol.Frame) error {
 func (c *Session) stop() { c.closeOnce.Do(func() { close(c.done) }) }
 
 type Server struct {
-	store   *state.Store
-	limiter *auth.Limiter
-	router  *router.Router
+	store        *state.Store
+	limiter      *auth.Limiter
+	accountLocks *accountLockout
+	router       *router.Router
+	idleTimeout  time.Duration
 
 	mu    sync.RWMutex
 	peers map[uint64]*Session
 }
 
 func New(store *state.Store, limiter *auth.Limiter) *Server {
-	s := &Server{store: store, limiter: limiter, peers: make(map[uint64]*Session)}
+	s := &Server{
+		store: store, limiter: limiter, accountLocks: newAccountLockout(),
+		idleTimeout: readTimeout, peers: make(map[uint64]*Session),
+	}
 	s.router = router.NewWithResolver(s, store)
 	return s
 }
@@ -134,6 +193,7 @@ func (s *Server) handle(conn net.Conn) {
 
 	ip := hostFromAddr(conn.RemoteAddr())
 	if !s.limiter.Allow(ip) {
+		log.Printf("session: login from %s: %v", ip, errLoginLocked)
 		s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil, nil)
 		return
 	}
@@ -153,12 +213,21 @@ func (s *Server) handle(conn net.Conn) {
 		}
 		account = &state.AuthAccount{Account: stored}
 	} else {
-		account, err = s.store.AccountByUsername(login.Login.GetUsername())
-		if err != nil || !auth.VerifyPassword(account.PasswordHash, login.Login.GetPassword()) {
+		stored, err := s.store.AccountByUsername(login.Login.GetUsername())
+		if err != nil || !auth.VerifyPassword(stored.PasswordHash, login.Login.GetPassword()) {
 			s.limiter.RecordFailure(ip)
+			if err == nil {
+				s.accountLocks.record(stored.SteamID)
+			}
 			s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil, nil)
 			return
 		}
+		account = stored
+	}
+	if err := s.checkAccountLockout(account.SteamID); err != nil {
+		log.Printf("session: login for account %d: %v", account.SteamID, err)
+		s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil, nil)
+		return
 	}
 
 	token, err := auth.NewToken()
@@ -182,7 +251,7 @@ func (s *Server) handle(conn net.Conn) {
 	s.pushPresence(session, true)
 
 	for {
-		conn.SetReadDeadline(time.Now().Add(readTimeout))
+		conn.SetReadDeadline(time.Now().Add(s.idleTimeout))
 		frame, err = protocol.ReadFrame(conn)
 		if err != nil {
 			return
