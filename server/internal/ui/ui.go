@@ -7,17 +7,38 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
-func Handler(dir string) http.Handler {
+func Handler(dir, adminAddr string) http.Handler {
+	target, _ := url.Parse(adminTarget(adminAddr))
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	api := http.NewServeMux()
+	for _, route := range []string{
+		"POST /api/v1/login",
+		"GET /api/v1/config",
+		"GET /api/v1/friends",
+		"POST /api/v1/friends/{id}/invite",
+		"GET /api/v1/lobbies",
+		"POST /api/v1/lobbies",
+		"POST /api/v1/lobbies/{id}/join",
+		"GET /api/v1/users/{steam_id}/stats",
+	} {
+		api.HandleFunc(route, proxy.ServeHTTP)
+	}
 	files := http.FileServer(http.Dir(dir))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/api/") {
+		if r.URL.Path == "/healthz" {
 			http.NotFound(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			api.ServeHTTP(w, r)
 			return
 		}
 		index := filepath.Join(dir, "index.html")
@@ -40,8 +61,19 @@ func Handler(dir string) http.Handler {
 	})
 }
 
-func Serve(ctx context.Context, ln net.Listener, dir string) error {
-	server := &http.Server{Handler: Handler(dir), ReadHeaderTimeout: 5 * time.Second}
+func adminTarget(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "http://" + addr
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port)
+}
+
+func Serve(ctx context.Context, ln net.Listener, dir, adminAddr string) error {
+	server := &http.Server{Handler: Handler(dir, adminAddr), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()
 		server.Shutdown(context.Background())

@@ -79,7 +79,7 @@ func main() {
 	errs := make(chan error, 3)
 	go func() { errs <- sessions.Serve(ctx, gameLn) }()
 	go func() { errs <- admin.Serve(ctx, adminLn) }()
-	go func() { errs <- ui.Serve(ctx, uiLn, *uiDir) }()
+	go func() { errs <- ui.Serve(ctx, uiLn, *uiDir, *adminListen) }()
 	log.Printf("sapie game protocol on %s, admin API on %s, web UI on %s", gameLn.Addr(), adminLn.Addr(), uiLn.Addr())
 
 	select {
