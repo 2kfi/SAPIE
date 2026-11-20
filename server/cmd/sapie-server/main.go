@@ -40,7 +40,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("generated admin token: %s", token)
+		log.Print("generated admin token (value withheld); pass --admin-token to use a known value")
 	}
 
 	gameLn, err := net.Listen("tcp", *listen)

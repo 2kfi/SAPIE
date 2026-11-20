@@ -2,10 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +15,69 @@ import (
 	"github.com/sapie/sapie/server/internal/protocol"
 	"github.com/sapie/sapie/server/internal/state"
 )
+
+func TestIdempotencyConcurrentAndBounded(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	srv := New(store, "admin-token", auth.NewLimiter(nil), nil)
+	handler := srv.Handler()
+	post := func(key string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/accounts",
+			strings.NewReader(`{"username":"racer","password":"pw"}`))
+		req.Header.Set("Authorization", "Bearer admin-token")
+		req.Header.Set("Idempotency-Key", key)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	const racers = 8
+	results := make([]*httptest.ResponseRecorder, racers)
+	var wg sync.WaitGroup
+	for i := range results {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i] = post("shared")
+		}(i)
+	}
+	wg.Wait()
+	for _, rec := range results {
+		if rec.Code != http.StatusCreated || rec.Body.String() != results[0].Body.String() {
+			t.Fatalf("concurrent replay = %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	accounts, err := store.ListAccounts()
+	if err != nil || len(accounts) != 1 {
+		t.Fatalf("created %d accounts, want 1 (%v)", len(accounts), err)
+	}
+
+	srv.mu.Lock()
+	for i := 0; i < maxIdemKeys; i++ {
+		done := make(chan struct{})
+		close(done)
+		srv.idem[fmt.Sprintf("seed-%d", i)] = &idemCall{done: done}
+	}
+	srv.mu.Unlock()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/accounts",
+		strings.NewReader(`{"username":"bounded","password":"pw"}`))
+	req.Header.Set("Authorization", "Bearer admin-token")
+	req.Header.Set("Idempotency-Key", "fresh")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("bounded create = %d: %s", rec.Code, rec.Body.String())
+	}
+	srv.mu.Lock()
+	size := len(srv.idem)
+	srv.mu.Unlock()
+	if size > maxIdemKeys {
+		t.Fatalf("idempotency cache grew to %d entries", size)
+	}
+}
 
 func TestAdminAPI(t *testing.T) {
 	store, err := state.Open(":memory:")

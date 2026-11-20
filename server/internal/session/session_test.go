@@ -155,6 +155,185 @@ func TestTicketRequest(t *testing.T) {
 	}
 }
 
+func testStore(t *testing.T) (*state.Store, uint64, uint64) {
+	t.Helper()
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	alice, err := store.CreateAccount("alice", "h1", "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := store.CreateAccount("bob", "h2", "Bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddFriend(alice, bob); err != nil {
+		t.Fatal(err)
+	}
+	return store, alice, bob
+}
+
+func TestLoginSnapshotsPersonaState(t *testing.T) {
+	store, alice, bob := testStore(t)
+	carol, err := store.CreateAccount("carol", "h3", "Carol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddFriend(alice, carol); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertPresence(state.Presence{SteamID: bob, RichPresence: map[string][]byte{"map": []byte("de_dust2")}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetConnectStr(bob, "connect=127.0.0.1:27015"); err != nil {
+		t.Fatal(err)
+	}
+	srv := New(store, nil)
+	srv.peers[bob] = &Session{steamID: bob, personaName: "Bob"}
+
+	snapshots := srv.friendSnapshots(alice)
+	if len(snapshots) != 2 {
+		t.Fatalf("got %d snapshots: %+v", len(snapshots), snapshots)
+	}
+	byID := map[uint64]*protocol.FriendSnapshot{}
+	for _, snapshot := range snapshots {
+		byID[snapshot.GetSteamId()] = snapshot
+	}
+	bobSnapshot, carolSnapshot := byID[bob], byID[carol]
+	if bobSnapshot == nil || carolSnapshot == nil {
+		t.Fatalf("missing snapshots: %+v", byID)
+	}
+	if got := string(bobSnapshot.RichPresence[state.PersonaStateKey]); got != "1" {
+		t.Fatalf("online persona state = %q, want 1", got)
+	}
+	if got := string(carolSnapshot.RichPresence[state.PersonaStateKey]); got != "0" {
+		t.Fatalf("offline persona state = %q, want 0", got)
+	}
+	if got := string(bobSnapshot.RichPresence["map"]); got != "de_dust2" {
+		t.Fatalf("rich presence lost: %q", got)
+	}
+	if _, ok := bobSnapshot.RichPresence[state.ConnectStrKey]; ok {
+		t.Fatal("connect_str leaked into login snapshot")
+	}
+}
+
+func TestDisconnectSkipsStaleOfflinePush(t *testing.T) {
+	store, alice, bob := testStore(t)
+	srv := New(store, nil)
+	observerConn, readerConn := net.Pipe()
+	defer observerConn.Close()
+	defer readerConn.Close()
+	observer := &Session{steamID: bob, conn: observerConn}
+	srv.peers[bob] = observer
+	frames := make(chan *protocol.Frame, 4)
+	go func() {
+		for {
+			frame, err := protocol.ReadFrame(readerConn)
+			if err != nil {
+				return
+			}
+			frames <- frame
+		}
+	}()
+
+	old := &Session{steamID: alice, personaName: "Alice"}
+	replacement := &Session{steamID: alice, personaName: "Alice"}
+	srv.peers[alice] = replacement
+	srv.disconnect(old)
+	select {
+	case frame := <-frames:
+		t.Fatalf("stale offline push after replacement: %+v", frame.Payload)
+	default:
+	}
+
+	srv.peers[alice] = old
+	srv.disconnect(old)
+	select {
+	case frame := <-frames:
+		friend := steamMessage(frame)
+		if friend == nil || friend.GetFriend() == nil || friend.GetSourceId() != alice ||
+			string(friend.GetFriend().GetRichPresence()[state.PersonaStateKey]) != "0" {
+			t.Fatalf("bad offline push: %+v", frame.Payload)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("real disconnect did not push offline presence")
+	}
+}
+
+func steamMessage(frame *protocol.Frame) *protocol.Common_Message {
+	steam, ok := frame.Payload.(*protocol.Frame_Steam)
+	if !ok {
+		return nil
+	}
+	return steam.Steam
+}
+
+func TestStatsGetPrivacyAndAppid(t *testing.T) {
+	store, alice, bob := testStore(t)
+	for _, a := range []state.Achievement{
+		{Appid: 480, ID: "public_480"},
+		{Appid: 480, ID: "secret_480", Hidden: true},
+		{Appid: 900, ID: "public_900"},
+	} {
+		if _, err := store.UnlockAchievement(alice, a); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+	srv := New(store, nil)
+	session := &Session{steamID: bob, conn: serverConn}
+	request := func(appid uint32, target uint64) *protocol.StatsResponse {
+		t.Helper()
+		done := make(chan struct{})
+		go func() {
+			srv.handleStatsGet(session, &protocol.StatsGet{Appid: appid, SteamId: target})
+			close(done)
+		}()
+		clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		frame, err := protocol.ReadFrame(clientConn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		<-done
+		response, ok := frame.Payload.(*protocol.Frame_StatsResponse)
+		if !ok {
+			t.Fatalf("got %T, want StatsResponse", frame.Payload)
+		}
+		return response.StatsResponse
+	}
+	names := func(resp *protocol.StatsResponse) map[string]bool {
+		got := map[string]bool{}
+		for _, a := range resp.GetAchievements() {
+			got[a.GetName()] = true
+		}
+		return got
+	}
+	want := func(resp *protocol.StatsResponse, expected ...string) {
+		t.Helper()
+		got := names(resp)
+		if len(got) != len(expected) {
+			t.Fatalf("achievements = %v, want %v", got, expected)
+		}
+		for _, name := range expected {
+			if !got[name] {
+				t.Fatalf("achievements = %v, want %v", got, expected)
+			}
+		}
+	}
+
+	want(request(0, alice), "public_480", "public_900")
+	want(request(900, alice), "public_900")
+	session.steamID = alice
+	want(request(0, 0), "public_480", "secret_480", "public_900")
+	want(request(480, 0), "public_480", "secret_480")
+}
+
 func readLoginResponse(t *testing.T, c net.Conn) *protocol.LoginResponse {
 	t.Helper()
 	c.SetReadDeadline(time.Now().Add(5 * time.Second))

@@ -18,11 +18,19 @@ import (
 	"github.com/sapie/sapie/server/internal/state"
 )
 
-const sessionTokenLifetime = 24 * time.Hour
+const (
+	sessionTokenLifetime = 24 * time.Hour
+	maxIdemKeys          = 256
+)
 
 type cachedResponse struct {
 	status int
 	body   []byte
+}
+
+type idemCall struct {
+	done     chan struct{}
+	response cachedResponse
 }
 
 // Notifier delivers game frames and reports live presence to the API.
@@ -38,11 +46,49 @@ type Server struct {
 	notifier Notifier
 
 	mu   sync.Mutex
-	idem map[string]cachedResponse
+	idem map[string]*idemCall
 }
 
 func New(store *state.Store, token string, limiter *auth.Limiter, notifier Notifier) *Server {
-	return &Server{store: store, token: token, limiter: limiter, notifier: notifier, idem: make(map[string]cachedResponse)}
+	return &Server{store: store, token: token, limiter: limiter, notifier: notifier, idem: make(map[string]*idemCall)}
+}
+
+func (s *Server) idemStart(key string) (*idemCall, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if call, ok := s.idem[key]; ok {
+		return call, false
+	}
+	call := &idemCall{done: make(chan struct{})}
+	s.idem[key] = call
+	for len(s.idem) > maxIdemKeys {
+		freed := false
+		for k, other := range s.idem {
+			select {
+			case <-other.done:
+				delete(s.idem, k)
+				freed = true
+			default:
+			}
+			if freed {
+				break
+			}
+		}
+		if !freed {
+			break // all entries are in flight; they cannot be replayed yet
+		}
+	}
+	return call, true
+}
+
+func (s *Server) idemFinish(key string, call *idemCall, resp cachedResponse) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	call.response = resp
+	close(call.done)
+	if resp.status == 0 {
+		delete(s.idem, key)
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -390,18 +436,28 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.Header.Get("Idempotency-Key")
-	if key != "" {
-		s.mu.Lock()
-		if cached, ok := s.idem[key]; ok {
-			s.mu.Unlock()
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(cached.status)
-			w.Write(cached.body)
-			return
-		}
-		defer s.mu.Unlock()
+	if key == "" {
+		s.createAccountNow(w, r)
+		return
 	}
+	for {
+		call, leader := s.idemStart(key)
+		if !leader {
+			<-call.done
+			if call.response.status != 0 {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(call.response.status)
+				w.Write(call.response.body)
+				return
+			}
+			continue
+		}
+		s.idemFinish(key, call, s.createAccountNow(w, r))
+		return
+	}
+}
 
+func (s *Server) createAccountNow(w http.ResponseWriter, r *http.Request) cachedResponse {
 	var req struct {
 		Username    string `json:"username"`
 		Password    string `json:"password"`
@@ -409,11 +465,11 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
-		return
+		return cachedResponse{}
 	}
 	if req.Username == "" || req.Password == "" {
 		http.Error(w, "username and password are required", http.StatusBadRequest)
-		return
+		return cachedResponse{}
 	}
 	if req.PersonaName == "" {
 		req.PersonaName = req.Username
@@ -421,21 +477,18 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		http.Error(w, "cannot hash password", http.StatusInternalServerError)
-		return
+		return cachedResponse{}
 	}
 	if _, err := s.store.CreateAccount(req.Username, hash, req.PersonaName); err != nil {
 		http.Error(w, "account creation failed", http.StatusConflict)
-		return
+		return cachedResponse{}
 	}
 	account, err := s.store.AccountByUsername(req.Username)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return cachedResponse{}
 	}
-	body := writeJSON(w, http.StatusCreated, account.Account)
-	if key != "" {
-		s.idem[key] = cachedResponse{status: http.StatusCreated, body: body}
-	}
+	return cachedResponse{status: http.StatusCreated, body: writeJSON(w, http.StatusCreated, account.Account)}
 }
 
 func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) {
