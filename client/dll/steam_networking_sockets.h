@@ -64,6 +64,7 @@ struct Connect_Socket {
 
     IP_PORT direct_endpoint;
     bool has_direct_endpoint = false;
+    std::chrono::steady_clock::time_point last_inbound_data;
 };
 
 struct shared_between_client_server {
@@ -241,6 +242,7 @@ HSteamNetConnection new_connect_socket(SteamNetworkingIdentity remote_identity, 
     socket.poll_group = k_HSteamNetPollGroup_Invalid;
     socket.created_by = settings->get_local_steam_id();
     socket.connect_request_last_sent = std::chrono::steady_clock::now();
+    socket.last_inbound_data = socket.connect_request_last_sent;
     socket.connect_requests_sent = 0;
     socket.packet_send_counter = 1;
 
@@ -785,11 +787,14 @@ EResult SendMessageToConnection( HSteamNetConnection hConn, const void *pData, u
     bool reliable = false;
     if (nSendFlags & k_nSteamNetworkingSend_Reliable) reliable = true;
     bool sent = false;
-    if (connect_socket->second.has_direct_endpoint) {
+    bool relay = should_use_relay(connect_socket->second.has_direct_endpoint,
+                                  connect_socket->second.last_inbound_data,
+                                  std::chrono::steady_clock::now());
+    if (relay) {
+        sent = network->sendTo(&msg, reliable); // server relays to the peer when direct P2P is unconfirmed
+    } else {
         // shortcut: reliable P2P sends are best-effort over UDP, needs an ACK layer to restore guarantees
         sent = network->sendToPeer(&msg, connect_socket->second.direct_endpoint);
-    } else {
-        sent = network->sendTo(&msg, reliable); // M11 relay fallback hooks here when no direct endpoint exists
     }
     if (sent) {
         if (pOutMessageNumber) *pOutMessageNumber = message_number;
@@ -2112,12 +2117,14 @@ void Callback(Common_Message *msg)
             if (connect_socket != s->connect_sockets.end()) {
                 if (connect_socket->second.remote_identity.GetSteamID64() == msg->source_id() && (connect_socket->second.status == CONNECT_SOCKET_CONNECTED)) {
                     PRINT_DEBUG("Steam_Networking_Sockets: got data len %u, num %u on connection %u\n", msg->networking_sockets().data().size(), msg->networking_sockets().message_number(), connect_socket->first);
+                    connect_socket->second.last_inbound_data = std::chrono::steady_clock::now();
                     connect_socket->second.data.push(msg->networking_sockets());
                 }
             } else {
                 connect_socket = std::find_if(s->connect_sockets.begin(), s->connect_sockets.end(), [msg](const auto &in) {return in.second.remote_identity.GetSteamID64() == msg->source_id() && (in.second.status == CONNECT_SOCKET_NOT_ACCEPTED || in.second.status == CONNECT_SOCKET_CONNECTED) && in.second.remote_id == msg->networking_sockets().connection_id_from();});
                 if (connect_socket != s->connect_sockets.end()) {
                     PRINT_DEBUG("Steam_Networking_Sockets: got data len %u, num %u on not accepted connection %u\n", msg->networking_sockets().data().size(), msg->networking_sockets().message_number(), connect_socket->first);
+                    connect_socket->second.last_inbound_data = std::chrono::steady_clock::now();
                     connect_socket->second.data.push(msg->networking_sockets());
                 }
             }

@@ -61,6 +61,15 @@ inline bool peer_endpoint_from_hint(uint32 source_ip, uint32 source_port, IP_POR
     return true;
 }
 
+// A direct hint is trusted only while inbound DATA keeps confirming it; stale or absent proof uses the server relay.
+inline bool should_use_relay(bool has_direct_endpoint,
+                             std::chrono::steady_clock::time_point last_inbound_data,
+                             std::chrono::steady_clock::time_point now)
+{
+    const auto direct_confirm_window = std::chrono::seconds(5);
+    return !has_direct_endpoint || now - last_inbound_data > direct_confirm_window;
+}
+
 struct Network_Callback {
     void (*message_callback)(void *object, Common_Message *msg);
     void *object;

@@ -344,6 +344,18 @@ int main(int argc, char **argv)
         }
     }
 
+    {
+        auto now = std::chrono::steady_clock::now();
+        auto recent = now - std::chrono::seconds(1);
+        auto stale = now - std::chrono::seconds(10);
+        if (!should_use_relay(false, recent, now) ||
+            should_use_relay(true, recent, now) ||
+            !should_use_relay(true, stale, now)) {
+            fprintf(stderr, "FAIL: relay path selection self-check\n");
+            return 2;
+        }
+    }
+
     std::string mode = argc > 1 ? argv[1] : "";
     bool reject = mode == "--reject";
     bool mirror = mode == "--mirror";
