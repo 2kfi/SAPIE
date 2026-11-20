@@ -327,9 +327,9 @@ func (s *Server) handleSteam(session *Session, msg *protocol.Common_Message) {
 	s.router.Route(session.steamID, msg)
 }
 
-// stampSourceHint replaces any client-supplied hint with the authenticated
-// connection's IPv4 address and port; IPv6 gets no hint rather than a truncated one.
+// stampSourceHint trusts the client's declared UDP port because the TCP remote port is ephemeral.
 func stampSourceHint(remote net.Addr, msg *protocol.Common_Message) {
+	declared := msg.SourcePort
 	msg.SourceIp, msg.SourcePort = 0, 0
 	tcp, ok := remote.(*net.TCPAddr)
 	if !ok {
@@ -340,6 +340,13 @@ func stampSourceHint(remote net.Addr, msg *protocol.Common_Message) {
 		return
 	}
 	msg.SourceIp = binary.BigEndian.Uint32(ip)
+	if msg.SourceIp == 0 {
+		return // a port hint without an IP is useless
+	}
+	if declared >= 1 && declared <= 65535 {
+		msg.SourcePort = declared
+		return
+	}
 	if tcp.Port > 0 && tcp.Port <= 65535 {
 		msg.SourcePort = uint32(tcp.Port)
 	}

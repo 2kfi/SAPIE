@@ -676,24 +676,30 @@ func TestDisconnectUpdatesLobbyOwner(t *testing.T) {
 }
 
 func TestStampSourceHint(t *testing.T) {
+	ipv4 := net.ParseIP("203.0.113.7")
+	realIP := binary.BigEndian.Uint32(ipv4.To4())
 	for _, tc := range []struct {
-		name    string
-		remote  net.Addr
-		wantIP  uint32
-		wantPrt uint32
+		name         string
+		remote       net.Addr
+		suppliedIP   uint32
+		suppliedPort uint32
+		wantIP       uint32
+		wantPort     uint32
 	}{
-		{"ipv4", &net.TCPAddr{IP: net.ParseIP("203.0.113.7"), Port: 27015},
-			binary.BigEndian.Uint32(net.ParseIP("203.0.113.7").To4()), 27015},
-		{"ipv6 gets no hint", &net.TCPAddr{IP: net.ParseIP("2001:db8::1"), Port: 27015}, 0, 0},
-		{"non-tcp gets no hint", &net.UDPAddr{IP: net.ParseIP("203.0.113.7"), Port: 27015}, 0, 0},
-		{"nil gets no hint", nil, 0, 0},
+		{"client UDP port preserved", &net.TCPAddr{IP: ipv4, Port: 27015}, 111, 47584, realIP, 47584},
+		{"zero port falls back to TCP", &net.TCPAddr{IP: ipv4, Port: 27015}, 111, 0, realIP, 27015},
+		{"out-of-range port falls back to TCP", &net.TCPAddr{IP: ipv4, Port: 27015}, 111, 70000, realIP, 27015},
+		{"max port preserved", &net.TCPAddr{IP: ipv4, Port: 27015}, 111, 65535, realIP, 65535},
+		{"ipv6 gets no hint", &net.TCPAddr{IP: net.ParseIP("2001:db8::1"), Port: 27015}, 111, 47584, 0, 0},
+		{"non-tcp gets no hint", &net.UDPAddr{IP: ipv4, Port: 27015}, 111, 47584, 0, 0},
+		{"nil gets no hint", nil, 111, 47584, 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			msg := &protocol.Common_Message{SourceIp: 1234, SourcePort: 5678} // client-supplied, must be replaced
+			msg := &protocol.Common_Message{SourceIp: tc.suppliedIP, SourcePort: tc.suppliedPort}
 			stampSourceHint(tc.remote, msg)
-			if msg.SourceIp != tc.wantIP || msg.SourcePort != tc.wantPrt {
-				t.Fatalf("hint = ip %d port %d, want ip %d port %d",
-					msg.SourceIp, msg.SourcePort, tc.wantIP, tc.wantPrt)
+			if msg.SourceIp != tc.wantIP || msg.SourcePort != tc.wantPort {
+				t.Fatalf("hint = ip %d port %d, want ip %d port %d (client supplied ip %d port %d)",
+					msg.SourceIp, msg.SourcePort, tc.wantIP, tc.wantPort, tc.suppliedIP, tc.suppliedPort)
 			}
 		})
 	}
@@ -721,19 +727,20 @@ func TestHandleSteamStampsNetworkingSocketsSource(t *testing.T) {
 	srv.peers[bob] = &Session{steamID: bob, conn: bobServer}
 	bobFrames := frameCollector(bobClient)
 
+	const declaredPort = 47584
 	srv.handleSteam(aliceSession, &protocol.Common_Message{
 		DestId: bob,
 		Messages: &protocol.Common_Message_NetworkingSockets{
 			NetworkingSockets: &protocol.Networking_Sockets{Type: protocol.Networking_Sockets_CONNECTION_REQUEST},
 		},
-		SourceIp: 111, SourcePort: 222,
+		SourceIp: 111, SourcePort: declaredPort,
 	})
 
 	msg := waitSteam(t, bobFrames, func(m *protocol.Common_Message) bool { return m.GetNetworkingSockets() != nil })
 	wantIP := binary.BigEndian.Uint32(remote.IP.To4())
-	if msg.SourceIp != wantIP || msg.SourcePort != 27015 {
+	if msg.SourceIp != wantIP || msg.SourcePort != declaredPort {
 		t.Fatalf("relayed hint = ip %d port %d, want ip %d port %d",
-			msg.SourceIp, msg.SourcePort, wantIP, 27015)
+			msg.SourceIp, msg.SourcePort, wantIP, declaredPort)
 	}
 	if msg.GetSourceId() != alice {
 		t.Fatalf("relayed source_id = %d, want %d", msg.GetSourceId(), alice)
