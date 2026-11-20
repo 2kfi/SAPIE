@@ -446,6 +446,24 @@ td {
   background: var(--muted);
 }
 
+/* Plain HTTP notice stays above the page and never covers the login form. */
+.http-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-block-end: 1px solid var(--edge);
+  border-inline-start: 3px solid var(--accent);
+  background: var(--surface-quiet);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.http-notice strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
 /* Login and forms */
 
 .login-page {
