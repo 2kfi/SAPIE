@@ -16,7 +16,7 @@ sudo pacman -S --needed \
   mingw-w64-gcc \
   aarch64-linux-gnu-gcc \
   lib32-glibc lib32-gcc-libs \
-  rust nodejs npm webkit2gtk-4.1 gtk3 libayatana-appindicator
+  rust nodejs npm libxkbcommon libwayland libx11 libxi libxrandr mesa
 
 # AUR (yay/paru) — cross-built protobuf for Windows targets
 yay -S mingw-w64-protobuf
@@ -27,8 +27,10 @@ yay -S mingw-w64-protobuf
 - `lib32-*` may require uncommenting `[multilib]` in `/etc/pacman.conf`.
 - Host `protoc` comes from `protobuf`. Protobuf 36 requires C++17; the client
   CMake uses C++17.
-- CI uses an `archlinux` container with the same list; Tauri builds on native
-  runners (`windows-latest`, `ubuntu-24.04`, `ubuntu-24.04-arm`).
+- CI uses an `archlinux` container with the same list; the native launcher
+  builds on native runners (`windows-latest`, `ubuntu-24.04`, `ubuntu-24.04-arm`)
+  with libxkbcommon/wayland/x11/xi/xrandr/gl1-mesa dev libs. There is no
+  webkit2gtk dependency.
 
 ## Cross protobuf-lite (required)
 
@@ -121,15 +123,43 @@ Windows DLL; the DLL itself is the artifact to copy next to the game exe.
   excluded from the matrix, so it is not needed.
 - LGPLv3 headers in all vendored files are unchanged.
 
+## Native launcher
+
+`client/src-tauri/` is now a native Rust egui/eframe app; the directory name is kept, but there is
+no Tauri webview, WebKit, Electron or embedded SPA. The binary is `sapie-launcher`
+(`sapie-launcher.exe` on Windows), and Windows builds set `windows_subsystem = "windows"`.
+
+```sh
+cd client/src-tauri && cargo build --release
+```
+
+On Linux the native GUI needs libxkbcommon, wayland, x11, xi, xrandr and gl1-mesa development
+libraries. No cross-compiled Windows launcher has been executed locally.
+
+## Web UI build
+
+```sh
+cd web && npm ci && npm run build   # tsc --noEmit + vite build -> web/dist
+```
+
+The server hosts `web/dist` with `--ui-dir` (default `./web/dist`) on `--ui-listen`
+(default `0.0.0.0:8081`). No browser click-through has been done locally.
+
 ## CI and releases
 
-Any tag triggers `.github/workflows/build.yml`: it builds the client, server and launcher
-targets, assembles the three release archives, creates the GitHub Release, and pushes the
-server container. The 0.1 release is at
+Any tag triggers `.github/workflows/build.yml`: it builds the client, server and native launcher
+targets, plus a `web` job that builds `web/dist` and uploads it as the `web-dist` artifact. The
+release job assembles the three archives, creates the GitHub Release and pushes the server
+container. `tools/release-bundle.sh` copies `web/dist` to the archive root as `web/dist`, so
+`--ui-dir ./web/dist` works from an unpacked bundle.
+
+The 0.1 release is published and frozen at tag `0.1` (`62007f5`) at
 https://github.com/2kfi/SAPIE/releases/tag/0.1 with the assets
 `SAPIE-0.1-linux-x64.tar.gz`, `SAPIE-0.1-linux-arm64.tar.gz` and `SAPIE-0.1-windows-x64.zip`.
-Container tags are `ghcr.io/2kfi/sapie-server:<tag>` and `ghcr.io/2kfi/sapie-server:latest`
-(for 0.1, `ghcr.io/2kfi/sapie-server:0.1`).
+Its assets and GHCR image are unchanged. Container tags are
+`ghcr.io/2kfi/sapie-server:<tag>` and `ghcr.io/2kfi/sapie-server:latest`
+(for 0.1, `ghcr.io/2kfi/sapie-server:0.1`). 0.2 is code-complete locally but is not tagged
+or released; G0 is deferred to the user.
 
 Caveat: in this new repository, push-triggered runs never fired. Use manual dispatch
 (`workflow_dispatch --ref <tag>`) to run the workflow.

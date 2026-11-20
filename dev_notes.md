@@ -48,18 +48,22 @@ suite. Main risk: the real two-client path stays unproven until item 4 is run.
 ## Carry-forward into 0.2
 
 The 0.1 release at `62007f5` is published and frozen. Its UI text, including "Peer-to-peer play is
-not available in this version.", stays as shipped. 0.2 adds the following, recorded as user decisions:
+not available in this version.", stays as shipped. 0.2 code adds the following locally, not tagged
+or released, with G0 deferred to the user:
 
 - Full online persona surface: a game sees a logged-in account, persona name and online state, friends
-  list and invites, achievements and stats, and app ownership/ticket. These are the checks a paranoid
-  MW2-2009-style client probes.
-- Deeper lobbies/matchmaking: join-friend and connect flows that hold for two real clients.
+  list and invites, achievements and stats, and a ticket issuance check. These are the checks a
+  paranoid MW2-2009-style client probes; there is no app-ownership table.
+- Deeper lobbies/matchmaking: join-friend and connect flows, implemented in code but not held for
+  two real clients.
 - P2P: direct client-to-client first, relay fallback for NAT-blocked peers. This reverses the old
   "No P2P game-traffic relay in v1" rule, superseded for 0.2.
-- UI text rule: the P2P placeholder line changes only when P2P actually ships in 0.2, not before.
+- UI text rule: the P2P placeholder stays as shipped 0.1 text until the user accepts G0. P2P ships
+  in 0.2 code, but changing that line is gated on G0 acceptance.
 
 Item 4 above is the first gate: run a live two-client C++↔Go session and a real MW2 game with the
-replacement DLL before declaring the online surface or either P2P path done.
+replacement DLL before declaring the online surface or either P2P path done. It is PENDING USER TEST;
+0.2 code is complete locally and G0 is deferred to the user.
 
 ## 0.2 M6 server persona surface
 
@@ -79,3 +83,44 @@ Still open: there is no per-account app-ownership table, so `appid` remains a fi
 any authenticated account may name any appid. Tickets are not one-time or bound to a peer.
 Item 4 (live two-client C++↔Go session and a real MW2 run) is unchanged and remains the gate
 before the online surface can be called done. None of these were verified against a real game.
+
+## 0.2 status (local code-complete, G0 deferred)
+
+0.2 is code-complete on the dev branches but is not tagged or released. 0.1 stays published and
+frozen at `62007f5`, with its assets and GHCR image unchanged.
+
+Shipped in code, with local verification only:
+
+- M6 native egui/eframe launcher (`sapie-launcher`), no webview, localhost dependency or terminal
+  window; `windows_subsystem` on Windows.
+- M7a server LAN web UI on `--ui-listen 0.0.0.0:8081` from `--ui-dir ./web/dist`, with a narrow
+  reverse proxy for user API routes; admin paths stay on loopback 8080 and 404 on 8081.
+- M7b browser login and opt-in registration gated by `GET /api/v1/config` and `--allow-register`
+  (off by default). The SPA uses a relative `/api/v1` base in the browser.
+- M8a/M8b persona completeness and safe client mirror. Tickets are recorded with a 10-minute
+  expiry and checked by `POST /api/v1/tickets/verify` (admin). The client does not send
+  `TicketRequest` or read a server ticket response; `encrypted_app_ticket` is still synthesized
+  locally. There is no app-ownership table; appid is a filter/label, and tickets are not one-time
+  or peer-bound.
+- M9a/M9b lobby rules and client lobby flows.
+- M10a/M10b direct P2P. The server stamps `source_ip` from the authenticated connection and
+  `source_port` from the client-declared bound UDP port (field 129), never trusting a client IP;
+  the client sends direct UDP via `sendToPeer()` when a hint exists. There is no hole punching,
+  and IPv6 gets no hint.
+- M11a/M11b relay fallback. Authorized `Networking_Sockets`/`Networking_Messages` DATA goes only
+  to the explicit `dest_id` (friend/lobby gate, no broadcast). The client uses one path per frame,
+  taking the relay when there is no hint or no inbound DATA within 5s. Direct stays preferred.
+- M-INT CI builds `web/dist` as the `web-dist` artifact; release bundles place it at `web/dist` in
+  the archive root so `--ui-dir ./web/dist` works. This docs refresh is part of it.
+
+Local verification was `go test ./...`, `go vet ./...`, `go build ./cmd/sapie-server`, the Go
+harness, client modern+legacy builds and `sapie_login_smoke`, plus the web build. None of that is
+a live run.
+
+Limits and risks: no live two-client C++↔Go session, no real MW2 2009 run, no browser click-through,
+no screen-reader or keyboard audit, no cross-compiled Windows execution and no real NAT test. Direct
+reliable DATA is best-effort over UDP. The 5s relay window is measured from connection creation, so
+a slow handshake may pick the relay. There is no relay rate limit beyond existing per-session
+handling. Plain HTTP on the LAN means session tokens cross it in cleartext.
+
+The 0.1 P2P notice is unchanged. Changing it is gated on G0 acceptance, which is the user's call.

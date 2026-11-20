@@ -1,7 +1,11 @@
-# SAPIE wire protocol (0.1)
+# SAPIE wire protocol
 
-The game client talks to `cmd/sapie-server` over TCP (default `:47584`). Optional TLS
-is enabled by passing both `--tls-cert` and `--tls-key`.
+The game client talks to `cmd/sapie-server` over TCP (default `:47584`, `--listen`). This is a
+binary protobuf protocol, not HTTP; a browser pointed at that port shows a connection reset,
+which is expected. Optional TLS is enabled by passing both `--tls-cert` and `--tls-key`.
+
+0.1 is published and frozen. 0.2 adds P2P signaling, direct DATA and relay fallback in code;
+0.2 is not tagged or released and G0 is deferred to the user.
 
 ## Framing
 
@@ -37,6 +41,14 @@ are never emitted.
 authenticated connection's server-assigned SteamID. Client-supplied identity is
 never trusted. SteamIDs are `76561197960265728 + monotonic counter`.
 
+For `Networking_Sockets` P2P frames the server also stamps a direct-connect hint:
+`source_ip` (field 128) is set from the authenticated TCP connection's IPv4
+address, never from the client. `source_port` (field 129) is taken from the
+client-declared real bound UDP port, falling back to the TCP port when the
+declaration is missing or out of range. IPv6 peers get no hint (no IPv4 address
+is available). The hint is advisory; the server never trusts a client-supplied
+`source_ip`.
+
 ## App tickets
 
 After login a client may send `TicketRequest{appid, data}`; the server replies
@@ -49,6 +61,11 @@ presented ticket was issued by this server to the given SteamID/appid/number
 and has not expired. That proves issuance only: it does not check game ownership
 with Steam, does not redeem or consume tickets, and game clients do not call it.
 
+The shipped C++ client does **not** send `TicketRequest` and has no branch that
+reads a server `TicketResponse`; it still synthesizes `encrypted_app_ticket`
+locally. The server-side ticket path is therefore available but unused by the
+current game client.
+
 ## Supported frames
 
 | Client → server | Server behaviour |
@@ -58,8 +75,10 @@ with Steam, does not redeem or consume tickets, and game clients do not call it.
 | `Common_Message{Friend}` | Store own presence, then fan out to friends |
 | `Common_Message{Friend_Messages}` | Record game-invite connect string, then deliver to `dest_id` or all friends |
 | `Common_Message{Lobby}`, `{Lobby_Messages}` | Fan out to the lobby's members |
+| `Common_Message{Networking_Sockets}`, `{Networking_Messages}` (signaling) | P2P signaling; allowed only to friends/lobby mates, delivered to `dest_id`. `source_ip`/`source_port` hint stamped on `Networking_Sockets`. |
+| `Common_Message{Networking_Sockets}`, `{Networking_Messages}` with `DATA` | Relay fallback: forwarded to the explicit `dest_id` peer only (friend/lobby gate, no broadcast). See P2P traffic. |
 | Other `Common_Message` variants | `source_id` stamped, logged and dropped |
-| `TicketRequest` | Reply `TicketResponse` (see App tickets) |
+| `TicketRequest` | Reply `TicketResponse` (see App tickets); not sent by the shipped client |
 | `StatsGet` | Reply `StatsResponse` for `steam_id` (0 means self), filtered by `appid` and, when `names` is supplied, to those stat names |
 | `AchievementUnlock` | Persist the unlock; push visible unlocks to friends and lobby mates, never push hidden ones |
 | `StatsSet`, other variants | Logged and ignored; no response frame is sent |
@@ -110,17 +129,42 @@ issued those bytes to that SteamID for that appid; it is not a Steam entitlement
 check. A real ownership gate would need a new table and a game-client check,
 neither of which is part of this wire contract.
 
+## P2P traffic (0.2 code, unreleased)
+
+Game traffic uses `Common_Message` with `Networking_Sockets` or
+`Networking_Messages` payloads. Two paths exist, and the client picks exactly
+one per frame so a packet is never sent twice:
+
+- **Direct UDP.** When a peer hint is available (`source_ip`/`source_port` from
+  the stamped `Networking_Sockets` signaling frame), the client sends DATA
+  straight to the peer via `sendToPeer()`. Direct is preferred. Reliable DATA
+  over UDP is best-effort; the server does not guarantee delivery. There is no
+  NAT hole punching, and IPv6 peers get no hint.
+- **Relay fallback.** When there is no hint, or no inbound DATA has been seen
+  within a 5-second window, the client sends the DATA frame to the server with
+  an explicit `dest_id`, and the server forwards it to that peer only.
+  Authorization is the same friend/lobby gate used for signaling; there is no
+  broadcast and a frame addressed to self is dropped. The 5-second window is
+  measured from connection creation, so a slow handshake may pick the relay
+  even when a direct path would work.
+
+Relaying is rate-limited only by the existing per-session handling; there is no
+dedicated relay rate limit. No live two-client C++↔Go session or real NAT test
+has been run.
+
 ## Not supported yet
 
 Tickets can be checked for issuance by an admin but are not redeemed or
-consumed, and no Steam ownership check exists. There is no P2P game-traffic
-relay in 0.1.
+consumed, and no Steam ownership check exists. Tickets are not one-time nor
+bound to a peer. P2P game traffic (direct and relay) exists in 0.2 code but is
+unreleased; the 0.1 P2P notice stays until G0 acceptance.
 
-Known nonblocking limit in 0.1:
+Known 0.1 limit, closed in 0.2 code:
 
-- The C++ client's `friends()` and `lobbies()` return references to internal lists
-  rather than copies. Every caller is serialized behind a global lock, so no race
-  has been observed.
+- The C++ client's `friends()` and `lobbies()` returned references to internal
+  lists rather than copies. In 0.2 they return locked copies, and local lobby
+  mutations write back to the mirror explicitly. No live two-client run has
+  exercised this.
 
 ## HTTP API
 
@@ -129,8 +173,18 @@ calls use the `session_token` from login. The same per-IP login limiter guards
 game and HTTP login. CORS allows only localhost, 127.0.0.1 and tauri.localhost
 origins over http, https or tauri.
 
+The admin API listens on `--admin-listen` (default `127.0.0.1:8080`, loopback).
+The 0.2 web UI listens separately on `--ui-listen` (default `0.0.0.0:8081`) and
+serves the SPA from `--ui-dir` (default `./web/dist`). On 8081 a narrow reverse
+proxy forwards only user routes: `config`, `register`, `login`, `friends`,
+`invite`, `lobbies`, `join` and one's own stats. Admin-only paths such as
+`/api/v1/users` and account CRUD return 404 on 8081 and still work on 8080.
+Because 8081 is plain HTTP on the LAN, session tokens cross it in cleartext.
+
 | Method and path | Auth | Result |
 | --- | --- | --- |
+| `GET /config` | public | `{allow_register}`; drives whether the SPA offers registration |
+| `POST /register` | public when `--allow-register` | Creates an account; 403 when registration is off |
 | `POST /login` | public | `{session_token, steam_id, persona_name}`; 401 on bad credentials |
 | `GET /friends` | user | `{friends:[{steam_id, persona_name, persona_state, appid, rich_presence, lobby_id, connect_str}]}` |
 | `POST /friends/{steam_id}/invite` | user | 202, pushes `Friend_Messages{GAME_INVITE}` with the body's `connect_str` |
