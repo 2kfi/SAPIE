@@ -3,10 +3,7 @@ name: build
 
 on:
   push:
-    branches: ['dev-client', 'main-client']
     tags: ['*']
-  pull_request:
-    branches: ['dev-client', 'main-client']
   workflow_dispatch:
 
 permissions:
@@ -62,6 +59,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+          cache-dependency-path: server/go.sum
       - name: Test
         run: cd server && go test ./...
       - name: Build
