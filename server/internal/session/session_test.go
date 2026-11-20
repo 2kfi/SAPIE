@@ -3,8 +3,10 @@ package session
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"io"
 	"net"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -103,7 +105,8 @@ func TestTicketRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.CreateAccount("alice", hash, "Alice"); err != nil {
+	aliceID, err := store.CreateAccount("alice", hash, "Alice")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -153,6 +156,19 @@ func TestTicketRequest(t *testing.T) {
 			t.Fatal("repeated ticket bytes")
 		}
 		previous = ticket
+
+		valid, err := store.VerifyTicket(ticket, aliceID, 480, want)
+		if err != nil || !valid {
+			t.Fatalf("issued ticket did not verify: valid=%v err=%v", valid, err)
+		}
+		if valid, err := store.VerifyTicket(ticket, aliceID, 900, want); err != nil || valid {
+			t.Fatalf("ticket verified for wrong appid: valid=%v err=%v", valid, err)
+		}
+		tampered := append([]byte(nil), ticket...)
+		tampered[0] ^= 0xff
+		if valid, err := store.VerifyTicket(tampered, aliceID, 480, want); err != nil || valid {
+			t.Fatalf("tampered ticket verified: valid=%v err=%v", valid, err)
+		}
 	}
 }
 
@@ -366,6 +382,147 @@ func TestStatsGetPrivacyAndAppid(t *testing.T) {
 	session.steamID = alice
 	want(request(0, 0), "public_480", "secret_480", "public_900")
 	want(request(480, 0), "public_480", "secret_480")
+}
+
+func storeWithStats(t *testing.T) (*state.Store, uint64) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "sapie.db")
+	store, err := state.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	id, err := store.CreateAccount("alice", "h", "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, row := range []struct {
+		appid uint32
+		name  string
+	}{{480, "kills"}, {480, "deaths"}, {900, "wins"}} {
+		if _, err := db.Exec(`INSERT INTO stats (steam_id, appid, name, value) VALUES (?, ?, ?, ?)`,
+			id, row.appid, row.name, []byte("1")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return store, id
+}
+
+func TestStatsGetNamesFilter(t *testing.T) {
+	store, alice := storeWithStats(t)
+	srv := New(store, nil)
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+	session := &Session{steamID: alice, conn: serverConn}
+	request := func(appid uint32, names ...string) string {
+		t.Helper()
+		done := make(chan struct{})
+		go func() {
+			srv.handleStatsGet(session, &protocol.StatsGet{Appid: appid, Names: names})
+			close(done)
+		}()
+		clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		frame, err := protocol.ReadFrame(clientConn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		<-done
+		response, ok := frame.Payload.(*protocol.Frame_StatsResponse)
+		if !ok {
+			t.Fatalf("got %T, want StatsResponse", frame.Payload)
+		}
+		var got []string
+		for _, stat := range response.StatsResponse.GetStats() {
+			got = append(got, stat.GetName())
+		}
+		return strings.Join(got, ",")
+	}
+	if got, want := request(0), "deaths,kills,wins"; got != want {
+		t.Fatalf("all stats = %q, want %q", got, want)
+	}
+	if got, want := request(0, "kills"), "kills"; got != want {
+		t.Fatalf("named stats = %q, want %q", got, want)
+	}
+	if got, want := request(480, "kills", "wins"), "kills"; got != want {
+		t.Fatalf("named stats with appid = %q, want %q", got, want)
+	}
+	if got := request(0, "missing"); got != "" {
+		t.Fatalf("unknown name = %q, want empty", got)
+	}
+}
+
+func TestHiddenUnlockNotPushedToFriends(t *testing.T) {
+	store, alice, bob := testStore(t)
+	srv := New(store, nil)
+	observerConn, readerConn := net.Pipe()
+	defer observerConn.Close()
+	defer readerConn.Close()
+	srv.peers[bob] = &Session{steamID: bob, conn: observerConn}
+	frames := make(chan *protocol.Frame, 4)
+	go func() {
+		for {
+			frame, err := protocol.ReadFrame(readerConn)
+			if err != nil {
+				return
+			}
+			frames <- frame
+		}
+	}()
+
+	unlocker := &Session{steamID: alice}
+	srv.handleAchievementUnlock(unlocker, &protocol.AchievementUnlock{
+		Appid: 480,
+		Def:   &protocol.AchievementDef{Id: "secret_relic", DisplayName: "Secret", Hidden: true},
+	})
+	select {
+	case frame := <-frames:
+		t.Fatalf("hidden unlock pushed to friend: %+v", frame.Payload)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	stats, err := store.StatsOf(alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats.Achievements) != 1 || stats.Achievements[0].ID != "secret_relic" || !stats.Achievements[0].Hidden {
+		t.Fatalf("hidden unlock not stored canonically: %+v", stats.Achievements)
+	}
+
+	ownerServer, ownerClient := net.Pipe()
+	defer ownerServer.Close()
+	defer ownerClient.Close()
+	ownerSession := &Session{steamID: alice, conn: ownerServer}
+	go srv.handleStatsGet(ownerSession, &protocol.StatsGet{})
+	ownerClient.SetReadDeadline(time.Now().Add(2 * time.Second))
+	frame, err := protocol.ReadFrame(ownerClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerView, ok := frame.Payload.(*protocol.Frame_StatsResponse)
+	if !ok || len(ownerView.StatsResponse.GetAchievements()) != 1 ||
+		ownerView.StatsResponse.GetAchievements()[0].GetName() != "secret_relic" {
+		t.Fatalf("owner cannot see hidden unlock: %+v", frame.Payload)
+	}
+
+	srv.handleAchievementUnlock(unlocker, &protocol.AchievementUnlock{
+		Appid: 480,
+		Def:   &protocol.AchievementDef{Id: "public_win", DisplayName: "Public"},
+	})
+	select {
+	case frame := <-frames:
+		msg := steamMessage(frame)
+		if msg == nil || msg.GetAchievementUnlock() == nil || msg.GetAchievementUnlock().GetDef().GetId() != "public_win" {
+			t.Fatalf("bad public unlock push: %+v", frame.Payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("public unlock not pushed to friend")
+	}
 }
 
 func readLoginResponse(t *testing.T, c net.Conn) *protocol.LoginResponse {

@@ -2,7 +2,10 @@
 package state
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"sync"
@@ -166,6 +169,54 @@ func (s *Store) ResolveSession(tokenHash string) (uint64, error) {
 		tokenHash,
 	).Scan(&steamID)
 	return steamID, err
+}
+
+const ticketNonceSize = 32
+
+// TicketHash derives the opaque 32-byte ticket from its issuing identity and nonce.
+func TicketHash(steamID uint64, appid uint32, nonce []byte) []byte {
+	var input [8 + 4 + ticketNonceSize]byte
+	binary.BigEndian.PutUint64(input[:8], steamID)
+	binary.BigEndian.PutUint32(input[8:12], appid)
+	copy(input[12:], nonce)
+	sum := sha256.Sum256(input[:])
+	return sum[:]
+}
+
+// IssueTicket records a ticket so it can be verified later. data holds the
+// per-session number (4 bytes) followed by the nonce the ticket was derived from.
+func (s *Store) IssueTicket(steamID uint64, appid, number uint32, nonce []byte, expiresAt time.Time) error {
+	data := make([]byte, 4+len(nonce))
+	binary.BigEndian.PutUint32(data[:4], number)
+	copy(data[4:], nonce)
+	_, err := s.db.Exec(`INSERT INTO auth_tickets (steam_id, appid, data, expires_at) VALUES (?, ?, ?, ?)`,
+		steamID, appid, data, expiresAt.Unix())
+	return err
+}
+
+// VerifyTicket reports whether ticket was issued to steamID for appid with
+// that number and has not expired.
+func (s *Store) VerifyTicket(ticket []byte, steamID uint64, appid, number uint32) (bool, error) {
+	rows, err := s.db.Query(`SELECT data, expires_at FROM auth_tickets WHERE steam_id = ? AND appid = ?`, steamID, appid)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	now := time.Now().Unix()
+	for rows.Next() {
+		var data []byte
+		var expiresAt int64
+		if err := rows.Scan(&data, &expiresAt); err != nil {
+			return false, err
+		}
+		if expiresAt <= now || len(data) != 4+ticketNonceSize || binary.BigEndian.Uint32(data[:4]) != number {
+			continue
+		}
+		if subtle.ConstantTimeCompare(ticket, TicketHash(steamID, appid, data[4:])) == 1 {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 const (

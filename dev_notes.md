@@ -60,3 +60,22 @@ not available in this version.", stays as shipped. 0.2 adds the following, recor
 
 Item 4 above is the first gate: run a live two-client C++↔Go session and a real MW2 game with the
 replacement DLL before declaring the online surface or either P2P path done.
+
+## 0.2 M6 server persona surface
+
+The three small 0.1 limits above are closed on the server, without a wire or schema change:
+
+- `StatsGet.names` now limits the returned stats to the named set; empty names keep the old
+  all-stats behaviour. Achievements are unaffected by `names`.
+- Hidden achievements are no longer pushed to friends or lobby mates. The unlock is still
+  stored canonically and stays visible to the owner through `StatsGet{steam_id: 0}` and to admin
+  through the HTTP stats API. The push is skipped rather than redacted so clients never receive
+  an empty or malformed definition.
+- Tickets are recorded in the existing `auth_tickets` table with their nonce and a 10-minute
+  expiry, and `POST /api/v1/tickets/verify` checks issuance for an admin. This is not Steam
+  ownership verification, not redemption, and game clients never call it.
+
+Still open: there is no per-account app-ownership table, so `appid` remains a filter/label and
+any authenticated account may name any appid. Tickets are not one-time or bound to a peer.
+Item 4 (live two-client C++↔Go session and a real MW2 run) is unchanged and remains the gate
+before the online surface can be called done. None of these were verified against a real game.

@@ -85,6 +85,30 @@ func (c *gameClient) next(match func(*protocol.Frame) bool) (*protocol.Frame, er
 	}
 }
 
+func (c *gameClient) received(match func(*protocol.Frame) bool, wait time.Duration) bool {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	for {
+		select {
+		case frame, ok := <-c.frames:
+			if !ok {
+				return false
+			}
+			if match(frame) {
+				return true
+			}
+			c.pending = append(c.pending, frame)
+		case <-timer.C:
+			for _, frame := range c.pending {
+				if match(frame) {
+					return true
+				}
+			}
+			return false
+		}
+	}
+}
+
 func (c *gameClient) send(frame *protocol.Frame) error { return protocol.WriteFrame(c.conn, frame) }
 
 func (c *gameClient) login(username, password string) (*protocol.LoginResponse, error) {
@@ -496,29 +520,36 @@ func run() error {
 	}
 	fmt.Printf("PASS M4 admin API shows same unlock_time=%d\n", unlockTime)
 
-	for _, unlock := range []struct {
-		appid uint32
-		def   protocol.AchievementDef
-	}{
-		{480, protocol.AchievementDef{Id: "hidden_relic", DisplayName: "Hidden Relic", Hidden: true}},
-		{900, protocol.AchievementDef{Id: "other_game_win", DisplayName: "Other Game Win"}},
-	} {
-		def := unlock.def
-		frame := &protocol.Frame{Payload: &protocol.Frame_AchievementUnlock{AchievementUnlock: &protocol.AchievementUnlock{
-			Appid: unlock.appid, Def: &def,
-		}}}
-		if err := aliceClient.send(frame); err != nil {
-			return fmt.Errorf("send extra unlock: %w", err)
-		}
-		frame, err = bobClient.next(func(f *protocol.Frame) bool {
-			msg := steamMessage(f)
-			return msg != nil && msg.GetAchievementUnlock() != nil &&
-				msg.GetAchievementUnlock().GetDef().GetId() == unlock.def.Id
-		})
-		if err != nil {
-			return fmt.Errorf("extra unlock push %s: %w", unlock.def.Id, err)
-		}
+	hiddenDef := protocol.AchievementDef{Id: "hidden_relic", DisplayName: "Hidden Relic", Hidden: true}
+	if err := aliceClient.send(&protocol.Frame{Payload: &protocol.Frame_AchievementUnlock{AchievementUnlock: &protocol.AchievementUnlock{
+		Appid: 480, Def: &hiddenDef,
+	}}}); err != nil {
+		return fmt.Errorf("send hidden unlock: %w", err)
 	}
+	if bobClient.received(func(f *protocol.Frame) bool {
+		msg := steamMessage(f)
+		return msg != nil && msg.GetAchievementUnlock() != nil &&
+			msg.GetAchievementUnlock().GetDef().GetId() == "hidden_relic"
+	}, 300*time.Millisecond) {
+		return fmt.Errorf("hidden achievement leaked to friend via unlock push")
+	}
+	fmt.Println("PASS hidden achievement unlock not pushed to friends")
+
+	publicDef := protocol.AchievementDef{Id: "other_game_win", DisplayName: "Other Game Win"}
+	if err := aliceClient.send(&protocol.Frame{Payload: &protocol.Frame_AchievementUnlock{AchievementUnlock: &protocol.AchievementUnlock{
+		Appid: 900, Def: &publicDef,
+	}}}); err != nil {
+		return fmt.Errorf("send visible unlock: %w", err)
+	}
+	frame, err = bobClient.next(func(f *protocol.Frame) bool {
+		msg := steamMessage(f)
+		return msg != nil && msg.GetAchievementUnlock() != nil &&
+			msg.GetAchievementUnlock().GetDef().GetId() == "other_game_win"
+	})
+	if err != nil {
+		return fmt.Errorf("visible unlock push: %w", err)
+	}
+	fmt.Println("PASS visible achievement unlock still pushed to friends")
 
 	bobView, err := bobClient.requestStats(0, alice.SteamID)
 	if err != nil {

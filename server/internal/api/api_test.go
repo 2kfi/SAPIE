@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -76,6 +77,44 @@ func TestIdempotencyConcurrentAndBounded(t *testing.T) {
 	srv.mu.Unlock()
 	if size > maxIdemKeys {
 		t.Fatalf("idempotency cache grew to %d entries", size)
+	}
+}
+
+func TestVerifyTicketEndpoint(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	id, err := store.CreateAccount("alice", "h", "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonce := []byte(strings.Repeat("n", 32))
+	if err := store.IssueTicket(id, 480, 1, nonce, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	ticket := base64.StdEncoding.EncodeToString(state.TicketHash(id, 480, nonce))
+	handler := New(store, "admin-token", auth.NewLimiter(nil), nil).Handler()
+	post := func(body, token string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tickets/verify", strings.NewReader(body))
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+	validBody := fmt.Sprintf(`{"ticket":"%s","steam_id":%d,"appid":480,"number":1}`, ticket, id)
+	if rec := post(validBody, "admin-token"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"valid":true`) {
+		t.Fatalf("valid ticket = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := post(validBody, ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated verify = %d", rec.Code)
+	}
+	wrongNumber := fmt.Sprintf(`{"ticket":"%s","steam_id":%d,"appid":480,"number":2}`, ticket, id)
+	if rec := post(wrongNumber, "admin-token"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"valid":false`) {
+		t.Fatalf("wrong number = %d %s", rec.Code, rec.Body.String())
 	}
 }
 

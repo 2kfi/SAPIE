@@ -106,6 +106,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/login", s.login)
 	mux.HandleFunc("GET /api/v1/friends", s.listFriends)
 	mux.HandleFunc("POST /api/v1/friends/{steam_id}/invite", s.inviteFriend)
+	mux.HandleFunc("POST /api/v1/tickets/verify", s.verifyTicket)
 	mux.HandleFunc("GET /api/v1/lobbies", s.listLobbies)
 	mux.HandleFunc("POST /api/v1/lobbies", s.createLobby)
 	mux.HandleFunc("POST /api/v1/lobbies/{lobby_id}/join", s.joinLobby)
@@ -293,6 +294,28 @@ func (s *Server) inviteFriend(w http.ResponseWriter, r *http.Request) {
 		}}})
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) verifyTicket(w http.ResponseWriter, r *http.Request) {
+	if !s.authorized(w, r) {
+		return
+	}
+	var req struct {
+		Ticket  []byte `json:"ticket"`
+		SteamID uint64 `json:"steam_id"`
+		Appid   uint32 `json:"appid"`
+		Number  uint32 `json:"number"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	valid, err := s.store.VerifyTicket(req.Ticket, req.SteamID, req.Appid, req.Number)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"valid": valid})
 }
 
 func (s *Server) listLobbies(w http.ResponseWriter, r *http.Request) {

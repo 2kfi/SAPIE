@@ -5,8 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
@@ -21,10 +19,11 @@ import (
 )
 
 const (
-	loginTimeout  = 10 * time.Second
-	pingInterval  = 30 * time.Second
-	readTimeout   = 90 * time.Second
-	tokenLifetime = 24 * time.Hour
+	loginTimeout   = 10 * time.Second
+	pingInterval   = 30 * time.Second
+	readTimeout    = 90 * time.Second
+	tokenLifetime  = 24 * time.Hour
+	ticketLifetime = 10 * time.Minute
 )
 
 type Session struct {
@@ -172,12 +171,18 @@ func (s *Server) handle(conn net.Conn) {
 		case *protocol.Frame_Steam:
 			s.handleSteam(session, payload.Steam)
 		case *protocol.Frame_TicketRequest:
-			ticket, err := newTicket(session.steamID, payload.TicketRequest.GetAppid())
-			if err != nil {
-				log.Printf("session %d: ticket generation: %v", session.steamID, err)
+			var nonce [32]byte
+			if _, err := rand.Read(nonce[:]); err != nil {
+				log.Printf("session %d: ticket nonce: %v", session.steamID, err)
 				continue
 			}
 			session.ticketNumber++
+			appid := payload.TicketRequest.GetAppid()
+			ticket := state.TicketHash(session.steamID, appid, nonce[:])
+			if err := s.store.IssueTicket(session.steamID, appid, session.ticketNumber, nonce[:], time.Now().Add(ticketLifetime)); err != nil {
+				log.Printf("session %d: store ticket: %v", session.steamID, err)
+				continue
+			}
 			response := &protocol.TicketResponse{Ticket: ticket, Number: session.ticketNumber}
 			if err := session.Send(&protocol.Frame{Payload: &protocol.Frame_TicketResponse{TicketResponse: response}}); err != nil {
 				log.Printf("session %d: ticket response: %v", session.steamID, err)
@@ -190,21 +195,6 @@ func (s *Server) handle(conn net.Conn) {
 			log.Printf("session %d: %T ignored (no-op)", session.steamID, frame.Payload)
 		}
 	}
-}
-
-// newTicket derives a 32-byte opaque ticket from a random nonce and the identity
-// it was issued for. No record is kept, so binding cannot be verified yet.
-func newTicket(steamID uint64, appid uint32) ([]byte, error) {
-	var nonce [32]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		return nil, err
-	}
-	var input [44]byte
-	binary.BigEndian.PutUint64(input[:8], steamID)
-	binary.BigEndian.PutUint32(input[8:12], appid)
-	copy(input[12:], nonce[:])
-	sum := sha256.Sum256(input[:])
-	return sum[:], nil
 }
 
 func (s *Server) friendSnapshots(steamID uint64) []*protocol.FriendSnapshot {
@@ -294,9 +284,16 @@ func (s *Server) handleStatsGet(session *Session, req *protocol.StatsGet) {
 	}
 	appid := req.GetAppid()
 	owner := steamID == session.steamID
+	names := map[string]bool{}
+	for _, name := range req.GetNames() {
+		names[name] = true
+	}
 	response := &protocol.StatsResponse{SteamId: steamID}
 	for _, stat := range stats.Stats {
 		if appid != 0 && stat.Appid != appid {
+			continue
+		}
+		if len(names) > 0 && !names[stat.Name] {
 			continue
 		}
 		response.Stats = append(response.Stats, &protocol.StatValue{Name: stat.Name, Value: stat.Value})
@@ -330,6 +327,11 @@ func (s *Server) handleAchievementUnlock(session *Session, unlock *protocol.Achi
 	})
 	if err != nil {
 		log.Printf("session %d: unlock achievement: %v", session.steamID, err)
+		return
+	}
+	// Hidden definitions stay canonical in storage but are never pushed to
+	// friends or lobby mates; the owner and admin still see them on query.
+	if stored.Hidden {
 		return
 	}
 	push := &protocol.Common_Message{

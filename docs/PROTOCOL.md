@@ -42,8 +42,12 @@ never trusted. SteamIDs are `76561197960265728 + monotonic counter`.
 After login a client may send `TicketRequest{appid, data}`; the server replies
 `TicketResponse{ticket, number}`. `ticket` is 32 opaque bytes derived from a
 fresh random nonce plus the authenticated SteamID and requested appid; `number`
-is a per-session counter starting at 1. No ticket record is kept, so tickets
-cannot be verified or redeemed yet.
+is a per-session counter starting at 1. Each issued ticket is recorded in the
+existing `auth_tickets` table with its nonce, SteamID, appid, number and a
+10-minute expiry. `POST /api/v1/tickets/verify` lets an admin check that a
+presented ticket was issued by this server to the given SteamID/appid/number
+and has not expired. That proves issuance only: it does not check game ownership
+with Steam, does not redeem or consume tickets, and game clients do not call it.
 
 ## Supported frames
 
@@ -56,8 +60,8 @@ cannot be verified or redeemed yet.
 | `Common_Message{Lobby}`, `{Lobby_Messages}` | Fan out to the lobby's members |
 | Other `Common_Message` variants | `source_id` stamped, logged and dropped |
 | `TicketRequest` | Reply `TicketResponse` (see App tickets) |
-| `StatsGet` | Reply `StatsResponse` for `steam_id` (0 means self), filtered by `appid` |
-| `AchievementUnlock` | Persist the unlock and push it to friends and lobby mates |
+| `StatsGet` | Reply `StatsResponse` for `steam_id` (0 means self), filtered by `appid` and, when `names` is supplied, to those stat names |
+| `AchievementUnlock` | Persist the unlock; push visible unlocks to friends and lobby mates, never push hidden ones |
 | `StatsSet`, other variants | Logged and ignored; no response frame is sent |
 
 Server pushes use `Common_Message` frames: presence is a `Friend` with a
@@ -78,30 +82,45 @@ Observers are the union of the unlocker's friends and the members of every
 lobby the unlocker has joined. Each receives a `Common_Message` with
 `achievement_unlock` set; `source_id` is the unlocker and `steam_id` inside the
 message is the same value. The `unlock_time` in the push is the exact integer
-stored in the database and returned by the admin API.
+stored in the database and returned by the admin API. Achievements marked
+`hidden` are stored canonically but are never pushed to friends or lobby mates:
+the whole push is skipped rather than sending a redacted record, so existing
+clients get no malformed or empty definition. The owner still sees the hidden
+achievement through `StatsGet{steam_id: 0}`, and the admin HTTP stats endpoint
+still returns it.
 
 `StatsGet{appid, names, steam_id}` queries another user by `steam_id`; zero
 means the caller. A nonzero `appid` limits both stats and achievements to that
-app; zero returns every app. When the caller is not the owner, achievements
-marked `hidden` are omitted entirely, including their names and unlock times.
+app; zero returns every app. A nonempty `names` list limits the returned stats
+to those exact names; an empty list returns all stats, and `names` does not
+affect achievements. When the caller is not the owner, achievements marked
+`hidden` are omitted entirely, including their names and unlock times.
 The reply is `StatsResponse{stats, achievements, steam_id}`. Each achievement
 has both the legacy `unlock_time` (`uint32`) and the canonical
 `unlock_time_unix` (`int64`). Use the latter for new clients. The admin HTTP
 stats endpoint is unaffected by these game-socket filters and returns all apps.
 
+## Appid and ownership
+
+`appid` is a label used to filter stats and achievements and to tag lobbies,
+presence and tickets. There is no per-account app-ownership table: any
+authenticated account can name any appid in `LoginRequest`, `TicketRequest`,
+`StatsGet` or lobby calls. Verifying a ticket confirms only that this server
+issued those bytes to that SteamID for that appid; it is not a Steam entitlement
+check. A real ownership gate would need a new table and a game-client check,
+neither of which is part of this wire contract.
+
 ## Not supported yet
 
-Tickets are issued but not verified or redeemed. There is no P2P game-traffic
+Tickets can be checked for issuance by an admin but are not redeemed or
+consumed, and no Steam ownership check exists. There is no P2P game-traffic
 relay in 0.1.
 
-Known nonblocking limits in 0.1:
+Known nonblocking limit in 0.1:
 
 - The C++ client's `friends()` and `lobbies()` return references to internal lists
   rather than copies. Every caller is serialized behind a global lock, so no race
   has been observed.
-- `StatsGet.names` is ignored. The server returns all stats for the user and app.
-- Achievements marked `hidden` are omitted from queries by non-owners, but the
-  server still pushes an unlock to friends when one is unlocked.
 
 ## HTTP API
 
@@ -115,6 +134,7 @@ origins over http, https or tauri.
 | `POST /login` | public | `{session_token, steam_id, persona_name}`; 401 on bad credentials |
 | `GET /friends` | user | `{friends:[{steam_id, persona_name, persona_state, appid, rich_presence, lobby_id, connect_str}]}` |
 | `POST /friends/{steam_id}/invite` | user | 202, pushes `Friend_Messages{GAME_INVITE}` with the body's `connect_str` |
+| `POST /tickets/verify` | admin | 200 `{valid}` for `{ticket, steam_id, appid, number}`; issuance check only |
 | `GET /lobbies` | user or admin | `{lobbies:[{lobby_id, owner, appid, member_limit, type, joinable, members}]}` |
 | `POST /lobbies` | user | 201 `{lobby_id}`; body `{appid,type,member_limit}` |
 | `POST /lobbies/{lobby_id}/join` | user | 200, pushes a `Lobby` update to members |
