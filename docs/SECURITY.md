@@ -1,8 +1,8 @@
 # SAPIE 0.4 LAN security
 
-This file describes what the code in this tree does at commit `cea3ec4`. It is documentation only.
-It does not add TLS, keychain storage, token files or container changes. Those are separate work
-lanes. A requirement that is not yet implemented is labeled as such.
+This file describes what the code in this tree does at commit `3362471`. It is documentation only.
+It adds no code, TLS, token file or container changes. Those are separate work lanes. A requirement
+that is not yet implemented is labeled as such.
 
 ## Listeners and what can reach them
 
@@ -118,16 +118,24 @@ assert that `localStorage` stays empty (`web/src/test/login.test.tsx`). Sign out
 local state and returns to sign in. `POST /logout-all` and `DELETE /sessions/{id}` revoke other
 sessions.
 
-Launcher status: `AGENTS.md` requires the session token in the OS keychain via `keyring`, with the
-password never persisted. The launcher in this tree is a Tauri shell with no login command and no
-`keyring` dependency (`client/src-tauri/src/main.rs`, `client/src-tauri/Cargo.toml`). That
-requirement is not shipped here.
+Launcher status: the launcher has a real `login` command that calls `POST /api/v1/login`.
+`KeychainTokenStore` stores the session token in the OS keychain through the `keyring` crate, and a
+mockable `TokenStore` trait keeps the storage boundary testable (`client/src-tauri/src/auth.rs`).
+The password is never persisted. `LauncherState` holds only non-secret metadata and scrubs legacy
+`password`, `token`, `session_token` and `secret` keys when it loads a state file
+(`client/src-tauri/src/state.rs`). `sign_out` clears the keychain entry
+(`client/src-tauri/src/commands.rs`). Real keychain access is still UNVERIFIED headless. The `login`
+command returns the token over Tauri IPC to the UI by the command contract (`SessionInfo.token`,
+`client/src-tauri/ui/src/api.ts`). That crossing into UI memory is an accepted 0.4 boundary, not a
+disk write.
 
-Game handoff status: the shipped DLL reads `SAPIE_USERNAME` and `SAPIE_PASSWORD` from the
-environment (`client/dll/settings_parser.cpp:119`). Those values are visible to other processes
-under the same OS account and in `/proc` on Linux. `AGENTS.md` documents that as the 0.4 minimum
-and names a short-lived per-launch token file `sapie_client.json`, mode `0600`, as the preferred
-path. No such file is implemented in this tree.
+Game handoff status: `launch_game` passes `SAPIE_USERNAME` and `SAPIE_SESSION_TOKEN` to the game and
+never passes a password env var (`client/src-tauri/src/game.rs`, `launch`). The values are still
+visible to other processes under the same OS account and in `/proc` on Linux. The DLL parser still
+reads `SAPIE_USERNAME` and `SAPIE_PASSWORD` from the environment
+(`client/dll/settings_parser.cpp:119`) and does not consume the token yet. M16 token consumption and
+the short-lived per-launch token file `sapie_client.json`, mode `0600`, remain future work and are
+not implemented in this tree.
 
 ## Webview boundary
 
@@ -161,8 +169,8 @@ Operator guidance for when the UI is containerized:
 - No live two-client C++ to Go session and no real MW2 run has been performed. `docs/QUICKSTART.md`
   and `docs/PROTOCOL.md` state this. P2P, NAT traversal and the relay path are therefore unverified
   in game. Direct UDP is best effort and the relay has no dedicated rate limit.
-- The Tauri GUI, webview navigation and keyboard-only paths were not exercised in this work. The
-  launcher has no login or game launch command yet.
+- The native Tauri window, real IPC and real keychain access were not exercised headless. Webview
+  navigation and keyboard-only paths were not exercised either.
 - The login limiter and the social limiter are in memory and reset on server restart
   (`server/internal/auth/limiter.go`, `server/internal/api/social.go`). There is no per-account
   lockout.
