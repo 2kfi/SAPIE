@@ -9,15 +9,13 @@ Download an archive from the [0.2 release](https://github.com/2kfi/SAPIE/release
 and start the server from the unpacked directory:
 
 ```sh
-./sapie-server \
-  --listen=:47584 \
-  --admin-listen=127.0.0.1:8080 \
-  --ui-listen=0.0.0.0:8081 \
-  --ui-dir=./web/dist \
-  --admin-token=<your-token> \
-  --allow-register \
-  --db=sapie.db
+./sapie-server
 ```
+
+No flags needed. Game protocol: port 47584. Admin API: 127.0.0.1:8080. Web UI: 0.0.0.0:8081.
+The admin token is generated on first start, printed once, and saved in `sapie.db` so it stays the
+same across restarts. Pass `--admin-token <token>` to override it. Registration is off by default —
+start once with `--allow-register` to create accounts from the web UI, then restart without it.
 
 Open `http://<server-ip>:8081`, register two accounts, and log in. Then, next to each game executable:
 
@@ -42,7 +40,7 @@ Each archive contains the launcher, the server, all ten `steam_api/<target>-<era
 `QUICKSTART.md`, and sample config files. The Windows zip also includes Steamless and its NOTICE.
 
 Container images: `ghcr.io/2kfi/sapie-server:0.2` (also `:latest`); the frozen 0.1 image is `:0.1`.
-With Docker Compose, run `SAPIE_ADMIN_TOKEN=<your-token> docker compose up --build` from the repo root.
+With Docker Compose, run `docker compose up --build` from the repo root; the generated token appears in `docker compose logs`.
 
 ## What you get
 
@@ -54,12 +52,15 @@ With Docker Compose, run `SAPIE_ADMIN_TOKEN=<your-token> docker compose up --bui
 
 ## Server options
 
-`--listen` is the game protocol (default `:47584`), `--admin-listen` is the admin API
-(default `127.0.0.1:8080`, requires a `Bearer` token), `--ui-listen` is the web UI
-(default `0.0.0.0:8081`), and `--ui-dir` points at the built SPA (default `./web/dist`).
-Registration is off unless `--allow-register` is passed. Only user API routes are proxied through
-8081; admin paths return 404 there and still work on 8080. The UI is plain HTTP, so session tokens
-cross the LAN in cleartext.
+Every flag has a default; pass one only to change it. `--port` sets the game protocol port (default
+`47584`), `--admin-listen` the admin API (default `127.0.0.1:8080`, requires a `Bearer` token),
+`--ui-listen` the web UI (default `0.0.0.0:8081`), `--ui-dir` the built SPA (default `./web/dist`),
+and `--db` the database (default `sapie.db`). `--allow-register` is off by default;
+`--admin-token` overrides the stored token for that run. `--tls-cert` and `--tls-key` together enable
+TLS on the game listener.
+
+Only user API routes are proxied through 8081; admin paths return 404 there and still work on 8080.
+The UI is plain HTTP, so session tokens cross the LAN in cleartext.
 
 ## Friends
 

@@ -10,6 +10,40 @@ import (
 	"time"
 )
 
+func TestAdminTokenPersists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sapie.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token, err := store.AdminToken(); err != nil || token != "" {
+		t.Fatalf("fresh token = %q, %v; want empty", token, err)
+	}
+	if err := store.SetAdminToken("token-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	token, err := store.AdminToken()
+	if err != nil || token != "token-a" {
+		t.Fatalf("reopened token = %q, %v; want token-a", token, err)
+	}
+	if err := store.SetAdminToken("token-b"); err != nil {
+		t.Fatal(err)
+	}
+	token, err = store.AdminToken()
+	if err != nil || token != "token-b" {
+		t.Fatalf("overwritten token = %q, %v; want token-b", token, err)
+	}
+}
+
 func TestAccounts(t *testing.T) {
 	store, err := Open(":memory:")
 	if err != nil {

@@ -96,6 +96,22 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// AdminToken returns the persisted token, or "" on a fresh database.
+func (s *Store) AdminToken() (string, error) {
+	var value string
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key = 'admin_token'`).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return value, err
+}
+
+func (s *Store) SetAdminToken(token string) error {
+	_, err := s.db.Exec(`INSERT INTO settings (key, value) VALUES ('admin_token', ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, token)
+	return err
+}
+
 func (s *Store) CreateAccount(username, passwordHash, personaName string) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

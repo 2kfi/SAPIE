@@ -7,7 +7,7 @@ services:
     ports:
       - "47584:47584"
       - "127.0.0.1:8080:8080"
-    command: ["--listen=:47584", "--admin-listen=:8080", "--db=/data/sapie.db", "--admin-token=${SAPIE_ADMIN_TOKEN:?set SAPIE_ADMIN_TOKEN}"]
+    command: ["--admin-listen=:8080"]
     volumes:
       - sapie-data:/data
     restart: unless-stopped

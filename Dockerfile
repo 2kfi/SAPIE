@@ -17,4 +17,4 @@ WORKDIR /data
 VOLUME ["/data"]
 EXPOSE 47584 8080
 ENTRYPOINT ["/usr/local/bin/sapie-server"]
-CMD ["--listen=:47584", "--admin-listen=:8080", "--db=/data/sapie.db"]
+CMD ["--admin-listen=:8080"]

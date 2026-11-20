@@ -1,6 +1,6 @@
 # SAPIE wire protocol
 
-The game client talks to `cmd/sapie-server` over TCP (default `:47584`, `--listen`). This is a
+The game client talks to `cmd/sapie-server` over TCP (default port `47584`, `--port`). This is a
 binary protobuf protocol, not HTTP; a browser pointed at that port shows a connection reset,
 which is expected. Optional TLS is enabled by passing both `--tls-cert` and `--tls-key`.
 
@@ -169,8 +169,8 @@ Known 0.1 limit, closed in 0.2 code:
 
 ## HTTP API
 
-Base `/api/v1`, JSON bodies, Bearer auth. Admin calls use `--admin-token`; user
-calls use the `session_token` from login. The same per-IP login limiter guards
+Base `/api/v1`, JSON bodies, Bearer auth. Admin calls use the token generated on first start and
+stored in `sapie.db` (override with `--admin-token`); user calls use the `session_token` from login. The same per-IP login limiter guards
 game and HTTP login. CORS allows only localhost, 127.0.0.1 and tauri.localhost
 origins over http, https or tauri.
 

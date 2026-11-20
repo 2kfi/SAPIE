@@ -27,26 +27,25 @@ and this file at the archive root.
 Run the server binary **from the archive root** so `./web/dist` resolves:
 
 ```sh
-./sapie-server \
-  --listen=:47584 \
-  --admin-listen=127.0.0.1:8080 \
-  --ui-listen=0.0.0.0:8081 \
-  --ui-dir=./web/dist \
-  --admin-token=<your-token> \
-  --allow-register \
-  --db=sapie.db
+./sapie-server
 ```
 
-From source, use `go run ./cmd/sapie-server` with the same flags from the `server/` directory.
+No flags are needed. Defaults: game protocol on port 47584, admin API on 127.0.0.1:8080, web UI on
+0.0.0.0:8081, assets from `./web/dist`, database `sapie.db`. Every flag has a default and only
+overrides it — for example `--port 47585` moves the game listener, and `--allow-register` enables
+public registration (off by default). Run once with `--allow-register` to create accounts, then
+restart without it. From source, use `go run ./cmd/sapie-server` with the same flags from the
+`server/` directory.
 
-With Docker, set the token in the environment and run Compose from the repository root
-(`compose.yaml` lives there):
+The admin token is generated on first start, printed once, and stored in `sapie.db` so it survives
+restarts. Pass `--admin-token <token>` to override it for one run. With Docker, run Compose from the
+repository root; the token appears in `docker compose logs`:
 
 ```sh
-SAPIE_ADMIN_TOKEN=<your-token> docker compose up --build
+docker compose up --build
 ```
 
-The admin API is reachable only from the host at `http://127.0.0.1:8080`; pass the token as a `Bearer` token. If `--admin-token` is empty, the server generates one and does not print it. Port 47584 is the binary protobuf game protocol, not HTTP — a browser pointed at it shows a connection reset.
+The admin API is reachable only from the host at `http://127.0.0.1:8080`; pass the token as a `Bearer` token. Port 47584 is the binary protobuf game protocol, not HTTP — a browser pointed at it shows a connection reset.
 
 The web UI on 8081 serves the SPA and proxies only user API routes (config, register, login, friends, invite, lobbies, join, own stats). Admin-only paths such as `/api/v1/users` and account CRUD return 404 on 8081 and still work on 8080. Plain HTTP on the LAN means session tokens cross it in cleartext.
 

@@ -86,3 +86,8 @@ CREATE INDEX IF NOT EXISTS idx_lobby_members_steam ON lobby_members(steam_id);
 CREATE INDEX IF NOT EXISTS idx_achievements_appid ON achievements(steam_id, appid);
 CREATE INDEX IF NOT EXISTS idx_stats_appid ON stats(steam_id, appid);
 CREATE INDEX IF NOT EXISTS idx_auth_tickets_steam ON auth_tickets(steam_id);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);

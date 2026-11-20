@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -18,7 +19,8 @@ import (
 )
 
 func main() {
-	listen := flag.String("listen", ":47584", "TCP game-protocol listen address")
+	port := flag.Int("port", 47584, "TCP game-protocol port")
+	listen := flag.String("listen", "", "TCP game-protocol listen address (overrides --port)")
 	adminListen := flag.String("admin-listen", "127.0.0.1:8080", "admin HTTP listen address")
 	uiListen := flag.String("ui-listen", "0.0.0.0:8081", "web UI HTTP listen address")
 	uiDir := flag.String("ui-dir", "./web/dist", "built web UI directory")
@@ -40,14 +42,27 @@ func main() {
 
 	token := *adminToken
 	if token == "" {
+		token, err = store.AdminToken()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	if token == "" {
 		token, err = auth.NewToken()
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Print("generated admin token (value withheld); pass --admin-token to use a known value")
+		if err := store.SetAdminToken(token); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("generated admin token %s (saved in the database; override with --admin-token)", token)
 	}
 
-	gameLn, err := net.Listen("tcp", *listen)
+	listenAddr := *listen
+	if listenAddr == "" {
+		listenAddr = fmt.Sprintf(":%d", *port)
+	}
+	gameLn, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatal(err)
 	}
