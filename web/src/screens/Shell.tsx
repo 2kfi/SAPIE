@@ -3,18 +3,18 @@ import gsap from 'gsap'
 import { useGSAP } from '@gsap/react'
 import Account from '../components/Account'
 import { EmptyState } from '../components/States'
-import FriendList, { gameLabel, personaLabel } from '../components/FriendList'
 import LobbyPanel from '../components/LobbyPanel'
 import {
   FriendsIcon,
-  GamesIcon,
   LiveIcon,
   LockIcon,
   ProfileIcon,
+  SignOutIcon,
 } from '../components/Icons'
 import { joinLobby, messageOf, type Friend, type Session } from '../api'
+import { gameLabel, personaLabel } from '../lib/presence'
 import type { Route } from '../routes'
-import GameDetail from './GameDetail'
+import Friends from './Friends'
 import LiveAdmin from './LiveAdmin'
 
 gsap.registerPlugin(useGSAP)
@@ -26,59 +26,13 @@ type Props = {
   session: Session | null
   onNavigate: (route: Route) => void
   onNotice: (message: string) => void
+  onSignOut: () => void
 }
 
 const primary: { route: ShellRoute; label: string; Icon: typeof FriendsIcon }[] = [
   { route: 'friends', label: 'Friends', Icon: FriendsIcon },
-  { route: 'games', label: 'Games', Icon: GamesIcon },
   { route: 'account', label: 'Profile', Icon: ProfileIcon },
 ]
-
-function FriendsView({
-  session,
-  onNotice,
-  onJoinFriend,
-  onSelectFriend,
-  onFriendsChange,
-}: {
-  session: Session
-  onNotice: Props['onNotice']
-  onJoinFriend: (friend: Friend) => void
-  onSelectFriend: (friend: Friend) => void
-  onFriendsChange: (friends: Friend[]) => void
-}) {
-  return (
-    <section className="view">
-      <header className="view__head">
-        <div>
-          <h1>Friends</h1>
-          <p className="muted">Presence reported by the connected server.</p>
-        </div>
-      </header>
-      <FriendList
-        session={session}
-        onNotice={onNotice}
-        onJoinFriend={onJoinFriend}
-        onSelectFriend={onSelectFriend}
-        onFriendsChange={onFriendsChange}
-      />
-    </section>
-  )
-}
-
-function GamesView() {
-  return (
-    <section className="view">
-      <header className="view__head">
-        <div>
-          <h1>Games</h1>
-          <p className="muted">Game setup is handled by the native launcher.</p>
-        </div>
-      </header>
-      <EmptyState>Open the native launcher to set up a game.</EmptyState>
-    </section>
-  )
-}
 
 function DetailPane({
   route,
@@ -90,17 +44,13 @@ function DetailPane({
   selectedFriend: Friend | null
   onConnectFriend: (friend: Friend) => void
 }) {
-  if (route === 'games') {
-    return <GameDetail />
-  }
-
   if (route === 'account') {
     return (
       <section className="view view--detail" aria-labelledby="account-note-title">
         <h2 id="account-note-title">Account access</h2>
-        <p>Achievements and games are shown as saved by the server.</p>
+        <p>Stats and achievements are read from the server as they were saved.</p>
         <p className="muted">
-          <LockIcon className="inline-icon" /> This view cannot change account data.
+          <LockIcon className="inline-icon" /> Your persona name comes from the server. Other sessions can be revoked on the account screen.
         </p>
       </section>
     )
@@ -110,7 +60,7 @@ function DetailPane({
     return (
       <section className="view view--detail" aria-labelledby="session-note-title">
         <h2 id="session-note-title">Session details</h2>
-        <p className="muted">Live users and lobbies are listed in the main pane.</p>
+        <p className="muted">Live lobbies are listed in the main pane.</p>
       </section>
     )
   }
@@ -162,7 +112,7 @@ function DetailPane({
   )
 }
 
-export default function Shell({ route, session, onNavigate, onNotice }: Props) {
+export default function Shell({ route, session, onNavigate, onNotice, onSignOut }: Props) {
   const shellRef = useRef<HTMLDivElement>(null)
   const pulseIcon = useRef<(target: Element | null) => void>(() => {})
   const [friends, setFriends] = useState<Friend[]>([])
@@ -192,10 +142,11 @@ export default function Shell({ route, session, onNavigate, onNotice }: Props) {
     }
   }, [session, onNotice])
 
-  const needsSession = !session && (route === 'friends' || route === 'games' || route === 'live')
+  const needsSession = !session && (route === 'friends' || route === 'account' || route === 'live')
 
   return (
     <div className="shell" ref={shellRef}>
+      <a className="skip-link" href="#main">Skip to content</a>
       <nav className="rail glass" aria-label="Main navigation">
         <span className="rail__mark" aria-label="SAPIE">
           S
@@ -230,6 +181,10 @@ export default function Shell({ route, session, onNavigate, onNotice }: Props) {
             <LiveIcon />
             <span>Live sessions</span>
           </button>
+          <button type="button" className="rail__item" onClick={onSignOut}>
+            <SignOutIcon />
+            <span>Sign out</span>
+          </button>
         </div>
       </nav>
 
@@ -249,7 +204,7 @@ export default function Shell({ route, session, onNavigate, onNotice }: Props) {
         ) : (
           <>
             {route === 'friends' && session && (
-              <FriendsView
+              <Friends
                 session={session}
                 onNotice={onNotice}
                 onJoinFriend={(friend) => void connectFriend(friend)}
@@ -257,8 +212,9 @@ export default function Shell({ route, session, onNavigate, onNotice }: Props) {
                 onFriendsChange={setFriends}
               />
             )}
-            {route === 'games' && <GamesView />}
-            {route === 'account' && <Account session={session} />}
+            {route === 'account' && session && (
+              <Account session={session} onNotice={onNotice} onSignedOut={onSignOut} />
+            )}
             {route === 'live' && session && <LiveAdmin session={session} />}
           </>
         )}

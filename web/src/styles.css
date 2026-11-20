@@ -1,48 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap');
 
-:root {
-  color-scheme: dark;
-
-  --bg: #0e1420;
-  --surface: #1b2432;
-  --surface-quiet: #16202e;
-  --text: #e9eff7;
-  --muted: #b3c3d6;
-  --accent: #ff9b6a;
-  --on-accent: #16100d;
-  --status: #8fe3b0;
-
-  --edge: rgb(233 239 247 / 14%);
-  --edge-strong: rgb(233 239 247 / 26%);
-  --control-edge: rgb(233 239 247 / 50%);
-  --glass: rgb(27 36 50 / 68%);
-  --glass-edge: rgb(233 239 247 / 12%);
-  --shadow: 0 18px 48px rgb(0 0 0 / 34%);
-
-  --font-ui: 'Manrope', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
-  --fs-xs: 12px;
-  --fs-sm: 13px;
-  --fs-md: 14px;
-  --fs-lg: 16px;
-  --fs-xl: 20px;
-  --fs-2xl: 28px;
-
-  --sp-1: 4px;
-  --sp-2: 8px;
-  --sp-3: 12px;
-  --sp-4: 16px;
-  --sp-5: 20px;
-  --sp-6: 24px;
-  --sp-8: 32px;
-
-  --r-xs: 4px;
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 16px;
-
-  --blur-panel: 20px;
-}
+/* Colour, type, spacing and radius tokens come from design/tokens.css. */
 
 *,
 *::before,
@@ -934,4 +891,140 @@ td {
 
 .achievement__time {
   color: var(--muted);
+}
+
+/* Skip link, sign-in notice and tab navigation */
+
+.skip-link {
+  position: fixed;
+  inset-block-start: var(--sp-2);
+  inset-inline-start: var(--sp-2);
+  z-index: 20;
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+.sign-in-reason {
+  margin-block-end: var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+
+.tabs {
+  display: flex;
+  gap: var(--sp-2);
+  min-width: 0;
+  overflow-x: auto;
+  border-block-end: 1px solid var(--edge-strong);
+}
+
+.tabs__tab {
+  position: relative;
+  flex: none;
+  min-height: 48px;
+  padding: 0 var(--sp-4);
+  border: 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tabs__tab.is-active {
+  background: var(--surface-quiet);
+  color: var(--accent);
+}
+
+.tabs__tab.is-active::after {
+  content: '';
+  position: absolute;
+  inset-inline: var(--sp-3);
+  inset-block-end: -1px;
+  height: 2px;
+  background: var(--accent);
+}
+
+.tab-panel {
+  min-width: 0;
+}
+
+.friend__label {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.request-form,
+.account-grid .panel {
+  min-width: 0;
+}
+
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+/* Confirmation dialog */
+
+.btn--danger {
+  border-color: var(--accent);
+  background: transparent;
+  color: var(--accent);
+}
+
+.confirm {
+  width: min(100% - var(--sp-8), 420px);
+  padding: var(--sp-5);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.confirm::backdrop {
+  background: rgb(0 0 0 / 62%);
+}
+
+.confirm h2 {
+  margin-block-end: var(--sp-3);
+  font-size: var(--fs-xl);
+}
+
+.confirm p {
+  color: var(--muted);
+}
+
+.confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  margin-block-start: var(--sp-5);
+}
+
+@media (max-width: 620px) {
+  .account-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tabs__tab {
+    padding: 0 var(--sp-3);
+  }
 }
