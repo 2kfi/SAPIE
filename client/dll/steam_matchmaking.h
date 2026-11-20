@@ -189,15 +189,26 @@ void trigger_lobby_member_join_leave(CSteamID lobby, CSteamID member, bool leavi
 bool send_owner_packet(CSteamID lobby_id, Lobby_Messages *message)
 {
     Lobby *lobby = get_lobby(lobby_id);
-
-    if (!lobby) {
-        return false;
+    uint64 owner = 0;
+    if (lobby) {
+        owner = lobby->owner();
+    } else if (message->type() == Lobby_Messages::JOIN) {
+        // An invited guest has no lobby snapshot until the owner answers the join.
+        // The server routes lobby data only to members, so use the friend whose
+        // presence advertises this lobby as the packet target.
+        for (const auto &entry : sapie::local_mirror().friend_lobbies()) {
+            if (entry.second == lobby_id.ConvertToUint64()) {
+                owner = entry.first;
+                break;
+            }
+        }
     }
+    if (!owner) return false;
 
     Common_Message msg;
     msg.set_allocated_lobby_messages(message);
     msg.set_source_id(settings->get_local_steam_id().ConvertToUint64());
-    msg.set_dest_id((uint64)lobby->owner());
+    msg.set_dest_id(owner);
     msg.mutable_lobby_messages()->set_id(lobby_id.ConvertToUint64());
     return network->send_steam(&msg, true);
 }
