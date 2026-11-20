@@ -120,3 +120,16 @@ Windows DLL; the DLL itself is the artifact to copy next to the game exe.
 - `glew/` is absent from the upstream reference snapshot; the overlay is
   excluded from the matrix, so it is not needed.
 - LGPLv3 headers in all vendored files are unchanged.
+
+## CI and releases
+
+Any tag triggers `.github/workflows/build.yml`: it builds the client, server and launcher
+targets, assembles the three release archives, creates the GitHub Release, and pushes the
+server container. The 0.1 release is at
+https://github.com/2kfi/SAPIE/releases/tag/0.1 with the assets
+`SAPIE-0.1-linux-x64.tar.gz`, `SAPIE-0.1-linux-arm64.tar.gz` and `SAPIE-0.1-windows-x64.zip`.
+Container tags are `ghcr.io/2kfi/sapie-server:<tag>` and `ghcr.io/2kfi/sapie-server:latest`
+(for 0.1, `ghcr.io/2kfi/sapie-server:0.1`).
+
+Caveat: in this new repository, push-triggered runs never fired. Use manual dispatch
+(`workflow_dispatch --ref <tag>`) to run the workflow.

@@ -4,7 +4,7 @@
 
 Run old Steam games without Steam. A Go server acts like Steam (accounts, presence, lobbies, achievements, stats). A forked Goldberg emulator DLL runs inside the game, emulates the Steam API, and forwards calls to the server. A Tauri launcher and a browser web UI share one React SPA.
 
-V1 scope: identity → friends/presence/invites → lobbies/matchmaking → achievements/stats. **No P2P game-traffic relay in v1** (planned later). No DRM checks — cracked games are not our problem.
+V1 scope: identity → friends/presence/invites → lobbies/matchmaking → achievements/stats. 0.1 shipped with no P2P game traffic of any kind. **No P2P game-traffic relay in v1** is SUPERSEDED for 0.2: 0.2 adds direct client-to-client P2P first, with a relay fallback for NAT-blocked peers. No DRM checks — cracked games are not our problem.
 
 ## 2. Fixed decisions
 
@@ -12,7 +12,7 @@ V1 scope: identity → friends/presence/invites → lobbies/matchmaking → achi
 | --- | --- |
 | Name | Steam API Emulator (SAPIE) |
 | License | Goldberg fork stays LGPLv3; notices preserved, modifications published |
-| Branches | `main-client` (default), `dev-client`, `main-server`, `dev-server`; identical tree on all four |
+| Branches | `dev-client` (default), `dev-server`, `main-client`, `main-server`; identical tree on all four |
 | Integration trunk | `dev-client`. Sync `dev-client → dev-server`; release PRs `dev-client → main-client`, `dev-server → main-server` |
 | Client base | Goldberg emulator fork |
 | Server | Go + SQLite (`modernc.org/sqlite`, pure Go → no cgo) |
@@ -102,7 +102,7 @@ SAPIE/
 │  ├─ harness/                   # Go fake client
 │  ├─ detect-era/                # interface-string extractor wrapper
 │  └─ build-protobuf.sh <target>
-└─ docs/{PROTOCOL,BUILD,DEPLOY}.md
+└─ docs/{PROTOCOL,BUILD,QUICKSTART,UI}.md
 ```
 
 ## 5. Wire protocol
@@ -151,6 +151,7 @@ Direction: quiet glass instrument panel, not a game store. Cool neutral acrylic,
 - Presence dots always have text labels. Focus = 2px ember ring at 2px offset. Toasts `aria-live="polite"`, errors `role="alert"`. 44×44 targets.
 - Motion: only rail selection (120ms), modal (160ms), toast (200ms), focus ring. No pulsing dots, no staggered rows; `prefers-reduced-motion` collapses to opacity.
 - P2P placeholder text: "Peer-to-peer play is not available in this version." No dead buttons.
+  This is 0.1 text; it changes only when P2P ships in 0.2.
 
 ## 9. Agents
 
@@ -173,9 +174,24 @@ Sync `dev-client → dev-server` after every integration batch to prevent proto 
 | M4 | Achievements/stats; account page | Unlock on A reflected on B; admin API shows same unlock time |
 | M5 | Reconnect/backoff, limits, docs, release packaging | Docs complete; failure and rate-limit tests pass |
 
+0.1 is published and frozen. The table above is 0.1 history; 0.2 work starts below.
+
+### 0.2 milestones (planned)
+
+| # | Scope | Acceptance |
+| --- | --- | --- |
+| M6 | Full online persona surface | A real MW2-2009-style client sees a logged-in account, persona name and online state, friends list and invites, achievements and stats, and app ownership/ticket. Verified with a real client, not just the harness. |
+| M7 | Deeper lobbies/matchmaking | "Join Friend"/"Connect to Friend" flows hold for two real clients. |
+| M8 | Direct P2P | Two game clients exchange game traffic directly, with no server relaying of game packets. Verified on the same LAN and across NAT where possible. |
+| M9 | Relay fallback | NAT-blocked peers fall back to a SAPIE-run relay, with the direct path preferred. A blocked-direct case is verified. |
+
+Order: M6/M7 (real two-client proof) first, then M8 direct P2P, then M9 relay fallback.
+
 ## 11. Risks / deferred
 
-- Deferred: P2P relay, UGC/inventory/overlay/controller, Windows ARM64 client, 32-bit ARM.
+- Deferred: UGC/inventory/overlay/controller, Windows ARM64 client, 32-bit ARM.
+- 0.2 planned: P2P, direct client-to-client first with relay fallback for NAT-blocked peers. 0.1 shipped without P2P; the relay is no longer deferred.
+- Carried from `dev_notes.md` into 0.2: mutable mirror refs, `StatsGet.names` handling, hidden achievements in unlock pushes, and the missing live two-client/real-game run. Only the last is a hard gate (M6 to M9 cannot be called done without it); the first three are known limits to fix or accept.
 - Unverified: protobuf 36 compatibility with older Goldberg headers; `mingw-w64-protobuf` i686 coverage; Tauri webkit2gtk blur; ARM64 on real hardware.
 - Stardew Valley's interface era unknown until detected; MW2 DLL replacement assumed to work.
 - Mutating calls may race games expecting instant local callbacks; optimistic mirror updates may be needed per game.

@@ -1,4 +1,4 @@
-# SAPIE wire protocol (v1, M4)
+# SAPIE wire protocol (0.1)
 
 The game client talks to `cmd/sapie-server` over TCP (default `:47584`). Optional TLS
 is enabled by passing both `--tls-cert` and `--tls-key`.
@@ -92,7 +92,16 @@ stats endpoint is unaffected by these game-socket filters and returns all apps.
 ## Not supported yet
 
 Tickets are issued but not verified or redeemed. There is no P2P game-traffic
-relay in v1.
+relay in 0.1.
+
+Known nonblocking limits in 0.1:
+
+- The C++ client's `friends()` and `lobbies()` return references to internal lists
+  rather than copies. Every caller is serialized behind a global lock, so no race
+  has been observed.
+- `StatsGet.names` is ignored. The server returns all stats for the user and app.
+- Achievements marked `hidden` are omitted from queries by non-owners, but the
+  server still pushes an unlock to friends when one is unlocked.
 
 ## HTTP API
 

@@ -2,7 +2,7 @@
 
 ## Deferred items after MF1
 
-Carried forward from the MR1 review and MF1 fixes at dev head `0bba875`.
+Carried forward from the MR1 review and MF1 fixes at the 0.1 release at `62007f5`.
 None of these block the release; they are known limits, not failures found in testing.
 
 ### 1. Mutable mirror refs
@@ -33,6 +33,9 @@ smoke messages, isolated builds. We have not launched two real C++ clients again
 server, run an actual old Steam game with the replacement DLL, or clicked through the web UI in a
 browser. Any of those could expose an integration bug that none of our tests cover.
 
+This is the first 0.2 gate: a live two-client C++↔Go session and a real MW2 run must happen before
+the online surface or either P2P path can be called done.
+
 Items 1–3 are small, understood limitations. Item 4 is the honest confidence gap: "nothing blocks
 the merge" is not the same as "proven on a real machine." Mains were merged from dev for the 0.1
 release; see the release tag for the exact commit.
@@ -41,3 +44,19 @@ release; see the release tag for the exact commit.
 
 None of the four items were re-verified live; they come from worker reports and the merged-head test
 suite. Main risk: the real two-client path stays unproven until item 4 is run.
+
+## Carry-forward into 0.2
+
+The 0.1 release at `62007f5` is published and frozen. Its UI text, including "Peer-to-peer play is
+not available in this version.", stays as shipped. 0.2 adds the following, recorded as user decisions:
+
+- Full online persona surface: a game sees a logged-in account, persona name and online state, friends
+  list and invites, achievements and stats, and app ownership/ticket. These are the checks a paranoid
+  MW2-2009-style client probes.
+- Deeper lobbies/matchmaking: join-friend and connect flows that hold for two real clients.
+- P2P: direct client-to-client first, relay fallback for NAT-blocked peers. This reverses the old
+  "No P2P game-traffic relay in v1" rule, superseded for 0.2.
+- UI text rule: the P2P placeholder line changes only when P2P actually ships in 0.2, not before.
+
+Item 4 above is the first gate: run a live two-client C++↔Go session and a real MW2 game with the
+replacement DLL before declaring the online surface or either P2P path done.

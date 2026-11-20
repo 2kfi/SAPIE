@@ -1,9 +1,9 @@
-# SAPIE UI (M0 scaffold)
+# SAPIE UI (0.1)
 
 One React 18 + TypeScript + Vite SPA in `web/`. The same `web/dist` is embedded by the
-Tauri launcher (`client/src-tauri/`) and can be served by the Go server later. There is no
-backend in M0: every data view starts in its empty state, with loading/error states available
-for wiring and review.
+Tauri launcher (`client/src-tauri/`). The Go server serves the HTTP API the SPA calls; in 0.1 it
+does not host the SPA's static files. The views are wired to that API: login, friends, lobbies,
+live sessions and account stats.
 
 ## Routes
 
@@ -17,13 +17,18 @@ Hash routing keeps the SPA servable from any path without server rewrites.
 | `#/account` | Shared account view: achievements and games, read-only |
 | `#/live` | Live sessions admin table and presence status |
 
-`?state=loading` or `?state=error` before the hash previews a data view's non-empty states.
-Example: `index.html?state=error#/games` shows the missing-executable error and **Edit path**.
-This URL hook is a scaffold shortcut; remove it when the API is connected.
+The friends detail pane states the release limit:
 
-Form submission on Login and the Retry actions report that no server is connected instead of
-pretending to succeed. **Browse** calls the Tauri `pick_executable` stub. **Launch** stays
-disabled until a game is configured, with the reason shown next to it.
+Peer-to-peer play is not available in this version.
+
+Loading, empty and error states now come from live requests. The old `?state=loading` and
+`?state=error` URL hook was a preview/debug hook from the M0 scaffold; it was removed when the
+views were wired to the API and is not present in 0.1.
+
+Login submits to `POST /api/v1/login` and keeps the returned session token. Friends, lobbies,
+live sessions and account stats read from the HTTP API; failures surface with retry actions.
+**Browse** calls the Tauri `pick_executable` command. **Launch** stays disabled until a game is
+configured, with the reason shown next to it.
 
 ## Design tokens
 
@@ -57,17 +62,20 @@ selection (120ms) and toast entry (200ms), both opt-in under
 
 ## Tauri shell
 
-`client/src-tauri/` registers four no-op commands. Each returns a `Not implemented in M0`
-error so the JS bridge fails loudly instead of silently succeeding:
+`client/src-tauri/` registers implemented commands for the game flow. The four named here
+handle the native half of it:
 
-- `pick_executable`
-- `copy_dll`
-- `set_ld_preload`
-- `launch_game`
+- `pick_executable`: opens the native executable picker
+- `copy_dll`: copies the matching `steam_api` DLL or shared object next to the game executable
+- `set_ld_preload`: records the Linux `LD_PRELOAD` library for the game
+- `launch_game`: starts the configured game with SAPIE credentials
+
+The same flow also calls `detect_game`, `unpack_steamstub` and `configure_server` to detect the
+Steam interface era, unpack SteamStub executables and write the connection files.
 
 `tauri.conf.json` points `frontendDist` at `../../web/dist` and `devUrl` at
-`http://localhost:5173`. `capabilities/default.json` grants the four commands through
-`permissions/launcher.toml`. No game launching, DLL copying or preload setup is implemented.
+`http://localhost:5173`. `capabilities/default.json` grants the launcher commands through
+`permissions/launcher.toml`.
 
 ## Build
 

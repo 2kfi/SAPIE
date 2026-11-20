@@ -6,7 +6,15 @@ Peer-to-peer play is not available in this version.
 
 ## Download
 
-Download the archive for your operating system from the 0.1 Release and unpack it.
+Get a 0.1 archive from the release at https://github.com/2kfi/SAPIE/releases/tag/0.1:
+
+- `SAPIE-0.1-linux-x64.tar.gz`
+- `SAPIE-0.1-linux-arm64.tar.gz`
+- `SAPIE-0.1-windows-x64.zip`
+
+Unpack the archive for your operating system. It contains the launcher `sapie` (`sapie.exe` on
+Windows), the server `sapie-server` (`sapie-server.exe` on Windows), `steam_api/<target>-<era>/`
+libraries, and `QUICKSTART.md` at the archive root.
 
 ## Start the server
 
@@ -18,7 +26,8 @@ Run the server binary from the archive, or run it from a source checkout:
 
 From source, use `go run ./cmd/sapie-server` with the same flags from the `server/` directory.
 
-With Docker, set the token in the environment and run Compose from the repository root:
+With Docker, set the token in the environment and run Compose from the repository root
+(`compose.yaml` lives there):
 
 ```sh
 SAPIE_ADMIN_TOKEN=<your-token> docker compose up --build
@@ -36,4 +45,4 @@ Use the launcher to copy the matching `steam_api` DLL or shared object next to t
 
 ## Steamless
 
-The launcher can unpack SteamStub-packed Windows executables. Steamless is an unmodified Windows-only sidecar distributed under its own NOTICE at `client/src-tauri/resources/steamless/NOTICE.md`. Do not modify it.
+The launcher can unpack SteamStub-packed Windows executables. Steamless is an unmodified Windows-only sidecar. Its NOTICE is at `steamless/NOTICE.md` inside the Windows archive; in a source checkout the same file is `client/src-tauri/resources/steamless/NOTICE.md`. Do not modify it.
