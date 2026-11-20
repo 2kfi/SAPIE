@@ -22,6 +22,7 @@ type Resolver interface {
 	FriendsOf(uint64) ([]uint64, error)
 	LobbiesOf(uint64) ([]uint64, error)
 	LobbyMembers(uint64) ([]uint64, error)
+	IsBlocked(uint64, uint64) (bool, error)
 }
 
 type Router struct {
@@ -51,8 +52,16 @@ func (r *Router) Route(from uint64, msg *protocol.Common_Message) {
 
 func (r *Router) recipients(from uint64, msg *protocol.Common_Message) []uint64 {
 	if msg.DestId != 0 {
+		if r.blocked(from, msg.DestId) {
+			log.Printf("route from=%d to=%d dropped: blocked", from, msg.DestId)
+			return nil
+		}
 		if isP2P(msg) && !r.p2pAllowed(from, msg.DestId) {
 			log.Printf("route p2p from=%d to=%d dropped: not friend or lobby mate", from, msg.DestId)
+			return nil
+		}
+		if isInvite(msg) && !r.friendAllowed(from, msg.DestId) {
+			log.Printf("route invite from=%d to=%d dropped: not friend", from, msg.DestId)
 			return nil
 		}
 		return []uint64{msg.DestId}
@@ -66,7 +75,13 @@ func (r *Router) recipients(from uint64, msg *protocol.Common_Message) []uint64 
 		if err != nil {
 			log.Printf("route from=%d friends: %v", from, err)
 		}
-		return ids
+		allowed := make([]uint64, 0, len(ids))
+		for _, id := range ids {
+			if !r.blocked(from, id) {
+				allowed = append(allowed, id)
+			}
+		}
+		return allowed
 	case *protocol.Common_Message_Lobby:
 		return r.lobbyRecipients(msg.GetLobby().GetRoomId())
 	case *protocol.Common_Message_LobbyMessages:
@@ -112,6 +127,28 @@ func (r *Router) p2pAllowed(from, to uint64) bool {
 	return false
 }
 
+func (r *Router) blocked(a, b uint64) bool {
+	if r.resolver == nil {
+		return false
+	}
+	blocked, err := r.resolver.IsBlocked(a, b)
+	if err != nil {
+		log.Printf("route block check from=%d to=%d: %v", a, b, err)
+	}
+	return blocked
+}
+
+func (r *Router) friendAllowed(from, to uint64) bool {
+	if r.resolver == nil {
+		return false
+	}
+	friends, err := r.resolver.FriendsOf(from)
+	if err != nil {
+		log.Printf("route invite from=%d friends: %v", from, err)
+	}
+	return contains(friends, to)
+}
+
 func contains(ids []uint64, want uint64) bool {
 	for _, id := range ids {
 		if id == want {
@@ -127,6 +164,11 @@ func isP2P(msg *protocol.Common_Message) bool {
 		return true
 	}
 	return false
+}
+
+func isInvite(msg *protocol.Common_Message) bool {
+	_, ok := msg.Messages.(*protocol.Common_Message_FriendMessages)
+	return ok
 }
 
 func (r *Router) Deliver(to uint64, frame *protocol.Frame) {

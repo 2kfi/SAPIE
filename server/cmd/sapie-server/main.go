@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/sapie/sapie/server/internal/api"
 	"github.com/sapie/sapie/server/internal/auth"
@@ -91,6 +92,20 @@ func main() {
 	sessions := session.New(store, limiter)
 	admin := api.New(store, token, limiter, sessions)
 	admin.SetAllowRegister(*allowRegister)
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := store.DeleteExpiredSessions(); err != nil {
+					log.Printf("session cleanup: %v", err)
+				}
+			}
+		}
+	}()
 	errs := make(chan error, 3)
 	go func() { errs <- sessions.Serve(ctx, gameLn) }()
 	go func() { errs <- admin.Serve(ctx, adminLn) }()

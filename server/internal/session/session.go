@@ -70,6 +70,8 @@ func (s *Server) IsOnline(steamID uint64) bool {
 	return ok
 }
 
+func (s *Server) IsBlocked(a, b uint64) (bool, error) { return s.store.IsBlocked(a, b) }
+
 func (s *Server) PeerFor(id uint64) (router.Peer, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
