@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"io"
 	"net"
 	"path/filepath"
@@ -671,6 +672,71 @@ func TestDisconnectUpdatesLobbyOwner(t *testing.T) {
 	lobby, err := store.Lobby(lobbyID)
 	if err != nil || lobby.Owner != bob || len(lobby.Members) != 1 {
 		t.Fatalf("lobby after owner disconnect = %+v, %v", lobby, err)
+	}
+}
+
+func TestStampSourceHint(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		remote  net.Addr
+		wantIP  uint32
+		wantPrt uint32
+	}{
+		{"ipv4", &net.TCPAddr{IP: net.ParseIP("203.0.113.7"), Port: 27015},
+			binary.BigEndian.Uint32(net.ParseIP("203.0.113.7").To4()), 27015},
+		{"ipv6 gets no hint", &net.TCPAddr{IP: net.ParseIP("2001:db8::1"), Port: 27015}, 0, 0},
+		{"non-tcp gets no hint", &net.UDPAddr{IP: net.ParseIP("203.0.113.7"), Port: 27015}, 0, 0},
+		{"nil gets no hint", nil, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := &protocol.Common_Message{SourceIp: 1234, SourcePort: 5678} // client-supplied, must be replaced
+			stampSourceHint(tc.remote, msg)
+			if msg.SourceIp != tc.wantIP || msg.SourcePort != tc.wantPrt {
+				t.Fatalf("hint = ip %d port %d, want ip %d port %d",
+					msg.SourceIp, msg.SourcePort, tc.wantIP, tc.wantPrt)
+			}
+		})
+	}
+}
+
+type addrConn struct {
+	net.Conn
+	addr net.Addr
+}
+
+func (c addrConn) RemoteAddr() net.Addr { return c.addr }
+
+func TestHandleSteamStampsNetworkingSocketsSource(t *testing.T) {
+	store, alice, bob := testStore(t)
+	srv := New(store, nil)
+
+	aliceServer, _ := net.Pipe()
+	defer aliceServer.Close()
+	remote := &net.TCPAddr{IP: net.ParseIP("203.0.113.7"), Port: 27015}
+	aliceSession := &Session{steamID: alice, conn: addrConn{Conn: aliceServer, addr: remote}}
+
+	bobServer, bobClient := net.Pipe()
+	defer bobServer.Close()
+	defer bobClient.Close()
+	srv.peers[bob] = &Session{steamID: bob, conn: bobServer}
+	bobFrames := frameCollector(bobClient)
+
+	srv.handleSteam(aliceSession, &protocol.Common_Message{
+		DestId: bob,
+		Messages: &protocol.Common_Message_NetworkingSockets{
+			NetworkingSockets: &protocol.Networking_Sockets{Type: protocol.Networking_Sockets_CONNECTION_REQUEST},
+		},
+		SourceIp: 111, SourcePort: 222,
+	})
+
+	msg := waitSteam(t, bobFrames, func(m *protocol.Common_Message) bool { return m.GetNetworkingSockets() != nil })
+	wantIP := binary.BigEndian.Uint32(remote.IP.To4())
+	if msg.SourceIp != wantIP || msg.SourcePort != 27015 {
+		t.Fatalf("relayed hint = ip %d port %d, want ip %d port %d",
+			msg.SourceIp, msg.SourcePort, wantIP, 27015)
+	}
+	if msg.GetSourceId() != alice {
+		t.Fatalf("relayed source_id = %d, want %d", msg.GetSourceId(), alice)
 	}
 }
 

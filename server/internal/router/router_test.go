@@ -1,6 +1,9 @@
 package router
 
 import (
+	"bytes"
+	"log"
+	"strings"
 	"testing"
 
 	"github.com/sapie/sapie/server/internal/protocol"
@@ -21,11 +24,14 @@ func (l fakeLookup) PeerFor(id uint64) (Peer, bool) {
 }
 
 type fakeResolver struct {
-	friends map[uint64][]uint64
-	lobbies map[uint64][]uint64
+	friends     map[uint64][]uint64
+	userLobbies map[uint64][]uint64
+	lobbies     map[uint64][]uint64
 }
 
 func (r fakeResolver) FriendsOf(id uint64) ([]uint64, error) { return r.friends[id], nil }
+
+func (r fakeResolver) LobbiesOf(id uint64) ([]uint64, error) { return r.userLobbies[id], nil }
 
 func (r fakeResolver) LobbyMembers(id uint64) ([]uint64, error) { return r.lobbies[id], nil }
 
@@ -93,4 +99,109 @@ func delivered(t *testing.T, frame *protocol.Frame) *protocol.Common_Message {
 		t.Fatalf("got %T, want Frame_Steam", frame.Payload)
 	}
 	return steam.Steam
+}
+
+func p2pResolver() fakeResolver {
+	return fakeResolver{
+		friends:     map[uint64][]uint64{1: {2}},
+		userLobbies: map[uint64][]uint64{1: {7}},
+		lobbies:     map[uint64][]uint64{7: {1, 3}},
+	}
+}
+
+func socketMsg(dest uint64, typ protocol.Networking_Sockets_Types) *protocol.Common_Message {
+	return &protocol.Common_Message{
+		DestId: dest,
+		Messages: &protocol.Common_Message_NetworkingSockets{
+			NetworkingSockets: &protocol.Networking_Sockets{Type: typ},
+		},
+	}
+}
+
+func messagesMsg(dest uint64, typ protocol.Networking_Messages_Types) *protocol.Common_Message {
+	return &protocol.Common_Message{
+		DestId: dest,
+		Messages: &protocol.Common_Message_NetworkingMessages{
+			NetworkingMessages: &protocol.Networking_Messages{Type: typ},
+		},
+	}
+}
+
+func captureLogs(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	orig := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(orig)
+	fn()
+	return buf.String()
+}
+
+func TestRouteP2PAuthorization(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		dest uint64
+		want int
+	}{
+		{"friend", 2, 1},
+		{"lobby mate", 3, 1},
+		{"stranger", 4, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			peer := &fakePeer{}
+			r := NewWithResolver(fakeLookup{tc.dest: peer}, p2pResolver())
+			r.Route(1, socketMsg(tc.dest, protocol.Networking_Sockets_CONNECTION_REQUEST))
+			if got := len(peer.frames); got != tc.want {
+				t.Fatalf("delivered = %d, want %d", got, tc.want)
+			}
+			if tc.want > 0 && delivered(t, peer.frames[0]).GetSourceId() != 1 {
+				t.Fatal("routed P2P frame lost source_id stamp")
+			}
+		})
+	}
+}
+
+func TestRouteP2PUnauthorizedLoggedOnce(t *testing.T) {
+	r := NewWithResolver(fakeLookup{4: &fakePeer{}}, p2pResolver())
+	out := captureLogs(t, func() {
+		r.Route(1, socketMsg(4, protocol.Networking_Sockets_CONNECTION_REQUEST))
+	})
+	if n := strings.Count(out, "route p2p from=1 to=4 dropped"); n != 1 {
+		t.Fatalf("drop log count = %d, want 1: %q", n, out)
+	}
+}
+
+func TestRouteP2PDataNotRelayed(t *testing.T) {
+	peer := &fakePeer{}
+	r := NewWithResolver(fakeLookup{2: peer}, p2pResolver())
+
+	out := captureLogs(t, func() {
+		r.Route(1, socketMsg(2, protocol.Networking_Sockets_DATA))
+		r.Route(1, messagesMsg(2, protocol.Networking_Messages_DATA))
+	})
+	if len(peer.frames) != 0 {
+		t.Fatalf("DATA payloads relayed: %d frames", len(peer.frames))
+	}
+	if n := strings.Count(out, "p2p DATA payload dropped"); n != 2 {
+		t.Fatalf("DATA drop log count = %d, want 2: %q", n, out)
+	}
+
+	// Direct P2P signaling (non-DATA) must still pass through the server.
+	r.Route(1, socketMsg(2, protocol.Networking_Sockets_CONNECTION_ACCEPTED))
+	r.Route(1, messagesMsg(2, protocol.Networking_Messages_CONNECTION_NEW))
+	if len(peer.frames) != 2 {
+		t.Fatalf("signaling delivered = %d, want 2", len(peer.frames))
+	}
+}
+
+func TestRouteNonP2PDestUnaffected(t *testing.T) {
+	peer := &fakePeer{}
+	r := NewWithResolver(fakeLookup{4: peer}, p2pResolver())
+	r.Route(1, &protocol.Common_Message{
+		DestId:   4,
+		Messages: &protocol.Common_Message_Announce{Announce: &protocol.Announce{}},
+	})
+	if len(peer.frames) != 1 {
+		t.Fatalf("non-p2p targeted frame delivered = %d, want 1", len(peer.frames))
+	}
 }

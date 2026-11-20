@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
@@ -320,8 +321,28 @@ func (s *Server) handleSteam(session *Session, msg *protocol.Common_Message) {
 				log.Printf("session %d: store connect string: %v", session.steamID, err)
 			}
 		}
+	case *protocol.Common_Message_NetworkingSockets:
+		stampSourceHint(session.conn.RemoteAddr(), msg)
 	}
 	s.router.Route(session.steamID, msg)
+}
+
+// stampSourceHint replaces any client-supplied hint with the authenticated
+// connection's IPv4 address and port; IPv6 gets no hint rather than a truncated one.
+func stampSourceHint(remote net.Addr, msg *protocol.Common_Message) {
+	msg.SourceIp, msg.SourcePort = 0, 0
+	tcp, ok := remote.(*net.TCPAddr)
+	if !ok {
+		return
+	}
+	ip := tcp.IP.To4()
+	if ip == nil {
+		return
+	}
+	msg.SourceIp = binary.BigEndian.Uint32(ip)
+	if tcp.Port > 0 && tcp.Port <= 65535 {
+		msg.SourcePort = uint32(tcp.Port)
+	}
 }
 
 func (s *Server) handleStatsGet(session *Session, req *protocol.StatsGet) {
