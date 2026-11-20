@@ -955,6 +955,9 @@ bool Server_Connection::connect_and_login()
     sapie::Frame request;
     request.mutable_login()->set_username(settings->sapie_username);
     request.mutable_login()->set_password(settings->sapie_password);
+    if (!settings->sapie_session_token.empty()) {
+        request.mutable_login()->set_session_token(settings->sapie_session_token);
+    }
     request.mutable_login()->set_appid(settings->get_local_game_id().AppID());
     request.mutable_login()->set_client_version("sapie-m1");
 

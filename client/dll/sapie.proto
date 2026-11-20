@@ -19,6 +19,7 @@ message LoginRequest {
   string password = 2;
   uint32 appid = 3;
   string client_version = 4;
+  string session_token = 5;
 }
 
 message LoginResponse {

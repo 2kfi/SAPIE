@@ -197,10 +197,8 @@ pub async fn launch_game(data: State<'_, AppState>, path: String) -> Result<u32>
             "The session has expired. Sign in again.",
         ));
     }
-    let username = snapshot.username.clone();
     let task_path = path.clone();
-    let pid =
-        blocking(move || game::launch(&task_path, &record, username.as_deref(), &token)).await?;
+    let pid = blocking(move || game::launch(&task_path, &record, &token)).await?;
     data.update(|state| {
         if let Some(record) = state.games.get_mut(&path) {
             record.last_played = Some(auth::now_secs());

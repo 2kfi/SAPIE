@@ -21,11 +21,13 @@ a zero length is invalid. A truncated header or body closes the connection.
 ## Login handshake
 
 1. Client opens TCP (or TLS) and sends its **first** frame as `LoginRequest`
-   (`username`, `password`, `appid`, `client_version`). Any other first payload
-   closes the connection without a response.
-2. Server verifies the password against the stored argon2id hash. Failed logins
-   return `LoginResponse{status: BAD_CREDENTIALS}`; five failures per source IP
-   within one minute trigger a temporary block.
+   (`username`, `password`, `appid`, `client_version`, optional `session_token`).
+   Any other first payload closes the connection without a response.
+2. Server verifies `LoginRequest.session_token` when present by resolving an
+   unexpired session hash and binding the connection to that session's account.
+   Otherwise it verifies the password against the stored argon2id hash. Failed
+   logins return `LoginResponse{status: BAD_CREDENTIALS}`; five failures per
+   source IP within one minute trigger a temporary block.
 3. On success the server creates a 32-byte session token (stored hashed, 24 h
    lifetime) and replies `LoginResponse{status: OK, steam_id, persona_name,
    session_token, friends}`. `friends` lists the account's friends with their
@@ -35,6 +37,31 @@ a zero length is invalid. A truncated header or body closes the connection.
 
 `BANNED`, `SERVER_FULL` and `VERSION_MISMATCH` statuses exist in the contract but
 are never emitted.
+
+### Game-side credential handoff
+
+The launcher writes a short-lived token file immediately before spawning the game and passes no
+credential environment variables. The DLL reads that file once at login, removes it, and sends the
+token in `LoginRequest.session_token` (field 5). The server resolves an unexpired session by
+`auth.HashToken(token)` and derives identity from that session. The password path remains for
+compatibility. `source_id` stamping in `router.Route` is unchanged and remains authoritative.
+
+The shipped contract is:
+
+- Path: `steam_settings/sapie_client.json` under the game directory, then `sapie_client.json` in the
+  game directory. These are the same two locations used for `sapie_server.txt`.
+- Content: one JSON object with a single key, `session_token`, holding the raw 43 character
+  base64url token returned by `POST /api/v1/login`. No password, username, appid or other field.
+- Mode: `0600` on Unix. Windows has no explicit ACL change; the file uses the default ACL of the
+  game directory. A Windows-specific private ACL is not implemented.
+- Lifetime: one launch only. The DLL reads the file once at startup, keeps the token in process
+  memory for reconnects, and removes the file after the read attempt. A file whose modification
+  time is more than 10 minutes old is rejected and removed. Server side expiry or revocation still
+  wins. The launcher also removes the file if process spawn fails.
+- Fallback order: token file, then `SAPIE_SESSION_TOKEN` only when no file exists, then
+  `SAPIE_USERNAME` and `SAPIE_PASSWORD` as a compatibility path. The env values are visible to
+  other processes under the same OS account and in `/proc` on Linux. A password is never read from
+  a token file, and neither the token nor either credential is logged.
 
 ## Identity rule
 

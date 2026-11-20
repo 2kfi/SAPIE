@@ -17,6 +17,8 @@
 
 #include "settings_parser.h"
 
+#include <filesystem>
+
 static void consume_bom(std::ifstream &input)
 {
     int bom[3];
@@ -107,6 +109,70 @@ static bool parse_sapie_server_file(const std::string &path, std::string &host, 
     return true;
 }
 
+enum class SapieTokenFileResult { ABSENT, LOADED, INVALID };
+
+static const char *SAPIE_TOKEN_FILE_NAME = "sapie_client.json";
+static const int64_t SAPIE_TOKEN_MAX_AGE_SECONDS = 600;
+
+static bool parse_sapie_token_json(const std::string &text, std::string &token)
+{
+    const std::string key = "\"session_token\"";
+    size_t pos = text.find(key);
+    if (pos == std::string::npos) return false;
+    for (size_t i = 0; i < pos; ++i) {
+        if (!std::isspace((unsigned char)text[i]) && text[i] != '{') return false;
+    }
+
+    size_t colon = text.find(':', pos + key.size());
+    if (colon == std::string::npos) return false;
+    size_t first = text.find('"', colon + 1);
+    if (first == std::string::npos) return false;
+    size_t last = text.find('"', first + 1);
+    if (last == std::string::npos || last == first + 1) return false;
+
+    size_t tail = text.find_first_not_of(" \t\r\n", last + 1);
+    if (tail == std::string::npos || text[tail] != '}') return false;
+    if (text.find_first_not_of(" \t\r\n", tail + 1) != std::string::npos) return false;
+
+    token = text.substr(first + 1, last - first - 1);
+    if (token.size() != 43) return false;
+    for (char c : token) {
+        if (!std::isalnum((unsigned char)c) && c != '-' && c != '_') return false;
+    }
+    return true;
+}
+
+static SapieTokenFileResult load_sapie_token_file(const std::string &path, std::string &token)
+{
+    std::error_code error;
+    if (!std::filesystem::exists(path, error)) return SapieTokenFileResult::ABSENT;
+
+    std::string text;
+    {
+        std::ifstream input(utf8_decode(path));
+        if (!input.is_open()) {
+            std::filesystem::remove(path, error);
+            return SapieTokenFileResult::INVALID;
+        }
+        std::ostringstream contents;
+        contents << input.rdbuf();
+        text = contents.str();
+    }
+
+    bool valid = false;
+    std::filesystem::file_time_type written = std::filesystem::last_write_time(path, error);
+    if (!error) {
+        auto age = std::chrono::duration_cast<std::chrono::seconds>(
+            std::filesystem::file_time_type::clock::now() - written).count();
+        if (age >= 0 && age <= SAPIE_TOKEN_MAX_AGE_SECONDS) {
+            valid = parse_sapie_token_json(text, token);
+        }
+    }
+    // One-shot handoff: a token file is never reused, even when it was rejected.
+    std::filesystem::remove(path, error);
+    return valid ? SapieTokenFileResult::LOADED : SapieTokenFileResult::INVALID;
+}
+
 static void load_sapie_settings(Settings *settings)
 {
     std::string host;
@@ -116,16 +182,44 @@ static void load_sapie_settings(Settings *settings)
         return;
     }
 
-    std::string username = get_env_variable("SAPIE_USERNAME");
-    std::string password = get_env_variable("SAPIE_PASSWORD");
-    if (username.empty() || password.empty()) {
-        fprintf(stderr, "[SAPIE] sapie_server.txt found but SAPIE_USERNAME or SAPIE_PASSWORD is unset; using Goldberg LAN mode\n");
+    auto use_server = [&]() {
+        settings->sapie_enabled = true;
+        settings->sapie_host = host;
+        settings->sapie_port = port;
+    };
+
+    std::string token;
+    SapieTokenFileResult token_result = load_sapie_token_file(
+        Local_Storage::get_game_settings_path() + SAPIE_TOKEN_FILE_NAME, token);
+    if (token_result == SapieTokenFileResult::ABSENT) {
+        token_result = load_sapie_token_file(
+            Local_Storage::get_program_path() + SAPIE_TOKEN_FILE_NAME, token);
+    }
+    if (token_result != SapieTokenFileResult::ABSENT) {
+        use_server();
+        if (token_result == SapieTokenFileResult::LOADED) {
+            settings->sapie_session_token = token;
+        } else {
+            fprintf(stderr, "[SAPIE] session token file is missing, malformed or older than 10 minutes; login will be rejected\n");
+        }
         return;
     }
 
-    settings->sapie_enabled = true;
-    settings->sapie_host = host;
-    settings->sapie_port = port;
+    std::string env_token = get_env_variable("SAPIE_SESSION_TOKEN");
+    if (!env_token.empty()) {
+        use_server();
+        settings->sapie_session_token = env_token;
+        return;
+    }
+
+    std::string username = get_env_variable("SAPIE_USERNAME");
+    std::string password = get_env_variable("SAPIE_PASSWORD");
+    if (username.empty() || password.empty()) {
+        fprintf(stderr, "[SAPIE] sapie_server.txt found but no token file, SAPIE_SESSION_TOKEN or SAPIE_USERNAME/SAPIE_PASSWORD pair is available; using Goldberg LAN mode\n");
+        return;
+    }
+
+    use_server();
     settings->sapie_username = username;
     settings->sapie_password = password;
 }
