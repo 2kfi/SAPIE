@@ -4,17 +4,19 @@ SAPIE is a non-commercial project for running old Steam games without the Steam 
 
 Peer-to-peer play is not available in this version.
 
-This is frozen 0.1 text and stays unchanged until the user accepts G0. P2P exists in 0.2 code but is not released.
+P2P ships in 0.2, but the frozen 0.1 text stays until G0 acceptance.
 
 ## Download
 
-Get a 0.1 archive from the release at https://github.com/2kfi/SAPIE/releases/tag/0.1:
+Get a 0.2 archive from the [SAPIE 0.2 release](https://github.com/2kfi/SAPIE/releases/tag/0.2):
 
-- `SAPIE-0.1-linux-x64.tar.gz`
-- `SAPIE-0.1-linux-arm64.tar.gz`
-- `SAPIE-0.1-windows-x64.zip`
+- `SAPIE-0.2-linux-x64.tar.gz`
+- `SAPIE-0.2-linux-arm64.tar.gz`
+- `SAPIE-0.2-windows-x64.zip`
 
-These are the frozen 0.1 assets. There is no 0.2 archive yet; 0.2 is code-complete on `dev-client` but not tagged or released.
+The frozen 0.1 assets remain available at https://github.com/2kfi/SAPIE/releases/tag/0.1:
+`SAPIE-0.1-linux-x64.tar.gz`, `SAPIE-0.1-linux-arm64.tar.gz` and `SAPIE-0.1-windows-x64.zip`.
+0.1 is frozen at `62007f5`; G0 is deferred to the user.
 
 Unpack the archive for your operating system. It contains the launcher `sapie` (`sapie.exe` on
 Windows), the server `sapie-server` (`sapie-server.exe` on Windows), `steam_api/<target>-<era>/`

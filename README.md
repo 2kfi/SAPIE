@@ -2,7 +2,7 @@
 
 Old games, no Steam client, your own server. SAPIE is a non-commercial Steam API replacement for games you already own, for gamers by gamers.
 
-0.1 is published and frozen at tag `0.1` (`62007f5`); its assets and GHCR image are unchanged. 0.2 is code-complete locally but is not tagged or released, and G0 is deferred to the user.
+0.1 is published and frozen at tag `0.1` (`62007f5`); its assets and GHCR image are unchanged. 0.2 is tagged `0.2` and published at https://github.com/2kfi/SAPIE/releases/tag/0.2. G0 is deferred to the user.
 
 ## Get 0.1
 
@@ -12,9 +12,9 @@ Download one asset from the [SAPIE 0.1 release](https://github.com/2kfi/SAPIE/re
 - `SAPIE-0.1-linux-arm64.tar.gz`
 - `SAPIE-0.1-windows-x64.zip`
 
-Or pull the container: `ghcr.io/2kfi/sapie-server:0.1` or `ghcr.io/2kfi/sapie-server:latest`. Both tags currently point to the same digest.
+Or pull the container: `ghcr.io/2kfi/sapie-server:0.1` or `ghcr.io/2kfi/sapie-server:0.2`. `latest` tracks 0.2.
 
-Each archive contains the launcher `sapie` (`sapie.exe` on Windows), the server `sapie-server` (`sapie-server.exe`), `steam_api/<target>-<era>/` with all 10 DLL/SO variants, and `QUICKSTART.md` at the root. `samples/sapie_server.txt` and `samples/steam_appid.txt` are included. The Windows zip also has `steamless/` with its own NOTICE. There are no 0.2 release assets yet; 0.2 exists only on `dev-client`.
+Each archive contains the launcher `sapie` (`sapie.exe` on Windows), the server `sapie-server` (`sapie-server.exe`), `steam_api/<target>-<era>/` with all 10 DLL/SO variants, and `QUICKSTART.md` at the root. `samples/sapie_server.txt` and `samples/steam_appid.txt` are included. The Windows zip also has `steamless/` with its own NOTICE. The 0.2 assets are published at https://github.com/2kfi/SAPIE/releases/tag/0.2.
 
 ## Quick start
 
@@ -45,7 +45,7 @@ SAPIE_ADMIN_TOKEN=<your-token> docker compose up --build
 - Creates and joins lobbies visible to clients and the web UI.
 - Unlocks achievements once, keeps the first unlock time, and shows it to admins.
 
-## What 0.2 adds (local code, unreleased)
+## What 0.2 adds
 
 - A native Rust egui/eframe launcher (`sapie-launcher`): no webview, localhost dependency or terminal window.
 - A LAN browser web UI hosted by the server on 8081, with login and opt-in registration gated by `GET /api/v1/config`.
@@ -59,13 +59,13 @@ None of this is live-tested. See `dev_notes.md` and `docs/PROTOCOL.md` for limit
 
 Peer-to-peer play is not available in this version.
 
-This 0.1 line stays unchanged until the user accepts G0; P2P exists in 0.2 code but is not released.
+This 0.1 line stays unchanged until the user accepts G0; P2P ships in 0.2 but is not live-verified.
 
 Non-commercial, for gamers by gamers. CI is green across all targets and release assets were verified, but no live two-client C++↔Go session, no real-game run and no browser click-through has been done yet. Steamless is an unmodified Windows-only sidecar under its own NOTICE.
 
 ## Branches
 
-`dev-client` is the default and `main-client` is the release branch. 0.1 is tagged at `62007f5`; `dev-client` carries unreleased 0.2 code. G0 is deferred to the user.
+`dev-client` is the default and `main-client` is the release branch. 0.1 is tagged at `62007f5`; 0.2 is tagged `0.2` and published at https://github.com/2kfi/SAPIE/releases/tag/0.2. G0 is deferred to the user.
 
 ## Building / CI
 

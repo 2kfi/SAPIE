@@ -48,8 +48,8 @@ suite. Main risk: the real two-client path stays unproven until item 4 is run.
 ## Carry-forward into 0.2
 
 The 0.1 release at `62007f5` is published and frozen. Its UI text, including "Peer-to-peer play is
-not available in this version.", stays as shipped. 0.2 code adds the following locally, not tagged
-or released, with G0 deferred to the user:
+not available in this version.", stays as shipped. 0.2 adds the following in the tagged `0.2`
+release, with G0 deferred to the user:
 
 - Full online persona surface: a game sees a logged-in account, persona name and online state, friends
   list and invites, achievements and stats, and a ticket issuance check. These are the checks a
@@ -63,7 +63,7 @@ or released, with G0 deferred to the user:
 
 Item 4 above is the first gate: run a live two-client C++↔Go session and a real MW2 game with the
 replacement DLL before declaring the online surface or either P2P path done. It is PENDING USER TEST;
-0.2 code is complete locally and G0 is deferred to the user.
+0.2 is released and G0 is deferred to the user.
 
 ## 0.2 M6 server persona surface
 
@@ -84,10 +84,10 @@ any authenticated account may name any appid. Tickets are not one-time or bound 
 Item 4 (live two-client C++↔Go session and a real MW2 run) is unchanged and remains the gate
 before the online surface can be called done. None of these were verified against a real game.
 
-## 0.2 status (local code-complete, G0 deferred)
+## 0.2 status (tagged and released, G0 deferred)
 
-0.2 is code-complete on `dev-client` but is not tagged or released. 0.1 stays published and
-frozen at `62007f5`, with its assets and GHCR image unchanged.
+0.2 is tagged `0.2` and published at https://github.com/2kfi/SAPIE/releases/tag/0.2. 0.1 stays
+published and frozen at `62007f5`, with its assets and GHCR image unchanged.
 
 Shipped in code, with local verification only:
 

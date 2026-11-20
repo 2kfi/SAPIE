@@ -158,8 +158,10 @@ https://github.com/2kfi/SAPIE/releases/tag/0.1 with the assets
 `SAPIE-0.1-linux-x64.tar.gz`, `SAPIE-0.1-linux-arm64.tar.gz` and `SAPIE-0.1-windows-x64.zip`.
 Its assets and GHCR image are unchanged. Container tags are
 `ghcr.io/2kfi/sapie-server:<tag>` and `ghcr.io/2kfi/sapie-server:latest`
-(for 0.1, `ghcr.io/2kfi/sapie-server:0.1`). 0.2 is code-complete locally but is not tagged
-or released; G0 is deferred to the user.
+(for 0.1, `ghcr.io/2kfi/sapie-server:0.1`). 0.2 is tagged `0.2` and published at
+https://github.com/2kfi/SAPIE/releases/tag/0.2, with images
+`ghcr.io/2kfi/sapie-server:0.2` and `ghcr.io/2kfi/sapie-server:latest`. 0.1 remains frozen at
+`62007f5`; G0 is deferred to the user.
 
 Caveat: in this new repository, push-triggered runs never fired. Use manual dispatch
 (`workflow_dispatch --ref <tag>`) to run the workflow.

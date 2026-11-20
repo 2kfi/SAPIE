@@ -4,7 +4,7 @@
 
 Run old Steam games without Steam. A Go server acts like Steam (accounts, presence, lobbies, achievements, stats). A forked Goldberg emulator DLL runs inside the game, emulates the Steam API, and forwards calls to the server. The launcher is a native Rust egui/eframe app; the Go server also hosts a React browser web UI for LAN use.
 
-V1 scope: identity → friends/presence/invites → lobbies/matchmaking → achievements/stats. 0.1 shipped with no P2P game traffic of any kind. **No P2P game-traffic relay in v1** is SUPERSEDED for 0.2: 0.2 code adds direct client-to-client P2P first, with a relay fallback for NAT-blocked peers. 0.2 is code-complete locally but not tagged or released; G0 is deferred to the user. No DRM checks — cracked games are not our problem.
+V1 scope: identity → friends/presence/invites → lobbies/matchmaking → achievements/stats. 0.1 shipped with no P2P game traffic of any kind. **No P2P game-traffic relay in v1** is SUPERSEDED for 0.2: 0.2 code adds direct client-to-client P2P first, with a relay fallback for NAT-blocked peers. 0.2 is tagged `0.2` and published at https://github.com/2kfi/SAPIE/releases/tag/0.2; G0 is deferred to the user. No DRM checks — cracked games are not our problem.
 
 ## 2. Fixed decisions
 
@@ -174,7 +174,7 @@ Risk tiers: green (docs/CI/UI polish), yellow (auth-adjacent, transports, UI beh
 
 0.1 is published and frozen. The table above is 0.1 history; 0.2 work starts below.
 
-### 0.2 milestones (code-complete locally, not tagged or released)
+### 0.2 milestones (tagged `0.2` and released, G0 deferred)
 
 | # | Scope | Status / local verification |
 | --- | --- | --- |
@@ -189,14 +189,14 @@ Risk tiers: green (docs/CI/UI polish), yellow (auth-adjacent, transports, UI beh
 | M10b | Client direct UDP P2P via `sendToPeer()` when a hint exists | Code-complete; client modern+legacy builds and `sapie_login_smoke` pass locally. |
 | M11a | Server DATA relay to explicit `dest_id` only (friend/lobby gate, no broadcast) | Code-complete; `go test ./...` and harness pass locally. |
 | M11b | Client relay fallback when no hint or no inbound DATA within 5s | Code-complete; client modern+legacy builds and `sapie_login_smoke` pass locally. |
-| M-INT | CI web build and `web-dist` artifact, release bundles with `web/dist`, this docs refresh | Code-complete locally; see `docs/BUILD.md`. 0.2 is not tagged or released. |
+| M-INT | CI web build and `web-dist` artifact, release bundles with `web/dist`, this docs refresh | Code-complete locally; see `docs/BUILD.md`. 0.2 is tagged `0.2` and released. |
 
-Every row above is local code-complete only. All G0 and live-game items are PENDING USER TEST: no live two-client C++↔Go session, no real MW2 2009 run, no browser click-through, no cross-compiled Windows execution, no real NAT test. G0 itself is deferred to the user.
+Every row above shipped in the tagged `0.2` release with local verification only. All G0 and live-game items are PENDING USER TEST: no live two-client C++↔Go session, no real MW2 2009 run, no browser click-through, no cross-compiled Windows execution, no real NAT test. G0 itself is deferred to the user.
 
 ## 11. Risks / deferred
 
 - Deferred: UGC/inventory/overlay/controller, Windows ARM64 client, 32-bit ARM.
-- 0.2 code-complete locally: direct client-to-client P2P with relay fallback for NAT-blocked peers. 0.1 shipped without P2P; the relay is no longer deferred. 0.2 is not tagged or released and G0 is deferred to the user.
+- 0.2 shipped in the tagged `0.2` release: direct client-to-client P2P with relay fallback for NAT-blocked peers. 0.1 shipped without P2P; the relay is no longer deferred. G0 is deferred to the user.
 - The three small 0.1 limits carried into 0.2 (mutable mirror refs, `StatsGet.names` handling, hidden achievements in unlock pushes) are closed in code. The missing live two-client/real-game run is unchanged and is the hard gate; these milestones cannot be called done without it.
 - Unverified: protobuf 36 compatibility with older Goldberg headers; `mingw-w64-protobuf` i686 coverage; native egui launcher on cross-compiled Windows binaries; ARM64 on real hardware; browser click-through; screen-reader and keyboard audit; real NAT traversal.
 - Direct reliable DATA is best-effort over UDP. The 5s relay window is measured from connection creation, so a slow handshake may pick the relay. There is no relay rate limit beyond existing per-session handling.

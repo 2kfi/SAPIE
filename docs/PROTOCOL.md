@@ -4,8 +4,9 @@ The game client talks to `cmd/sapie-server` over TCP (default `:47584`, `--liste
 binary protobuf protocol, not HTTP; a browser pointed at that port shows a connection reset,
 which is expected. Optional TLS is enabled by passing both `--tls-cert` and `--tls-key`.
 
-0.1 is published and frozen. 0.2 adds P2P signaling, direct DATA and relay fallback in code;
-0.2 is not tagged or released and G0 is deferred to the user.
+0.1 is published and frozen at `62007f5`. 0.2 adds P2P signaling, direct DATA and relay fallback.
+It is tagged `0.2` and published at https://github.com/2kfi/SAPIE/releases/tag/0.2. G0 is deferred
+to the user.
 
 ## Framing
 
@@ -129,7 +130,7 @@ issued those bytes to that SteamID for that appid; it is not a Steam entitlement
 check. A real ownership gate would need a new table and a game-client check,
 neither of which is part of this wire contract.
 
-## P2P traffic (0.2 code, unreleased)
+## P2P traffic (0.2)
 
 Game traffic uses `Common_Message` with `Networking_Sockets` or
 `Networking_Messages` payloads. Two paths exist, and the client picks exactly
@@ -156,8 +157,8 @@ has been run.
 
 Tickets can be checked for issuance by an admin but are not redeemed or
 consumed, and no Steam ownership check exists. Tickets are not one-time nor
-bound to a peer. P2P game traffic (direct and relay) exists in 0.2 code but is
-unreleased; the 0.1 P2P notice stays until G0 acceptance.
+bound to a peer. P2P game traffic (direct and relay) ships in 0.2; the 0.1 P2P notice stays
+until G0 acceptance.
 
 Known 0.1 limit, closed in 0.2 code:
 
