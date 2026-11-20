@@ -4,7 +4,7 @@ SAPIE runs old Steam games without Steam: a Go server emulates Steam's account,
 friend, lobby and stats services; a forked Goldberg emulator DLL forwards Steam
 API calls to it; a Tauri launcher and the server's web UI share one React app.
 
-Plan: see `plan.md`. Developer rules: see `note.md`.
+Plan: see `plan.md`. Developer rules: see `note.md`. Releases: `docs/QUICKSTART.md`.
 
 ## Status
 
