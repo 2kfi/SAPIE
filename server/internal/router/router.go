@@ -40,10 +40,6 @@ func (r *Router) Route(from uint64, msg *protocol.Common_Message) {
 	if msg == nil {
 		return
 	}
-	if isP2PData(msg) {
-		log.Printf("route from=%d: p2p DATA payload dropped (server relay is M11)", from)
-		return
-	}
 	msg.SourceId = from
 	for _, to := range r.recipients(from, msg) {
 		if to == from {
@@ -129,16 +125,6 @@ func isP2P(msg *protocol.Common_Message) bool {
 	switch msg.Messages.(type) {
 	case *protocol.Common_Message_NetworkingSockets, *protocol.Common_Message_NetworkingMessages:
 		return true
-	}
-	return false
-}
-
-func isP2PData(msg *protocol.Common_Message) bool {
-	switch m := msg.Messages.(type) {
-	case *protocol.Common_Message_NetworkingSockets:
-		return m.NetworkingSockets.GetType() == protocol.Networking_Sockets_DATA
-	case *protocol.Common_Message_NetworkingMessages:
-		return m.NetworkingMessages.GetType() == protocol.Networking_Messages_DATA
 	}
 	return false
 }

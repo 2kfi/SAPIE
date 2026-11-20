@@ -171,26 +171,79 @@ func TestRouteP2PUnauthorizedLoggedOnce(t *testing.T) {
 	}
 }
 
-func TestRouteP2PDataNotRelayed(t *testing.T) {
-	peer := &fakePeer{}
-	r := NewWithResolver(fakeLookup{2: peer}, p2pResolver())
+func TestRouteP2PDataRelayedToDestOnly(t *testing.T) {
+	dest, lobbyMate, stranger := &fakePeer{}, &fakePeer{}, &fakePeer{}
+	r := NewWithResolver(fakeLookup{2: dest, 3: lobbyMate, 4: stranger}, p2pResolver())
 
-	out := captureLogs(t, func() {
-		r.Route(1, socketMsg(2, protocol.Networking_Sockets_DATA))
-		r.Route(1, messagesMsg(2, protocol.Networking_Messages_DATA))
-	})
-	if len(peer.frames) != 0 {
-		t.Fatalf("DATA payloads relayed: %d frames", len(peer.frames))
+	r.Route(1, socketMsg(2, protocol.Networking_Sockets_DATA))
+	r.Route(1, messagesMsg(2, protocol.Networking_Messages_DATA))
+	if len(dest.frames) != 2 {
+		t.Fatalf("DATA to dest relayed = %d, want 2", len(dest.frames))
 	}
-	if n := strings.Count(out, "p2p DATA payload dropped"); n != 2 {
-		t.Fatalf("DATA drop log count = %d, want 2: %q", n, out)
+	if len(lobbyMate.frames) != 0 || len(stranger.frames) != 0 {
+		t.Fatalf("DATA broadcast: lobby mate=%d stranger=%d, want 0/0",
+			len(lobbyMate.frames), len(stranger.frames))
+	}
+	for _, frame := range dest.frames {
+		if got := delivered(t, frame).GetSourceId(); got != 1 {
+			t.Fatalf("relayed source_id = %d, want 1", got)
+		}
 	}
 
-	// Direct P2P signaling (non-DATA) must still pass through the server.
+	// Direct P2P signaling (non-DATA) still passes through the server.
 	r.Route(1, socketMsg(2, protocol.Networking_Sockets_CONNECTION_ACCEPTED))
 	r.Route(1, messagesMsg(2, protocol.Networking_Messages_CONNECTION_NEW))
-	if len(peer.frames) != 2 {
-		t.Fatalf("signaling delivered = %d, want 2", len(peer.frames))
+	if len(dest.frames) != 4 || len(lobbyMate.frames) != 0 {
+		t.Fatalf("signaling relayed = %d, broadcast = %d, want 4/0",
+			len(dest.frames), len(lobbyMate.frames))
+	}
+}
+
+func TestRouteP2PDataNoDestNotBroadcast(t *testing.T) {
+	friend, lobbyMate := &fakePeer{}, &fakePeer{}
+	r := NewWithResolver(fakeLookup{2: friend, 3: lobbyMate}, p2pResolver())
+
+	r.Route(1, socketMsg(0, protocol.Networking_Sockets_DATA))
+	r.Route(1, messagesMsg(0, protocol.Networking_Messages_DATA))
+	if len(friend.frames) != 0 || len(lobbyMate.frames) != 0 {
+		t.Fatalf("untargeted DATA broadcast: friend=%d lobby mate=%d, want 0/0",
+			len(friend.frames), len(lobbyMate.frames))
+	}
+}
+
+func TestRouteP2PDataUnauthorizedDropped(t *testing.T) {
+	stranger := &fakePeer{}
+	r := NewWithResolver(fakeLookup{4: stranger}, p2pResolver())
+
+	out := captureLogs(t, func() {
+		r.Route(1, socketMsg(4, protocol.Networking_Sockets_DATA))
+		r.Route(1, messagesMsg(4, protocol.Networking_Messages_DATA))
+	})
+	if len(stranger.frames) != 0 {
+		t.Fatalf("unauthorized DATA relayed: %d frames", len(stranger.frames))
+	}
+	if n := strings.Count(out, "route p2p from=1 to=4 dropped"); n != 2 {
+		t.Fatalf("drop log count = %d, want 2: %q", n, out)
+	}
+}
+
+func TestRouteP2PDataToSelfDropped(t *testing.T) {
+	self := &fakePeer{}
+	r := NewWithResolver(fakeLookup{1: self}, p2pResolver())
+	r.Route(1, socketMsg(1, protocol.Networking_Sockets_DATA))
+	r.Route(1, messagesMsg(1, protocol.Networking_Messages_DATA))
+	if len(self.frames) != 0 {
+		t.Fatalf("self DATA relayed: %d frames", len(self.frames))
+	}
+}
+
+func TestRouteP2PDataOfflineDestLogged(t *testing.T) {
+	r := NewWithResolver(fakeLookup{}, p2pResolver()) // dest 2 authorized but not live
+	out := captureLogs(t, func() {
+		r.Route(1, socketMsg(2, protocol.Networking_Sockets_DATA))
+	})
+	if n := strings.Count(out, "route to=2 offline, dropped"); n != 1 {
+		t.Fatalf("offline log count = %d, want 1: %q", n, out)
 	}
 }
 
