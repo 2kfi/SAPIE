@@ -36,6 +36,37 @@ a zero length is invalid. A truncated header or body closes the connection.
 `BANNED`, `SERVER_FULL` and `VERSION_MISMATCH` statuses exist in the contract but
 are never emitted.
 
+### Game-side credential handoff (M16-a, not implemented in this tree)
+
+The launcher sets `SAPIE_USERNAME` and `SAPIE_SESSION_TOKEN` in the game's environment. The DLL
+still reads `SAPIE_USERNAME` and `SAPIE_PASSWORD`, so a launcher launched game cannot authenticate
+against this server. The game socket verifies only a password in `LoginRequest`; it has no field
+for a session token and no lookup of a presented token. The launcher also writes no token file.
+This handoff is therefore blocked on a server change and a launcher change, both outside the M16
+DLL worktree. No token file reader, proto field or server path is implemented here.
+
+The proposed format, recorded here so the server and launcher lanes can work against one contract,
+is:
+
+- Path: `steam_settings/sapie_client.json` under the game directory, then `sapie_client.json` in the
+  game directory. These are the same two locations used for `sapie_server.txt`.
+- Content: one JSON object with a single key, `session_token`, holding the raw 43 character
+  base64url token returned by `POST /api/v1/login`. No password, username, appid or other field.
+- Mode: `0600` on Unix. On Windows the writer must create a private user file with no inherited
+  world-readable ACL, since POSIX mode bits do not apply.
+- Lifetime: one launch only. The DLL reads the file once at startup, keeps the token in process
+  memory for reconnects, and deletes the file immediately after a successful read. A file whose
+  modification time is more than 10 minutes old is ignored and deleted. Server side expiry or
+  revocation still wins.
+- Fallback: only when the token file is absent, read `SAPIE_USERNAME` and `SAPIE_PASSWORD` from the
+  environment. The values are visible to other processes under the same OS account and in `/proc`
+  on Linux, so this path is compatibility only. `SAPIE_SESSION_TOKEN` alone is not a credential
+  for this server. Neither the token nor either credential is ever logged; only the chosen source
+  is named.
+- Server side: add `string session_token = 5` to `LoginRequest`, look up an unexpired session by
+  `auth.HashToken(token)`, and derive identity from that session. The existing `source_id` stamping
+  in `router.Route` remains authoritative and is unchanged.
+
 ## Identity rule
 
 `Common_Message.source_id` is **always overwritten** by the server with the
