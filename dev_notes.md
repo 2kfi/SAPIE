@@ -37,7 +37,7 @@ This is the first 0.2 gate: a live two-client C++↔Go session and a real MW2 ru
 the online surface or either P2P path can be called done.
 
 Items 1–3 are small, understood limitations. Item 4 is the honest confidence gap: "nothing blocks
-the merge" is not the same as "proven on a real machine." Mains were merged from dev for the 0.1
+the merge" is not the same as "proven on a real machine." Main was merged from dev for the 0.1
 release; see the release tag for the exact commit.
 
 ### Verification caveat
@@ -86,7 +86,7 @@ before the online surface can be called done. None of these were verified agains
 
 ## 0.2 status (local code-complete, G0 deferred)
 
-0.2 is code-complete on the dev branches but is not tagged or released. 0.1 stays published and
+0.2 is code-complete on `dev-client` but is not tagged or released. 0.1 stays published and
 frozen at `62007f5`, with its assets and GHCR image unchanged.
 
 Shipped in code, with local verification only:

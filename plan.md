@@ -12,8 +12,8 @@ V1 scope: identity → friends/presence/invites → lobbies/matchmaking → achi
 | --- | --- |
 | Name | Steam API Emulator (SAPIE) |
 | License | Goldberg fork stays LGPLv3; notices preserved, modifications published |
-| Branches | `dev-client` (default), `dev-server`, `main-client`, `main-server`; identical tree on all four |
-| Integration trunk | `dev-client`. Sync `dev-client → dev-server`; release PRs `dev-client → main-client`, `dev-server → main-server` |
+| Branches | `dev-client` (default), `main-client`; identical tree on both |
+| Integration trunk | `dev-client`; release PRs `dev-client → main-client` |
 | Client base | Goldberg emulator fork |
 | Server | Go + SQLite (`modernc.org/sqlite`, pure Go → no cgo) |
 | Login | username + password, argon2id server-side, server-assigned SteamID |
@@ -159,9 +159,7 @@ Chief = coordinating thread; workers = `general` subagents with isolated worktre
 
 Assignments: W0-a bootstrap → W0-b wire contract → W0-c client matrix, W0-d Go skeleton, W0-e UI/Tauri (parallel). Then W1 identity, W2 friends, W3 lobbies, W4 stats, W5 hardening.
 
-Risk tiers: green (docs/CI/UI polish), yellow (auth-adjacent, transports, UI behavior), red (proto/schema, auth/session tokens, stats schema). Chief auto-merges green/yellow into dev branches; red and all `main-*` PRs require user approval of the current head. Review chain: `code-review-and-quality`, `ponytail-review`, `security-audit` for auth/proto, `accessibility` + `webapp-testing` for UI, `replica-test` for flows.
-
-Sync `dev-client → dev-server` after every integration batch to prevent proto drift.
+Risk tiers: green (docs/CI/UI polish), yellow (auth-adjacent, transports, UI behavior), red (proto/schema, auth/session tokens, stats schema). Chief auto-merges green/yellow into `dev-client`; red and `main-client` PRs require user approval of the current head. Review chain: `code-review-and-quality`, `ponytail-review`, `security-audit` for auth/proto, `accessibility` + `webapp-testing` for UI, `replica-test` for flows.
 
 ## 10. Milestones
 

@@ -14,7 +14,7 @@ Get a 0.1 archive from the release at https://github.com/2kfi/SAPIE/releases/tag
 - `SAPIE-0.1-linux-arm64.tar.gz`
 - `SAPIE-0.1-windows-x64.zip`
 
-These are the frozen 0.1 assets. There is no 0.2 archive yet; 0.2 is code-complete on the dev branches but not tagged or released.
+These are the frozen 0.1 assets. There is no 0.2 archive yet; 0.2 is code-complete on `dev-client` but not tagged or released.
 
 Unpack the archive for your operating system. It contains the launcher `sapie` (`sapie.exe` on
 Windows), the server `sapie-server` (`sapie-server.exe` on Windows), `steam_api/<target>-<era>/`

@@ -14,7 +14,7 @@ Download one asset from the [SAPIE 0.1 release](https://github.com/2kfi/SAPIE/re
 
 Or pull the container: `ghcr.io/2kfi/sapie-server:0.1` or `ghcr.io/2kfi/sapie-server:latest`. Both tags currently point to the same digest.
 
-Each archive contains the launcher `sapie` (`sapie.exe` on Windows), the server `sapie-server` (`sapie-server.exe`), `steam_api/<target>-<era>/` with all 10 DLL/SO variants, and `QUICKSTART.md` at the root. `samples/sapie_server.txt` and `samples/steam_appid.txt` are included. The Windows zip also has `steamless/` with its own NOTICE. There are no 0.2 release assets yet; 0.2 exists only in the dev branches.
+Each archive contains the launcher `sapie` (`sapie.exe` on Windows), the server `sapie-server` (`sapie-server.exe`), `steam_api/<target>-<era>/` with all 10 DLL/SO variants, and `QUICKSTART.md` at the root. `samples/sapie_server.txt` and `samples/steam_appid.txt` are included. The Windows zip also has `steamless/` with its own NOTICE. There are no 0.2 release assets yet; 0.2 exists only on `dev-client`.
 
 ## Quick start
 
@@ -65,7 +65,7 @@ Non-commercial, for gamers by gamers. CI is green across all targets and release
 
 ## Branches
 
-`dev-client` is the default; `dev-server`, `main-client` and `main-server` are the others. 0.1 is tagged at `62007f5`; the dev branches carry unreleased 0.2 code. G0 is deferred to the user.
+`dev-client` is the default and `main-client` is the release branch. 0.1 is tagged at `62007f5`; `dev-client` carries unreleased 0.2 code. G0 is deferred to the user.
 
 ## Building / CI
 
