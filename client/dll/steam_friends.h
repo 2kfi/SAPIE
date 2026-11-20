@@ -279,7 +279,7 @@ EPersonaState GetFriendPersonaState( CSteamID steamIDFriend )
         state = k_EPersonaStateOnline;
     }
     int pushed = sapie::local_mirror().persona_state(steamIDFriend.ConvertToUint64());
-    if (pushed) state = (EPersonaState)pushed;
+    if (pushed >= 0) state = (EPersonaState)pushed;
 
     //works because all of those who could be in a lobby are our friends
     return state;
@@ -1111,26 +1111,27 @@ void Callback(Common_Message *msg)
     }
 
     if (msg->has_friend_()) {
-        PRINT_DEBUG("Steam_Friends Friend %llu %llu\n", msg->friend_().id(), msg->friend_().lobby_id());
-        Friend *f = find_friend((uint64)msg->friend_().id());
+        Friend incoming = sapie::local_mirror().without_meta(msg->friend_());
+        PRINT_DEBUG("Steam_Friends Friend %llu %llu\n", incoming.id(), incoming.lobby_id());
+        Friend *f = find_friend((uint64)incoming.id());
         if (!f) {
-            if (msg->friend_().id() != settings->get_local_steam_id().ConvertToUint64()) {
-                friends.push_back(msg->friend_());
-                overlay->FriendConnect(msg->friend_());
-                persona_change((uint64)msg->friend_().id(), k_EPersonaChangeName);
+            if (incoming.id() != settings->get_local_steam_id().ConvertToUint64()) {
+                friends.push_back(incoming);
+                overlay->FriendConnect(incoming);
+                persona_change((uint64)incoming.id(), k_EPersonaChangeName);
             }
         } else {
             std::map<std::string, std::string> map1(f->rich_presence().begin(), f->rich_presence().end());
-            std::map<std::string, std::string> map2(msg->friend_().rich_presence().begin(), msg->friend_().rich_presence().end());
+            std::map<std::string, std::string> map2(incoming.rich_presence().begin(), incoming.rich_presence().end());
 
             if (map1 != map2) {
                 //The App ID of the game. This should always be the current game.
                 if (isAppIdCompatible(f)) {
-                    rich_presence_updated((uint64)msg->friend_().id(), (uint64)msg->friend_().appid());
+                    rich_presence_updated((uint64)incoming.id(), (uint64)incoming.appid());
                 }
             }
             //TODO: callbacks?
-            *f = msg->friend_();
+            *f = incoming;
         }
     }
 

@@ -22,6 +22,7 @@
 
 static const uint64_t kFixedSteamID = 76561197960265728ULL + 4242;
 static const uint64_t kMirrorFriendID = kFixedSteamID + 1;
+static const uint64_t kMirrorJoiningID = kMirrorFriendID + 100;
 static const uint32_t kMirrorAppID = 480;
 static const char kMirrorAchievement[] = "MIRROR_ACH";
 static const int64_t kMirrorUnlockTime = 1700000000LL;
@@ -184,7 +185,8 @@ struct StubServer {
                 friend_msg->set_name("MirrorBuddy");
                 friend_msg->set_appid(kMirrorAppID);
                 friend_msg->set_lobby_id(mirror_lobby_id());
-                (*friend_msg->mutable_rich_presence())["persona_state"] = "1";
+                (*friend_msg->mutable_rich_presence())["persona_state"] = "0";
+                (*friend_msg->mutable_rich_presence())["connect_str"] = "127.0.0.1:27015";
                 (*friend_msg->mutable_rich_presence())["map"] = "de_dust";
                 if (!write_frame(fd, friend_push)) {
                     close(fd);
@@ -215,7 +217,9 @@ struct StubServer {
 
             if (mirror) {
                 sapie::Frame unlock_push;
-                AchievementUnlock *unlock = unlock_push.mutable_achievement_unlock();
+                Common_Message *unlock_steam = unlock_push.mutable_steam();
+                unlock_steam->set_source_id(kMirrorFriendID);
+                AchievementUnlock *unlock = unlock_steam->mutable_achievement_unlock();
                 unlock->set_steam_id(kMirrorFriendID);
                 unlock->set_appid(kMirrorAppID);
                 unlock->set_unlock_time(kMirrorUnlockTime);
@@ -228,6 +232,7 @@ struct StubServer {
                 }
             }
 
+            bool lobby_join_pushed = false;
             while (!stop) {
                 if (!wait_readable(fd, 50)) continue;
                 sapie::Frame inbound;
@@ -252,6 +257,50 @@ struct StubServer {
                     achievement->set_unlock_time((uint32_t)kMirrorUnlockTime);
                     achievement->set_unlock_time_unix(kMirrorUnlockTime);
                     if (!write_frame(fd, response)) break;
+
+                    if (mirror && !lobby_join_pushed) {
+                        lobby_join_pushed = true;
+                        sapie::Frame join_push;
+                        Common_Message *join_steam = join_push.mutable_steam();
+                        join_steam->set_source_id(kMirrorFriendID);
+                        Lobby *joined_lobby = join_steam->mutable_lobby();
+                        joined_lobby->set_room_id(mirror_lobby_id());
+                        joined_lobby->set_owner(kMirrorFriendID);
+                        joined_lobby->set_appid(kMirrorAppID);
+                        joined_lobby->set_member_limit(4);
+                        joined_lobby->set_type(k_ELobbyTypePublic);
+                        joined_lobby->set_joinable(true);
+                        (*joined_lobby->mutable_values())["name"] = "Mirror Lobby";
+                        Lobby_Member *captain = joined_lobby->add_members();
+                        captain->set_id(kMirrorFriendID);
+                        (*captain->mutable_values())["role"] = "captain";
+                        Lobby_Member *local = joined_lobby->add_members();
+                        local->set_id(kFixedSteamID);
+                        if (!write_frame(fd, join_push)) break;
+
+                        sapie::Frame owned_push;
+                        Common_Message *owned_steam = owned_push.mutable_steam();
+                        owned_steam->set_source_id(kFixedSteamID);
+                        Lobby *owned_lobby = owned_steam->mutable_lobby();
+                        owned_lobby->set_room_id(mirror_lobby_id());
+                        owned_lobby->set_owner(kFixedSteamID);
+                        owned_lobby->set_appid(kMirrorAppID);
+                        owned_lobby->set_member_limit(4);
+                        owned_lobby->set_type(k_ELobbyTypePublic);
+                        owned_lobby->set_joinable(true);
+                        (*owned_lobby->mutable_values())["name"] = "Mirror Lobby";
+                        Lobby_Member *self = owned_lobby->add_members();
+                        self->set_id(kFixedSteamID);
+                        if (!write_frame(fd, owned_push)) break;
+
+                        sapie::Frame member_join_push;
+                        Common_Message *member_steam = member_join_push.mutable_steam();
+                        member_steam->set_source_id(kMirrorJoiningID);
+                        Lobby_Messages *member_join = member_steam->mutable_lobby_messages();
+                        member_join->set_type(Lobby_Messages::JOIN);
+                        member_join->set_id(mirror_lobby_id());
+                        if (!write_frame(fd, member_join_push)) break;
+                    }
                 }
             }
             close(fd);
@@ -363,8 +412,8 @@ int main(int argc, char **argv)
                 printf("FAIL: pushed friend name was not mirrored\n");
                 return 1;
             }
-            if (friends->GetFriendPersonaState(buddy) != k_EPersonaStateOnline) {
-                printf("FAIL: pushed persona_state was not mirrored\n");
+            if (friends->GetFriendPersonaState(buddy) != k_EPersonaStateOffline) {
+                printf("FAIL: explicit offline persona_state was not mirrored\n");
                 return 1;
             }
             FriendGameInfo_t game_info = {};
@@ -413,6 +462,7 @@ int main(int argc, char **argv)
                 return 1;
             }
 
+            matchmaking->JoinLobby(lobby);
             stats->RequestUserStats(buddy);
             if (!stats->SetAchievement(kMirrorAchievement) || !stats->StoreStats()) {
                 printf("FAIL: achievement unlock or StoreStats was rejected\n");
@@ -436,12 +486,14 @@ int main(int argc, char **argv)
                 printf("FAIL: self peer-stat getter disagrees with local getter\n");
                 return 1;
             }
-            if (!server.got_achievement_unlock || !server.got_stats_set || !server.got_stats_get) {
-                printf("FAIL: server did not receive unlock/stats frames (unlock=%d set=%d get=%d)\n",
+            if (!server.got_achievement_unlock || !server.got_stats_get || server.got_stats_set) {
+                printf("FAIL: unexpected stats frames (unlock=%d set=%d get=%d)\n",
                        (int)server.got_achievement_unlock, (int)server.got_stats_set, (int)server.got_stats_get);
                 return 1;
             }
 
+            bool got_lobby_enter_cb = false;
+            bool got_member_join_cb = false;
             bool got_achievement_cb = false;
             bool got_stats_stored_cb = false;
             bool got_stats_received_cb = false;
@@ -449,7 +501,22 @@ int main(int argc, char **argv)
             for (;;) {
                 CallbackMsg_t msg = {};
                 if (!SteamAPI_ManualDispatch_GetNextCallback(pipe, &msg)) break;
-                if (msg.m_iCallback == UserAchievementStored_t::k_iCallback
+                if (msg.m_iCallback == LobbyEnter_t::k_iCallback
+                    && msg.m_pubParam && msg.m_cubParam >= (int)sizeof(LobbyEnter_t)) {
+                    auto *enter = reinterpret_cast<LobbyEnter_t *>(msg.m_pubParam);
+                    if (enter->m_ulSteamIDLobby == mirror_lobby_id()
+                        && enter->m_EChatRoomEnterResponse == k_EChatRoomEnterResponseSuccess) {
+                        got_lobby_enter_cb = true;
+                    }
+                } else if (msg.m_iCallback == LobbyChatUpdate_t::k_iCallback
+                    && msg.m_pubParam && msg.m_cubParam >= (int)sizeof(LobbyChatUpdate_t)) {
+                    auto *update = reinterpret_cast<LobbyChatUpdate_t *>(msg.m_pubParam);
+                    if (update->m_ulSteamIDLobby == mirror_lobby_id()
+                        && update->m_ulSteamIDUserChanged == kMirrorJoiningID
+                        && (update->m_rgfChatMemberStateChange & k_EChatMemberStateChangeEntered)) {
+                        got_member_join_cb = true;
+                    }
+                } else if (msg.m_iCallback == UserAchievementStored_t::k_iCallback
                     && msg.m_pubParam && msg.m_cubParam >= (int)sizeof(UserAchievementStored_t)) {
                     auto *stored = reinterpret_cast<UserAchievementStored_t *>(msg.m_pubParam);
                     if (std::string(stored->m_rgchAchievementName) == kMirrorAchievement) got_achievement_cb = true;
@@ -460,9 +527,28 @@ int main(int argc, char **argv)
                 }
                 SteamAPI_ManualDispatch_FreeLastCallback(pipe);
             }
-            if (!got_achievement_cb || !got_stats_stored_cb || !got_stats_received_cb) {
-                printf("FAIL: missing Steam callbacks (achievement=%d stored=%d received=%d)\n",
-                       (int)got_achievement_cb, (int)got_stats_stored_cb, (int)got_stats_received_cb);
+            if (!got_lobby_enter_cb || !got_member_join_cb || !got_achievement_cb
+                || !got_stats_stored_cb || !got_stats_received_cb) {
+                printf("FAIL: missing Steam callbacks (lobby_enter=%d member_join=%d achievement=%d stored=%d received=%d)\n",
+                       (int)got_lobby_enter_cb, (int)got_member_join_cb, (int)got_achievement_cb,
+                       (int)got_stats_stored_cb, (int)got_stats_received_cb);
+                return 1;
+            }
+
+            bool has_map_key = false;
+            int key_count = friends->GetFriendRichPresenceKeyCount(buddy);
+            for (int i = 0; i < key_count; ++i) {
+                const char *key = friends->GetFriendRichPresenceKeyByIndex(buddy, i);
+                if (!key) continue;
+                std::string name(key);
+                if (name == "persona_state" || name == "connect_str") {
+                    printf("FAIL: reserved rich presence key leaked: %s\n", key);
+                    return 1;
+                }
+                if (name == "map") has_map_key = true;
+            }
+            if (!has_map_key) {
+                printf("FAIL: pushed rich presence key 'map' missing\n");
                 return 1;
             }
 
