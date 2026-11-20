@@ -39,7 +39,7 @@ jobs:
           cmake -S client -B build/${{ matrix.target }}-${{ matrix.era }} -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/client/cmake/toolchains/${{ matrix.target }}.cmake" \
             -DSAPIE_INTERFACE_ERA=${{ matrix.era }} \
-            -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=out/${{ matrix.target }}-${{ matrix.era }} \
+            -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="$PWD/out/${{ matrix.target }}-${{ matrix.era }}" \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build/${{ matrix.target }}-${{ matrix.era }} --parallel
       - uses: actions/upload-artifact@v4
@@ -115,6 +115,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: release-artifacts
+          pattern: '{client,launcher,server}-*'
       - name: Build release bundles
         run: bash tools/release-bundle.sh "${{ github.ref_name }}" release-artifacts release-dist
       - name: Create GitHub release
