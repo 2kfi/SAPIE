@@ -56,7 +56,7 @@ public ISteamFriends
 
     Friend us;
     bool modified;
-    std::vector<Friend> &friends;
+    std::vector<Friend> friends;
 
     std::map<uint64, struct Avatar_Numbers> avatars;
     CSteamID lobby_id;
@@ -1061,6 +1061,7 @@ uint32 GetProfileItemPropertyUint( CSteamID steamID, ECommunityProfileItemType i
 void RunCallbacks()
 {
 	PRINT_DEBUG("Steam_Friends::RunCallbacks\n");
+    friends = sapie::local_mirror().friends();
     if (settings->get_lobby() != lobby_id) {
         lobby_id = settings->get_lobby();
         resend_friend_data();
@@ -1092,6 +1093,7 @@ void Callback(Common_Message *msg)
                 persona_change((uint64)f->id(), k_EPersonaChangeStatus);
                 overlay->FriendDisconnect(*f);
                 friends.erase(f);
+                sapie::local_mirror().erase_friend(id);
             }
         }
 

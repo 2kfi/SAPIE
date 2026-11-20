@@ -76,7 +76,7 @@ public ISteamMatchmaking
     class SteamCallBacks *callbacks;
     class RunEveryRunCB *run_every_runcb;
 
-    std::vector<Lobby> &lobbies;
+    std::vector<Lobby> lobbies;
     std::chrono::high_resolution_clock::time_point last_sent_lobbies;
     std::vector<struct Pending_Joins> pending_joins;
     std::vector<struct Pending_Creates> pending_creates;

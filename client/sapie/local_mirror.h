@@ -56,8 +56,17 @@ public:
         return copy;
     }
 
-    std::vector<Friend> &friends() { return friend_msgs; }
-    std::vector<Lobby> &lobbies() { return lobby_msgs; }
+    std::vector<Friend> friends() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex);
+        return friend_msgs;
+    }
+
+    std::vector<Lobby> lobbies() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex);
+        return lobby_msgs;
+    }
 
     void apply_login(const sapie::LoginResponse &response)
     {
