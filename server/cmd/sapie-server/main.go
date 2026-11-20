@@ -14,11 +14,15 @@ import (
 	"github.com/sapie/sapie/server/internal/auth"
 	"github.com/sapie/sapie/server/internal/session"
 	"github.com/sapie/sapie/server/internal/state"
+	"github.com/sapie/sapie/server/internal/ui"
 )
 
 func main() {
 	listen := flag.String("listen", ":47584", "TCP game-protocol listen address")
 	adminListen := flag.String("admin-listen", "127.0.0.1:8080", "admin HTTP listen address")
+	uiListen := flag.String("ui-listen", "0.0.0.0:8081", "web UI HTTP listen address")
+	uiDir := flag.String("ui-dir", "./web/dist", "built web UI directory")
+	allowRegister := flag.Bool("allow-register", false, "allow public account registration")
 	dbPath := flag.String("db", "sapie.db", "SQLite database path")
 	adminToken := flag.String("admin-token", "", "Bearer token for the admin API")
 	certFile := flag.String("tls-cert", "", "TLS certificate (requires --tls-key)")
@@ -61,16 +65,22 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	uiLn, err := net.Listen("tcp", *uiListen)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	limiter := auth.NewLimiter(nil)
 	sessions := session.New(store, limiter)
 	admin := api.New(store, token, limiter, sessions)
-	errs := make(chan error, 2)
+	admin.SetAllowRegister(*allowRegister)
+	errs := make(chan error, 3)
 	go func() { errs <- sessions.Serve(ctx, gameLn) }()
 	go func() { errs <- admin.Serve(ctx, adminLn) }()
-	log.Printf("sapie game protocol on %s, admin API on %s", gameLn.Addr(), adminLn.Addr())
+	go func() { errs <- ui.Serve(ctx, uiLn, *uiDir) }()
+	log.Printf("sapie game protocol on %s, admin API on %s, web UI on %s", gameLn.Addr(), adminLn.Addr(), uiLn.Addr())
 
 	select {
 	case err := <-errs:

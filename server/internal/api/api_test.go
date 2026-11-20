@@ -142,6 +142,72 @@ func TestAdminAPI(t *testing.T) {
 	}
 }
 
+func TestPublicConfigAndRegistration(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	srv := New(store, "admin-token", auth.NewLimiter(nil), nil)
+	handler := srv.Handler()
+
+	config := func() bool {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/config", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("config = %d: %s", rec.Code, rec.Body.String())
+		}
+		var body struct {
+			AllowRegister bool `json:"allow_register"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return body.AllowRegister
+	}
+	if config() {
+		t.Fatal("registration enabled by default")
+	}
+	body := `{"username":"racer","password":"pw"}`
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/register", strings.NewReader(body)))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("disabled register = %d: %s", rec.Code, rec.Body.String())
+	}
+	if accounts, err := store.ListAccounts(); err != nil || len(accounts) != 0 {
+		t.Fatalf("disabled register created accounts: %d (%v)", len(accounts), err)
+	}
+
+	srv.SetAllowRegister(true)
+	if !config() {
+		t.Fatal("config did not report enabled registration")
+	}
+	register := func(payload string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/register", strings.NewReader(payload)))
+		return rec
+	}
+	created := register(body)
+	if created.Code != http.StatusCreated || strings.Contains(strings.ToLower(created.Body.String()), "password") {
+		t.Fatalf("register = %d: %s", created.Code, created.Body.String())
+	}
+	var account state.Account
+	if err := json.Unmarshal(created.Body.Bytes(), &account); err != nil {
+		t.Fatal(err)
+	}
+	if account.Username != "racer" || account.PersonaName != "racer" {
+		t.Fatalf("unexpected account: %+v", account)
+	}
+	if dup := register(body); dup.Code != http.StatusConflict {
+		t.Fatalf("duplicate register = %d: %s", dup.Code, dup.Body.String())
+	}
+	login := httptest.NewRecorder()
+	handler.ServeHTTP(login, httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader(body)))
+	if login.Code != http.StatusOK || !strings.Contains(login.Body.String(), "session_token") {
+		t.Fatalf("login = %d: %s", login.Code, login.Body.String())
+	}
+}
+
 type fakeNotifier struct {
 	delivered map[uint64][]*protocol.Frame
 	online    map[uint64]bool

@@ -40,10 +40,11 @@ type Notifier interface {
 }
 
 type Server struct {
-	store    *state.Store
-	token    string
-	limiter  *auth.Limiter
-	notifier Notifier
+	store         *state.Store
+	token         string
+	limiter       *auth.Limiter
+	notifier      Notifier
+	allowRegister bool
 
 	mu   sync.Mutex
 	idem map[string]*idemCall
@@ -52,6 +53,8 @@ type Server struct {
 func New(store *state.Store, token string, limiter *auth.Limiter, notifier Notifier) *Server {
 	return &Server{store: store, token: token, limiter: limiter, notifier: notifier, idem: make(map[string]*idemCall)}
 }
+
+func (s *Server) SetAllowRegister(enabled bool) { s.allowRegister = enabled }
 
 func (s *Server) idemStart(key string) (*idemCall, bool) {
 	s.mu.Lock()
@@ -96,6 +99,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("GET /api/v1/config", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"allow_register": s.allowRegister})
+	})
+	mux.HandleFunc("POST /api/v1/register", s.register)
 	mux.HandleFunc("POST /api/v1/login", s.login)
 	mux.HandleFunc("GET /api/v1/friends", s.listFriends)
 	mux.HandleFunc("POST /api/v1/friends/{steam_id}/invite", s.inviteFriend)
@@ -167,6 +174,14 @@ func (s *Server) authorizeLobbies(w http.ResponseWriter, r *http.Request) (uint6
 		return 0, true
 	}
 	return s.authorizeUser(w, r)
+}
+
+func (s *Server) register(w http.ResponseWriter, r *http.Request) {
+	if !s.allowRegister {
+		http.Error(w, "registration is disabled", http.StatusForbidden)
+		return
+	}
+	s.createAccountNow(w, r)
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {

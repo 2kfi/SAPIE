@@ -2,10 +2,13 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
+	"io"
 	"log"
 	"net"
 	"sync"
@@ -109,7 +112,15 @@ func (s *Server) handle(conn net.Conn) {
 	defer session.stop()
 
 	conn.SetReadDeadline(time.Now().Add(loginTimeout))
-	frame, err := protocol.ReadFrame(conn)
+	var head [4]byte
+	if _, err := io.ReadFull(conn, head[:]); err != nil {
+		return
+	}
+	if looksLikeHTTP(head[:]) {
+		rejectHTTP(conn)
+		return
+	}
+	frame, err := protocol.ReadFrame(io.MultiReader(bytes.NewReader(head[:]), conn))
 	if err != nil {
 		return
 	}
@@ -413,6 +424,18 @@ func (s *Server) disconnect(session *Session) {
 		return // a newer session already pushed its own presence
 	}
 	s.pushPresence(session, false)
+}
+
+func looksLikeHTTP(head []byte) bool {
+	return bytes.HasPrefix(head, []byte("GET ")) || bytes.HasPrefix(head, []byte("POST")) || bytes.HasPrefix(head, []byte("HEAD"))
+}
+
+func rejectHTTP(conn net.Conn) {
+	body := "This port is SAPIE's binary game protocol, not HTTP. Open the web UI on port 8081 instead (see --ui-listen).\n"
+	fmt.Fprintf(conn, "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
+	// Draining the unread request avoids a TCP reset that would discard the reply.
+	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	io.Copy(io.Discard, conn)
 }
 
 func hostFromAddr(addr net.Addr) string {

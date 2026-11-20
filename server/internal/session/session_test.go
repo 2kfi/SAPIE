@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -152,6 +153,39 @@ func TestTicketRequest(t *testing.T) {
 			t.Fatal("repeated ticket bytes")
 		}
 		previous = ticket
+	}
+}
+
+func TestHTTPOnGamePortGetsExplanation(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go New(store, auth.NewLimiter(nil)).Serve(ctx, ln)
+
+	c, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if _, err := c.Write([]byte("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	reply, err := io.ReadAll(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(reply)
+	if !strings.Contains(text, "400 Bad Request") || !strings.Contains(text, "8081") {
+		t.Fatalf("bad HTTP refusal: %q", text)
 	}
 }
 
