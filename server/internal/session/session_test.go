@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"path/filepath"
@@ -871,6 +872,246 @@ func TestContentServerRequestGetsNeutralAck(t *testing.T) {
 	}
 	if !result.ContentServerResponse.GetOk() {
 		t.Fatal("content server response ok = false, want true")
+	}
+}
+
+func TestAccountLockoutAfterRepeatedBadPasswords(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.CreateAccount("alice", hash, "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := New(store, auth.NewLimiter(nil))
+	go srv.Serve(ctx, ln)
+
+	login := func(password string) *protocol.LoginResponse {
+		t.Helper()
+		c, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		req := &protocol.LoginRequest{Username: "alice", Password: password}
+		if err := protocol.WriteFrame(c, &protocol.Frame{Payload: &protocol.Frame_Login{Login: req}}); err != nil {
+			t.Fatal(err)
+		}
+		return readLoginResponse(t, c)
+	}
+
+	for i := 0; i < auth.MaxFailures; i++ {
+		if got := login("wrong").GetStatus(); got != protocol.LoginResponse_BAD_CREDENTIALS {
+			t.Fatalf("failure %d status = %v, want BAD_CREDENTIALS", i+1, got)
+		}
+	}
+	// Clear the IP counter so the next refusal can only come from the account lockout.
+	srv.limiter.Reset("127.0.0.1")
+	if err := srv.checkAccountLockout(id); !errors.Is(err, errLoginLocked) {
+		t.Fatalf("lockout error = %v, want %v", err, errLoginLocked)
+	}
+	if got := login("pw").GetStatus(); got != protocol.LoginResponse_BAD_CREDENTIALS {
+		t.Fatalf("locked correct-password login status = %v, want BAD_CREDENTIALS", got)
+	}
+}
+
+func TestTokenLoginWorksBelowAccountLockout(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.CreateAccount("alice", hash, "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSession(id, auth.HashToken("m16-handoff-token"), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := New(store, auth.NewLimiter(nil))
+	go srv.Serve(ctx, ln)
+
+	for i := 0; i < auth.MaxFailures-1; i++ {
+		srv.accountLocks.record(id)
+	}
+	c, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	req := &protocol.LoginRequest{
+		Username: "not-alice", Password: "wrong", SessionToken: "m16-handoff-token",
+	}
+	if err := protocol.WriteFrame(c, &protocol.Frame{Payload: &protocol.Frame_Login{Login: req}}); err != nil {
+		t.Fatal(err)
+	}
+	response := readLoginResponse(t, c)
+	if response.GetStatus() != protocol.LoginResponse_OK || response.GetSteamId() != id ||
+		len(response.GetSessionToken()) == 0 {
+		t.Fatalf("token login below lockout: %+v", response)
+	}
+}
+
+func TestWrongTokenRejectedByConstantTimeCompare(t *testing.T) {
+	const valid = "m16-valid-token-of-same-length"
+	wrong := valid[:len(valid)-1] + "X"
+	if !auth.Equal(valid, valid) || auth.Equal(valid, wrong) {
+		t.Fatal("constant-time token compare misbehaved")
+	}
+
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.CreateAccount("alice", hash, "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSession(id, auth.HashToken(valid), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go New(store, auth.NewLimiter(nil)).Serve(ctx, ln)
+
+	c, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	req := &protocol.LoginRequest{Username: "alice", SessionToken: wrong}
+	if err := protocol.WriteFrame(c, &protocol.Frame{Payload: &protocol.Frame_Login{Login: req}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readLoginResponse(t, c).GetStatus(); got != protocol.LoginResponse_BAD_CREDENTIALS {
+		t.Fatalf("wrong token status = %v, want BAD_CREDENTIALS", got)
+	}
+}
+
+func TestOversizedFrameOnGamePortRejected(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAccount("alice", hash, "Alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go New(store, auth.NewLimiter(nil)).Serve(ctx, ln)
+
+	c, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	head := make([]byte, 4)
+	binary.BigEndian.PutUint32(head, protocol.MaxFrameSize+1)
+	if _, err := c.Write(append(head, []byte("overflow")...)); err != nil {
+		t.Fatal(err)
+	}
+	c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := protocol.ReadFrame(c); err == nil {
+		t.Fatal("oversized frame was accepted")
+	}
+
+	// The rejected frame must not take down the listener.
+	c2, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	req := &protocol.LoginRequest{Username: "alice", Password: "pw"}
+	if err := protocol.WriteFrame(c2, &protocol.Frame{Payload: &protocol.Frame_Login{Login: req}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readLoginResponse(t, c2).GetStatus(); got != protocol.LoginResponse_OK {
+		t.Fatalf("login after oversized frame = %v, want OK", got)
+	}
+}
+
+func TestIdleAuthenticatedConnectionClosed(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAccount("alice", hash, "Alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := New(store, auth.NewLimiter(nil))
+	srv.idleTimeout = 150 * time.Millisecond
+	go srv.Serve(ctx, ln)
+
+	c, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	req := &protocol.LoginRequest{Username: "alice", Password: "pw"}
+	if err := protocol.WriteFrame(c, &protocol.Frame{Payload: &protocol.Frame_Login{Login: req}}); err != nil {
+		t.Fatal(err)
+	}
+	readLoginResponse(t, c)
+
+	c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := protocol.ReadFrame(c); err == nil {
+		t.Fatal("idle authenticated connection stayed open")
 	}
 }
 

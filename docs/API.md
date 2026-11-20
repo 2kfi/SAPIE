@@ -17,7 +17,8 @@ token, never the token itself. `GET /sessions` shows a 12-character digest
 prefix as the session ID, so the list cannot be used to recover a token.
 
 Missing or invalid credentials return `401` with `WWW-Authenticate: Bearer`.
-Revoked tokens fail immediately on the next request.
+Revoked tokens fail immediately on the next request. Admin tokens are compared in constant time;
+session tokens are stored and resolved by SHA-256 digest, so the raw token is never stored.
 
 ## Error codes
 
@@ -44,6 +45,15 @@ key and will run again.
 
 `sendFriendRequest`, `searchUsers` and `blockFriend` share a per-account limit
 of 30 calls per hour. The counter is in memory and resets on server restart.
+
+Game-socket logins have two failure limits: five failed attempts per source IP in one minute,
+shared with HTTP `POST /login`, and five failed attempts per account in one minute. Both counters
+are in memory and reset on server restart. A locked game login returns
+`LoginResponse{status: BAD_CREDENTIALS}` because the wire enum has no lockout status. The server
+log records the specific reason `login temporarily locked after repeated failures` with the IP or
+account ID, never credentials. HTTP `POST /login` uses the shared per-IP limit only and returns
+`401` while blocked. Game frames are capped at 1 MiB and JSON request bodies at 64 KiB; oversized
+input is rejected before handling.
 
 ## Public routes
 
