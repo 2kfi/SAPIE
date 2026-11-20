@@ -175,20 +175,24 @@ Operator guidance for when the UI is containerized:
 
 ## Residual risks and unverified items
 
-- No live two-client C++ to Go session and no real MW2 run has been performed. `docs/QUICKSTART.md`
-  and `docs/PROTOCOL.md` state this. P2P, NAT traversal and the relay path are therefore unverified
-  in game. Direct UDP is best effort and the relay has no dedicated rate limit.
+- A live two-client C++ to Go session is recorded in `docs/verification/0.4-two-client.md`. No real
+  MW2 run has been performed. P2P, NAT traversal and the relay path are therefore unverified in
+  game. Direct UDP is best effort and the relay has no dedicated rate limit. The two-client harness
+  still intermittently fails on a client-side local-mirror timing race; full passes are recorded,
+  but the harness is not deterministic.
 - The native Tauri window, real IPC and real keychain access were not exercised headless. Webview
   navigation and keyboard-only paths were not exercised either.
-- The login limiter and the social limiter are in memory and reset on server restart
-  (`server/internal/auth/limiter.go`, `server/internal/api/social.go`). There is no per-account
-  lockout.
+- The login limiter, social limiter and per-account game-login lockout are in memory and reset on
+  server restart (`server/internal/auth/limiter.go`, `server/internal/api/social.go`,
+  `server/internal/session/session.go`). Locked game logins return `BAD_CREDENTIALS` because the
+  wire enum has no lockout status.
 - Blocked peers remain in lobby membership. `router.lobbyRecipients` returns all lobby members
   without a block filter, so a blocked peer can still receive lobby frames.
 - A session token remains replayable for up to 24 hours after it leaks. There is no token rotation
   and no revoke-on-password-change path in this tree.
 - The admin token is written to the server log once at first start. Treat first-run logs as
   sensitive.
+
 ## Dependency audits
 
 CI runs all three audits in the `dependency-audits` job of `.github/workflows/ci.yml`. Dependabot
