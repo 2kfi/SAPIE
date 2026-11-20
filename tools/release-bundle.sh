@@ -49,6 +49,13 @@ server_win="$(server_path server-windows-amd64)"
 server_x64="$(server_path server-linux-amd64)"
 server_arm64="$(server_path server-linux-arm64)"
 
+web_dist="$artifacts/web-dist"
+require_dir "$web_dist"
+if [[ -z "$(ls -A "$web_dist")" ]]; then
+  echo "error: web artifact directory is empty: $web_dist" >&2
+  exit 1
+fi
+
 for doc in docs/QUICKSTART.md docs/samples/sapie_server.txt docs/samples/steam_appid.txt; do
   require_file "$REPO_ROOT/$doc"
 done
@@ -64,7 +71,7 @@ bundle() {
   local launcher_name server_name dest
 
   rm -rf "$stage"
-  mkdir -p "$stage/steam_api" "$stage/samples"
+  mkdir -p "$stage/steam_api" "$stage/samples" "$stage/web/dist"
   if [[ "$windows" == yes ]]; then
     launcher_name=sapie.exe
     server_name=sapie-server.exe
@@ -89,11 +96,12 @@ bundle() {
 
   cp "$REPO_ROOT/docs/QUICKSTART.md" "$stage/QUICKSTART.md"
   cp "$REPO_ROOT/docs/samples/sapie_server.txt" "$REPO_ROOT/docs/samples/steam_appid.txt" "$stage/samples/"
+  cp -R "$web_dist/." "$stage/web/dist/"
   if [[ "$windows" == yes ]]; then
     cp -R "$steamless" "$stage/steamless"
-    (cd "$stage" && zip -r "$archive" "$launcher_name" "$server_name" steam_api QUICKSTART.md samples steamless)
+    (cd "$stage" && zip -r "$archive" "$launcher_name" "$server_name" steam_api QUICKSTART.md samples web steamless)
   else
-    tar -czf "$archive" -C "$stage" "$launcher_name" "$server_name" steam_api QUICKSTART.md samples
+    tar -czf "$archive" -C "$stage" "$launcher_name" "$server_name" steam_api QUICKSTART.md samples web
   fi
 }
 

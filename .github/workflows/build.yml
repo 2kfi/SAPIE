@@ -99,9 +99,23 @@ jobs:
           name: launcher-${{ matrix.target }}
           path: client/src-tauri/target/${{ matrix.target }}/release/sapie*
 
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build web UI
+        run: cd web && npm ci && npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [proto-sync, client, server, launcher]
+    needs: [proto-sync, client, server, launcher, web]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -110,7 +124,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: release-artifacts
-          pattern: '{client,launcher,server}-*'
+          pattern: '{client,launcher,server,web}-*'
       - name: Build release bundles
         run: bash tools/release-bundle.sh "${{ github.ref_name }}" release-artifacts release-dist
       - name: Create GitHub release
