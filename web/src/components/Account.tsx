@@ -58,10 +58,6 @@ export default function Account({ session }: { session: Session | null }) {
             <AchievementList achievements={achievements} />
           )}
         </section>
-        <section className="panel" aria-labelledby="account-games">
-          <h2 id="account-games">Games</h2>
-          <EmptyState>No games are listed by the server.</EmptyState>
-        </section>
       </div>
     </section>
   )

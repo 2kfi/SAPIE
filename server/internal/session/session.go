@@ -192,6 +192,12 @@ func (s *Server) handle(conn net.Conn) {
 			}
 		case *protocol.Frame_StatsGet:
 			s.handleStatsGet(session, payload.StatsGet)
+		case *protocol.Frame_ContentServerRequest:
+			// shortcut: neutral ack only, return real content-server data when a store exists.
+			response := &protocol.ContentServerResponse{Ok: true}
+			if err := session.Send(&protocol.Frame{Payload: &protocol.Frame_ContentServerResponse{ContentServerResponse: response}}); err != nil {
+				log.Printf("session %d: content server response: %v", session.steamID, err)
+			}
 		case *protocol.Frame_AchievementUnlock:
 			s.handleAchievementUnlock(session, payload.AchievementUnlock)
 		default:

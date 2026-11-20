@@ -747,6 +747,56 @@ func TestHandleSteamStampsNetworkingSocketsSource(t *testing.T) {
 	}
 }
 
+func TestContentServerRequestGetsNeutralAck(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAccount("alice", hash, "Alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go New(store, auth.NewLimiter(nil)).Serve(ctx, ln)
+
+	c, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := protocol.WriteFrame(c, &protocol.Frame{Payload: &protocol.Frame_Login{Login: &protocol.LoginRequest{Username: "alice", Password: "pw"}}}); err != nil {
+		t.Fatal(err)
+	}
+	readLoginResponse(t, c)
+
+	req := &protocol.Frame{Payload: &protocol.Frame_ContentServerRequest{ContentServerRequest: &protocol.ContentServerRequest{Appid: 480}}}
+	if err := protocol.WriteFrame(c, req); err != nil {
+		t.Fatal(err)
+	}
+	c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	frame, err := protocol.ReadFrame(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok := frame.Payload.(*protocol.Frame_ContentServerResponse)
+	if !ok {
+		t.Fatalf("got %T, want ContentServerResponse", frame.Payload)
+	}
+	if !result.ContentServerResponse.GetOk() {
+		t.Fatal("content server response ok = false, want true")
+	}
+}
+
 func readLoginResponse(t *testing.T, c net.Conn) *protocol.LoginResponse {
 	t.Helper()
 	c.SetReadDeadline(time.Now().Add(5 * time.Second))

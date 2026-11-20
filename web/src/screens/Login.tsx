@@ -60,12 +60,12 @@ export default function Login({ onConnected, onNavigate }: Props) {
       const result = await login(currentServer(), username, password)
       signedIn = true
       setNotice({ text: `Signed in as ${username}.`, error: false })
-      window.setTimeout(() => onConnected({
+      onConnected({
         server: currentServer(),
         username,
         password,
         ...result,
-      }), 400)
+      })
     } catch (reason) {
       const text = reason instanceof ApiError && reason.status === 401
         ? 'Username or password is incorrect.'

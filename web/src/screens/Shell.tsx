@@ -1,4 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
+import gsap from 'gsap'
+import { useGSAP } from '@gsap/react'
 import Account from '../components/Account'
 import { EmptyState } from '../components/States'
 import FriendList, { gameLabel, personaLabel } from '../components/FriendList'
@@ -14,6 +16,8 @@ import { joinLobby, messageOf, type Friend, type Session } from '../api'
 import type { Route } from '../routes'
 import GameDetail from './GameDetail'
 import LiveAdmin from './LiveAdmin'
+
+gsap.registerPlugin(useGSAP)
 
 type ShellRoute = Exclude<Route, 'login' | 'register'>
 
@@ -68,10 +72,10 @@ function GamesView() {
       <header className="view__head">
         <div>
           <h1>Games</h1>
-          <p className="muted">Games configured for this launcher.</p>
+          <p className="muted">Game setup is handled by the native launcher.</p>
         </div>
       </header>
-      <EmptyState>Add a game from the details pane to configure it for this server.</EmptyState>
+      <EmptyState>Open the native launcher to set up a game.</EmptyState>
     </section>
   )
 }
@@ -87,7 +91,7 @@ function DetailPane({
   onConnectFriend: (friend: Friend) => void
 }) {
   if (route === 'games') {
-    return <GameDetail connection={session} onNotice={onNotice} />
+    return <GameDetail />
   }
 
   if (route === 'account') {
@@ -114,7 +118,7 @@ function DetailPane({
   return (
     <section className="view view--detail" aria-labelledby="p2p-title">
       <h2 id="p2p-title">Playing together</h2>
-      <p>Peer-to-peer play is not available in this version.</p>
+      <p>Friends can play directly with each other, and the server relays traffic when a direct connection is not possible.</p>
 
       {selectedFriend ? (
         <div className="detail-card">
@@ -159,9 +163,24 @@ function DetailPane({
 }
 
 export default function Shell({ route, session, onNavigate, onNotice }: Props) {
+  const shellRef = useRef<HTMLDivElement>(null)
+  const pulseIcon = useRef<(target: Element | null) => void>(() => {})
   const [friends, setFriends] = useState<Friend[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selectedFriend = friends.find((friend) => String(friend.steam_id) === selectedId) ?? null
+
+  useGSAP((_, contextSafe) => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !contextSafe) return
+    gsap.timeline({ defaults: { duration: 0.32, ease: 'power2.out' } })
+      .from('.rail__mark', { opacity: 0, scale: 0.88 }, 0)
+      .from('.workspace .view__head', { opacity: 0, y: -8 }, 0.06)
+      .from('.detail .view__head', { opacity: 0, y: -8 }, 0.12)
+
+    pulseIcon.current = contextSafe((target: Element | null) => {
+      if (!target) return
+      gsap.fromTo(target, { scale: 0.85 }, { scale: 1, duration: 0.18, ease: 'power2.out' })
+    })
+  }, { scope: shellRef })
 
   const connectFriend = useCallback(async (friend: Friend) => {
     if (!session || !friend.lobby_id) return
@@ -176,7 +195,7 @@ export default function Shell({ route, session, onNavigate, onNotice }: Props) {
   const needsSession = !session && (route === 'friends' || route === 'games' || route === 'live')
 
   return (
-    <div className="shell">
+    <div className="shell" ref={shellRef}>
       <nav className="rail glass" aria-label="Main navigation">
         <span className="rail__mark" aria-label="SAPIE">
           S
@@ -188,7 +207,10 @@ export default function Shell({ route, session, onNavigate, onNotice }: Props) {
               type="button"
               className={`rail__item${route === item ? ' is-active' : ''}`}
               aria-current={route === item ? 'page' : undefined}
-              onClick={() => onNavigate(item)}
+              onClick={(event) => {
+                pulseIcon.current(event.currentTarget.querySelector('svg'))
+                onNavigate(item)
+              }}
             >
               <Icon />
               <span>{label}</span>
@@ -200,7 +222,10 @@ export default function Shell({ route, session, onNavigate, onNotice }: Props) {
             type="button"
             className={`rail__item${route === 'live' ? ' is-active' : ''}`}
             aria-current={route === 'live' ? 'page' : undefined}
-            onClick={() => onNavigate('live')}
+            onClick={(event) => {
+              pulseIcon.current(event.currentTarget.querySelector('svg'))
+              onNavigate('live')
+            }}
           >
             <LiveIcon />
             <span>Live sessions</span>
@@ -234,7 +259,7 @@ export default function Shell({ route, session, onNavigate, onNotice }: Props) {
             )}
             {route === 'games' && <GamesView />}
             {route === 'account' && <Account session={session} />}
-            {route === 'live' && session && <LiveAdmin session={session} onNotice={onNotice} />}
+            {route === 'live' && session && <LiveAdmin session={session} />}
           </>
         )}
       </main>

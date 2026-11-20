@@ -137,7 +137,7 @@ export default function LobbyPanel({ session, onNotice }: Props) {
           <input id="lobby-limit" name="member_limit" type="number" min="1" step="1" placeholder="Limit" required />
         </div>
         <div className="create-form__actions">
-          <button type="submit" className="btn btn--primary" disabled={creating}>
+          <button type="submit" className="btn btn--quiet" disabled={creating}>
             {creating ? 'Creating…' : 'Create lobby'}
           </button>
           {formError ? <p role="alert">{formError}</p> : null}

@@ -1,6 +1,7 @@
-import type { Connection } from './tauri'
-
-export type Session = Connection & {
+export type Session = {
+  server: string
+  username: string
+  password: string
   token: string
   steamId: string
   personaName: string
@@ -26,16 +27,6 @@ export type Lobby = {
   type: string | number
   joinable: boolean
   members: (string | number)[]
-}
-
-export type PresenceUser = {
-  steam_id: string | number
-  persona_name: string
-  persona_state?: string | number
-  appid?: string | number | null
-  rich_presence?: PresenceValues | string | null
-  lobby_id?: string | number | null
-  connect_str?: string | null
 }
 
 export type Achievement = {
@@ -68,9 +59,8 @@ export function messageOf(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason)
 }
 
-function baseUrl(server: string): string {
-  if (!('__TAURI_INTERNALS__' in window)) return '/api/v1'
-  return server ? `http://${server}/api/v1` : '/api/v1'
+function baseUrl(_server: string): string {
+  return '/api/v1'
 }
 
 async function errorDetail(response: Response): Promise<string> {
@@ -235,14 +225,4 @@ export function joinLobby(
     method: 'POST',
     token,
   })
-}
-
-export async function getAdminUsers(
-  server: string,
-  adminToken: string,
-): Promise<PresenceUser[]> {
-  const data = await request<PresenceUser[] | { users?: PresenceUser[] }>(server, '/users', {
-    token: adminToken,
-  })
-  return Array.isArray(data) ? data : Array.isArray(data?.users) ? data.users : []
 }

@@ -11,6 +11,8 @@ func TestFrameRoundTrip(t *testing.T) {
 	tests := []*Frame{
 		{Payload: &Frame_Login{Login: &LoginRequest{Username: "alice", Password: "secret", Appid: 480}}},
 		{Payload: &Frame_Ping{Ping: true}},
+		{Payload: &Frame_ContentServerRequest{ContentServerRequest: &ContentServerRequest{Appid: 480}}},
+		{Payload: &Frame_ContentServerResponse{ContentServerResponse: &ContentServerResponse{Ok: true}}},
 		{Payload: &Frame_Steam{Steam: &Common_Message{SourceId: 999, DestId: 7, Messages: &Common_Message_Announce{Announce: &Announce{Type: Announce_PING}}}}},
 	}
 	for _, want := range tests {

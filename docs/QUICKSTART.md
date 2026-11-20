@@ -5,9 +5,9 @@ provides accounts, friends, lobbies and stats; a modified `steam_api` library in
 calls to it. The launcher is a native Rust egui/eframe app, and the server also hosts a browser UI on
 the LAN.
 
-Peer-to-peer play is not available in this version.
+Friends can play directly with each other, and the server relays traffic when a direct connection is not possible.
 
-This line is frozen 0.1 text. P2P ships in 0.2 but has not yet been verified in a live two-client game.
+This describes the direct P2P path with a server relay fallback. It has not been verified in a live two-client game.
 
 ## Download
 
@@ -32,7 +32,7 @@ Run the server binary **from the archive root** so `./web/dist` resolves:
 
 No flags are needed. Defaults: game protocol on port 47584, admin API on 127.0.0.1:8080, web UI on
 0.0.0.0:8081, assets from `./web/dist`, database `sapie.db`. Every flag has a default and only
-overrides it — for example `--port 47585` moves the game listener, and `--allow-register` enables
+overrides it, for example `--port 47585` moves the game listener, and `--allow-register` enables
 public registration (off by default). Run once with `--allow-register` to create accounts, then
 restart without it. From source, use `go run ./cmd/sapie-server` with the same flags from the
 `server/` directory.
@@ -45,7 +45,7 @@ repository root; the token appears in `docker compose logs`:
 docker compose up --build
 ```
 
-The admin API is reachable only from the host at `http://127.0.0.1:8080`; pass the token as a `Bearer` token. Port 47584 is the binary protobuf game protocol, not HTTP — a browser pointed at it shows a connection reset.
+The admin API is reachable only from the host at `http://127.0.0.1:8080`; pass the token as a `Bearer` token. Port 47584 is the binary protobuf game protocol, not HTTP. A browser pointed at it shows a connection reset.
 
 The web UI on 8081 serves the SPA and proxies only user API routes (config, register, login, friends, invite, lobbies, join, own stats). Admin-only paths such as `/api/v1/users` and account CRUD return 404 on 8081 and still work on 8080. Plain HTTP on the LAN means session tokens cross it in cleartext.
 

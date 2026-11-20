@@ -76,6 +76,14 @@ message StatsResponse {
   uint64 steam_id = 3;
 }
 
+message ContentServerRequest {
+  uint32 appid = 1;
+}
+
+message ContentServerResponse {
+  bool ok = 1;
+}
+
 message Frame {
   oneof payload {
     LoginRequest login = 1;
@@ -89,5 +97,7 @@ message Frame {
     bool ping = 9;
     bool pong = 10;
     AchievementUnlock achievement_unlock = 11;
+    ContentServerRequest content_server_request = 12;
+    ContentServerResponse content_server_response = 13;
   }
 }

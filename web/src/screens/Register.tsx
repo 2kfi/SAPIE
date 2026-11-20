@@ -61,12 +61,12 @@ export default function Register({ onConnected, onBack }: Props) {
       const result = await login(currentServer(), username, password)
       signedIn = true
       setNotice({ text: `Account created. Signed in as ${username}.`, error: false })
-      window.setTimeout(() => onConnected({
+      onConnected({
         server: currentServer(),
         username,
         password,
         ...result,
-      }), 400)
+      })
     } catch (reason) {
       const text = reason instanceof ApiError && reason.status === 403
         ? 'Registration is disabled on this server.'
