@@ -18,7 +18,7 @@ sudo pacman -S --needed \
   lib32-glibc lib32-gcc-libs \
   rust nodejs npm libxkbcommon libwayland libx11 libxi libxrandr mesa
 
-# AUR (yay/paru) — cross-built protobuf for Windows targets
+# AUR (yay/paru): cross-built protobuf for Windows targets
 yay -S mingw-w64-protobuf
 ```
 
@@ -27,10 +27,12 @@ yay -S mingw-w64-protobuf
 - `lib32-*` may require uncommenting `[multilib]` in `/etc/pacman.conf`.
 - Host `protoc` comes from `protobuf`. Protobuf 36 requires C++17; the client
   CMake uses C++17.
-- CI uses an `archlinux` container with the same list; the native launcher
-  builds on native runners (`windows-latest`, `ubuntu-24.04`, `ubuntu-24.04-arm`)
-  with libxkbcommon/wayland/x11/xi/xrandr/gl1-mesa dev libs. There is no
-  webkit2gtk dependency.
+- CI uses an `archlinux` container with the same list. The launcher is a Tauri v2 app and its
+  `Cargo.lock` pulls `webkit2gtk`. The release workflow (`.github/workflows/build.yml`) installs
+  `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev` and `librsvg2-dev` alongside the
+  X11/Wayland/GL dev libs on Linux native runners (`windows-latest`, `ubuntu-24.04`,
+  `ubuntu-24.04-arm`). The pull-request workflow (`.github/workflows/ci.yml`) installs only the
+  narrower X11/Wayland/GL set; see `dev_notes.md` for the unverified gap.
 
 ## Cross protobuf-lite (required)
 
@@ -134,16 +136,19 @@ the host `libprotobuf-lite.so` by design.
 
 ## Native launcher
 
-`client/src-tauri/` is now a native Rust egui/eframe app; the directory name is kept, but there is
-no Tauri webview, WebKit, Electron or embedded SPA. The binary is `sapie-launcher`
-(`sapie-launcher.exe` on Windows), and Windows builds set `windows_subsystem = "windows"`.
+`client/src-tauri/` is a Tauri v2 app. The Rust shell is in `src/` and the bundled React UI is in
+`ui/`. The directory keeps its historical name; no egui source remains. The binary is
+`sapie-launcher` (`sapie-launcher.exe` on Windows), and Windows builds set
+`windows_subsystem = "windows"`.
 
 ```sh
 cd client/src-tauri && cargo build --release
+cd client/src-tauri/ui && npm ci && npm run build
 ```
 
-On Linux the native GUI needs libxkbcommon, wayland, x11, xi, xrandr and gl1-mesa development
-libraries. No cross-compiled Windows launcher has been executed locally.
+The shell bundle is loaded from `../ui/dist` with a locked CSP and no remote URLs. On Linux the
+release build needs the webkit2gtk and X11/Wayland/GL development packages listed above. No
+cross-compiled Windows launcher has been executed locally.
 
 ## Web UI build
 
@@ -156,11 +161,17 @@ The server hosts `web/dist` with `--ui-dir` (default `./web/dist`) on `--ui-list
 
 ## CI and releases
 
-Any tag triggers `.github/workflows/build.yml`: it builds the client, server and native launcher
-targets, plus a `web` job that builds `web/dist` and uploads it as the `web-dist` artifact. The
-release job assembles the three archives, creates the GitHub Release and pushes the server
-container. `tools/release-bundle.sh` copies `web/dist` to the archive root as `web/dist`, so
-`--ui-dir ./web/dist` works from an unpacked bundle.
+`.github/workflows/ci.yml` runs on pushes to `dev-client`, pull requests to `dev-client` and
+`main-client`, and manual dispatch. It runs proto sync, tracked-build-product checks, the 10-target
+client matrix, server tests, launcher Rust checks and build, launcher UI and web builds and tests,
+and the dependency audits.
+
+`.github/workflows/build.yml` runs only on pushed tags matching plain numeric `0.*`. It stamps the
+tag version into `Cargo.toml`, `tauri.conf.json` and both `package.json` files, builds the client,
+server and launcher targets, builds `web/dist`, assembles the release archives, creates the GitHub
+Release and pushes the server container. `tools/release-bundle.sh` copies `web/dist` to the archive
+root as `web/dist`, so `--ui-dir ./web/dist` works from an unpacked bundle. No tag-triggered release
+has been observed in this tree; that path is UNVERIFIED.
 
 The 0.1 release is published and frozen at tag `0.1` (`62007f5`) at
 https://github.com/2kfi/SAPIE/releases/tag/0.1 with the assets
@@ -169,8 +180,9 @@ Its assets and GHCR image are unchanged. Container tags are
 `ghcr.io/2kfi/sapie-server:<tag>` and `ghcr.io/2kfi/sapie-server:latest`
 (for 0.1, `ghcr.io/2kfi/sapie-server:0.1`). 0.2 is tagged `0.2` and published at
 https://github.com/2kfi/SAPIE/releases/tag/0.2, with images
-`ghcr.io/2kfi/sapie-server:0.2` and `ghcr.io/2kfi/sapie-server:latest`. 0.1 remains frozen at
-`62007f5`; G0 is deferred to the user.
+`ghcr.io/2kfi/sapie-server:0.2` and `ghcr.io/2kfi/sapie-server:latest`. Tag `0.3` exists on a
+docs-only commit on `dev-client`; no asset claim is made here. Tag `0.4` does not exist. 0.1 remains
+frozen at `62007f5`; G0 is deferred to the user.
 
-Caveat: in this new repository, push-triggered runs never fired. Use manual dispatch
-(`workflow_dispatch --ref <tag>`) to run the workflow.
+`ci.yml` accepts manual dispatch (`workflow_dispatch --ref <branch>`). `build.yml` has no manual
+dispatch trigger; only a pushed `0.*` tag starts it. No such run has been confirmed in this tree.

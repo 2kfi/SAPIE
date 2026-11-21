@@ -1,4 +1,59 @@
-# SAPIE — Development Notes
+# SAPIE Development Notes
+
+## Current known limits (0.4 release candidate, 2026-11-20)
+
+This section is the live known-limits list. The sections below it are historical notes from 0.1 and
+0.2 and are kept for context. Items marked UNVERIFIED have no passing evidence in this tree.
+
+### Proven and not proven
+
+- A headless two-client C++ to Go session is recorded in `docs/verification/0.4-two-client.md`. It
+  covers login, server-assigned IDs, DB friendships made through the social API, presence, invite,
+  a joined lobby with two members on both sides, a stats response and a persisted achievement.
+- The two-client harness now waits for the guest to finish before host teardown. Five consecutive
+  real-server runs passed with two-member rosters on both sides. The earlier intermittent failure
+  was teardown order: the host left the lobby before the guest sampled the roster.
+- UNVERIFIED: real MW2 2009 run. The Windows runbook is `docs/verification/0.4-morning-gate.md` and
+  was not executed in the headless evidence run.
+- UNVERIFIED: native Tauri window, real IPC, keychain access and webview navigation. No window was
+  opened in the headless evidence run.
+- UNVERIFIED: keyboard-only and screen-reader pass on the launcher and the web UI.
+- UNVERIFIED: NAT traversal, direct UDP and relay path selection with two real networks.
+- UNVERIFIED: Windows bundles, cross-compiled execution and the tag-triggered release workflow. Only
+  native `linux-x64` modern and legacy DLLs were built and run in the evidence run.
+
+### M19 security findings
+
+The current threat model is `docs/SECURITY.md`. Its residual risks are:
+
+- A session token remains replayable for up to 24 hours after it leaks. There is no token rotation
+  and no revoke-on-password-change path.
+- The login limiter, social limiter and per-account game-login lockout live in memory and reset on
+  server restart. A locked game login returns `BAD_CREDENTIALS` because the wire enum has no lockout
+  status.
+- Blocked peers remain in lobby membership. `router.lobbyRecipients` does not filter blocks, so a
+  blocked peer can still receive lobby frames.
+- The admin token is printed once to the server log at first start. Treat first-run logs as
+  sensitive.
+- The web UI is plain HTTP on the LAN unless an operator terminates TLS in front of it, so session
+  tokens cross 8081 in cleartext.
+- The game token file is mode 0600 on Unix. Windows has no explicit ACL change, so it inherits the
+  game directory default ACL. The DLL falls back to `SAPIE_SESSION_TOKEN`, then to
+  `SAPIE_USERNAME`/`SAPIE_PASSWORD` when no file exists; env values are visible under the same OS
+  account and in `/proc` on Linux. No password is read from the token file and neither credential is
+  logged.
+- Real keychain access is still UNVERIFIED headless.
+- Dependency audits are reported, not silently ignored: `govulncheck` found no Go vulnerabilities,
+  `cargo audit` exited 0 with six unmaintained/unsound warnings including `glib` 0.18.5, and both
+  npm UIs report six dev-tooling advisories each. The CI job accepts only the advisory IDs named in
+  `.github/workflows/ci.yml` and fails on any new one.
+
+### Build alignment gap
+
+`Cargo.lock` pulls `webkit2gtk` through Tauri, and `.github/workflows/build.yml` installs
+`libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev` and `librsvg2-dev` for Linux launcher jobs.
+The pull-request job in `.github/workflows/ci.yml` installs only the X11/Wayland/GL dev packages. A
+clean Linux launcher build under the narrower pull-request dependency set is UNVERIFIED.
 
 ## Deferred items after MF1
 
@@ -10,14 +65,14 @@ None of these block the release; they are known limits, not failures found in te
 The C++ client's `friends()` and `lobbies()` return references to internal lists rather than
 copies. In theory another thread could change a list while someone reads it. In practice every
 caller is serialized behind a global lock, so there is no observed race. Fixing it properly means
-rewriting several Steam interface methods to use copies — broad churn for a hypothetical problem.
+rewriting several Steam interface methods to use copies, broad churn for a hypothetical problem.
 Left as a labelled follow-up.
 
 ### 2. `StatsGet.names` ignored
 
 The wire message has a field where a caller can say "only send me these named stats." The server
 ignores that list and returns everything for that user/app. The result is a superset, so nothing
-breaks today — but the field is dead plumbing, and asking for one stat still returns all of them.
+breaks today, but the field is dead plumbing, and asking for one stat still returns all of them.
 
 ### 3. Hidden achievements in unlock pushes
 

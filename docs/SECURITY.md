@@ -159,12 +159,13 @@ system-theme following. Do not claim a light theme or a second contrast pass.
 
 ## Docker web UI
 
-Current tree: `Dockerfile` builds only the Go server, exposes 47584 and 8080 and does not copy
-`web/dist`. `compose.yaml` publishes `47584` and `127.0.0.1:8080` and runs the admin listener on
-`:8080` inside the container. Port 8081 is not published today. A separate lane owns the container
-change.
+Current tree: `Dockerfile` builds `web/dist` in a Node stage, copies it to `/app/web/dist`, runs the
+Go server as a non-root user with `--ui-dir /app/web/dist --ui-listen 0.0.0.0:8081`, and exposes
+47584 and 8081. `compose.yaml` publishes `47584`, `127.0.0.1:8080` and `127.0.0.1:8081`, keeps the
+admin listener on `:8080` inside the container, mounts a data volume, and probes 8081 with a
+healthcheck.
 
-Operator guidance for when the UI is containerized:
+Operator guidance:
 
 - Bind the UI listener inside the container to `0.0.0.0:8081` so a published port works. Publish it
   to `127.0.0.1:8081` on the host if a reverse proxy terminates TLS there.
@@ -178,8 +179,7 @@ Operator guidance for when the UI is containerized:
 - A live two-client C++ to Go session is recorded in `docs/verification/0.4-two-client.md`. No real
   MW2 run has been performed. P2P, NAT traversal and the relay path are therefore unverified in
   game. Direct UDP is best effort and the relay has no dedicated rate limit. The two-client harness
-  still intermittently fails on a client-side local-mirror timing race; full passes are recorded,
-  but the harness is not deterministic.
+  had a teardown-order race; it now waits for guest completion and five consecutive runs passed.
 - The native Tauri window, real IPC and real keychain access were not exercised headless. Webview
   navigation and keyboard-only paths were not exercised either.
 - The login limiter, social limiter and per-account game-login lockout are in memory and reset on
