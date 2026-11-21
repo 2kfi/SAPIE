@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.24)
 
 project(sapie_launcher LANGUAGES C CXX)
 
@@ -66,12 +66,19 @@ target_include_directories(sapie_bridge PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/brid
 target_link_libraries(sapie_bridge PUBLIC Qt6::Core sapie_core)
 add_dependencies(sapie_bridge sapie_core_build)
 
+add_library(sapie_app STATIC
+  app/LauncherShell.cpp
+  app/LauncherShell.h
+)
+target_include_directories(sapie_app PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/app")
+target_link_libraries(sapie_app PUBLIC Qt6::Core Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick)
+
 qt_add_executable(sapie_launcher
   app/main.cpp
   app/main.qml
   app/app.qrc
 )
-target_link_libraries(sapie_launcher PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick sapie_bridge)
+target_link_libraries(sapie_launcher PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick sapie_app sapie_bridge)
 add_dependencies(sapie_launcher sapie_core_build)
 
 include(CTest)
@@ -93,3 +100,17 @@ target_include_directories(core_bridge_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(core_bridge_test PRIVATE Qt6::Core Qt6::Network Qt6::Test sapie_bridge)
 add_dependencies(core_bridge_test sapie_core_build)
 add_test(NAME core_bridge_test COMMAND core_bridge_test)
+
+qt_add_executable(app_shell_test
+  tests/app_shell_test.cpp
+  app/app.qrc
+)
+target_link_libraries(app_shell_test PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test sapie_app)
+add_test(NAME app_shell_test COMMAND app_shell_test)
+set_tests_properties(app_shell_test PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+foreach(sapie_platform_dir windows linux)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${sapie_platform_dir}/CMakeLists.txt")
+    add_subdirectory(${sapie_platform_dir})
+  endif()
+endforeach()

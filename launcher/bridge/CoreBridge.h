@@ -20,6 +20,7 @@ public:
     quint32 abiVersion() const;
     QString lastError() const;
 
+    Q_INVOKABLE void shutdown();
     Q_INVOKABLE bool createCore(quint32 abiVersion, bool fake = false);
     Q_INVOKABLE bool testConnection(const QString &server);
     Q_INVOKABLE QVariantMap login(const QString &server, const QString &username,

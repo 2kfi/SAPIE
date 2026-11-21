@@ -1,4 +1,7 @@
 use crate::error::{CommandError, ErrorKind, Result};
+use std::collections::BTreeMap;
+use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
@@ -25,6 +28,15 @@ pub trait Process: Send + Sync {
     ) -> Result<u32>;
 }
 
+pub trait FileSystem: Send + Sync {
+    fn read(&self, path: &Path) -> Result<Vec<u8>>;
+    fn write(&self, path: &Path, bytes: &[u8]) -> Result<()>;
+    fn copy(&self, from: &Path, to: &Path) -> Result<()>;
+    fn rename(&self, from: &Path, to: &Path) -> Result<()>;
+    fn remove(&self, path: &Path) -> Result<()>;
+    fn exists(&self, path: &Path) -> bool;
+}
+
 pub trait Acl: Send + Sync {
     fn protect_token(&self, path: &Path) -> Result<()>;
 }
@@ -37,11 +49,46 @@ pub trait Platform: Send + Sync {
     fn paths(&self) -> &dyn Paths;
     fn keychain(&self) -> &dyn Keychain;
     fn process(&self) -> &dyn Process;
+    fn files(&self) -> &dyn FileSystem;
     fn acl(&self) -> &dyn Acl;
     fn updater(&self) -> &dyn Updater;
 }
 
 pub struct SystemPlatform;
+
+pub struct SystemFileSystem;
+
+impl FileSystem for SystemFileSystem {
+    fn read(&self, path: &Path) -> Result<Vec<u8>> {
+        Ok(fs::read(path)?)
+    }
+
+    fn write(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        let mut file = fs::File::create(path)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        Ok(())
+    }
+
+    fn copy(&self, from: &Path, to: &Path) -> Result<()> {
+        fs::copy(from, to)?;
+        Ok(())
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> Result<()> {
+        fs::rename(from, to)?;
+        Ok(())
+    }
+
+    fn remove(&self, path: &Path) -> Result<()> {
+        fs::remove_file(path)?;
+        Ok(())
+    }
+
+    fn exists(&self, path: &Path) -> bool {
+        path.is_file()
+    }
+}
 
 impl Paths for SystemPlatform {
     fn data_dir(&self) -> Result<PathBuf> {
@@ -162,6 +209,9 @@ impl Platform for SystemPlatform {
     fn process(&self) -> &dyn Process {
         self
     }
+    fn files(&self) -> &dyn FileSystem {
+        &SystemFileSystem
+    }
     fn acl(&self) -> &dyn Acl {
         self
     }
@@ -179,14 +229,93 @@ pub struct SpawnCall {
 }
 
 #[derive(Default)]
+pub struct FakeFileSystem {
+    files: Mutex<BTreeMap<PathBuf, Vec<u8>>>,
+}
+
+impl FakeFileSystem {
+    pub fn seed(&self, path: &Path, bytes: &[u8]) {
+        self.files
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(path.to_path_buf(), bytes.to_vec());
+    }
+
+    pub fn stored(&self, path: &Path) -> Option<Vec<u8>> {
+        self.files
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(path)
+            .cloned()
+    }
+}
+
+impl FileSystem for FakeFileSystem {
+    fn read(&self, path: &Path) -> Result<Vec<u8>> {
+        self.stored(path).ok_or_else(|| {
+            CommandError::path(ErrorKind::NotFound, path, "File not found in fake filesystem")
+        })
+    }
+
+    fn write(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        self.seed(path, bytes);
+        Ok(())
+    }
+
+    fn copy(&self, from: &Path, to: &Path) -> Result<()> {
+        let bytes = self.read(from)?;
+        self.seed(to, &bytes);
+        Ok(())
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> Result<()> {
+        let bytes = self.read(from)?;
+        {
+            let mut files = self.files.lock().unwrap_or_else(|e| e.into_inner());
+            files.remove(from);
+            files.insert(to.to_path_buf(), bytes);
+        }
+        Ok(())
+    }
+
+    fn remove(&self, path: &Path) -> Result<()> {
+        let mut files = self.files.lock().unwrap_or_else(|e| e.into_inner());
+        match files.remove(path) {
+            Some(_) => Ok(()),
+            None => Err(CommandError::path(
+                ErrorKind::NotFound,
+                path,
+                "File not found in fake filesystem",
+            )),
+        }
+    }
+
+    fn exists(&self, path: &Path) -> bool {
+        self.files
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(path)
+    }
+}
+
+#[derive(Default)]
 pub struct FakePlatform {
     token: Mutex<Option<String>>,
     spawns: Mutex<Vec<SpawnCall>>,
+    files: FakeFileSystem,
 }
 
 impl FakePlatform {
     pub fn spawned(&self) -> Vec<SpawnCall> {
         self.spawns.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn seed_file(&self, path: &Path, bytes: &[u8]) {
+        self.files.seed(path, bytes);
+    }
+
+    pub fn stored_file(&self, path: &Path) -> Option<Vec<u8>> {
+        self.files.stored(path)
     }
 }
 
@@ -257,6 +386,9 @@ impl Platform for FakePlatform {
     fn process(&self) -> &dyn Process {
         self
     }
+    fn files(&self) -> &dyn FileSystem {
+        &self.files
+    }
     fn acl(&self) -> &dyn Acl {
         self
     }
@@ -290,5 +422,25 @@ mod tests {
         assert!(fake.paths().data_dir().unwrap().is_dir());
         assert_eq!(fake.updater().latest_version("stable").unwrap(), None);
         fake.acl().protect_token(Path::new("token")).unwrap();
+    }
+
+    #[test]
+    fn fake_filesystem_records_files_without_touching_the_os() {
+        let fake = FakePlatform::default();
+        let first = Path::new("/state/launcher-state.json");
+        let second = Path::new("/state/launcher-state.json.bak");
+
+        fake.files().write(first, b"first").unwrap();
+        fake.files().copy(first, second).unwrap();
+        assert_eq!(fake.files().read(second).unwrap(), b"first");
+
+        fake.files().write(first, b"second").unwrap();
+        fake.files().rename(first, second).unwrap();
+        assert!(!fake.files().exists(first));
+        assert_eq!(fake.files().read(second).unwrap(), b"second");
+
+        fake.files().remove(second).unwrap();
+        assert!(!fake.files().exists(second));
+        assert!(fake.files().read(second).is_err());
     }
 }
