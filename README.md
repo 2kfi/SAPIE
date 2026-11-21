@@ -1,7 +1,13 @@
 # SAPIE
 
+![SAPIE wordmark, provisional](design/wordmark.svg)
+
+**Your games. Your server.**
+
 Old Steam games, no Steam client, your own server. SAPIE is a non-commercial Steam API replacement
 for games you already own, for gamers by gamers.
+
+The wordmark is provisional and pending G1. See `design/identity.md`.
 
 ## Quick start
 

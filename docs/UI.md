@@ -73,6 +73,19 @@ There are no per-card entrances, no delayed content and no fake progress states.
 
 The reasoning behind each colour, icon, radius and type choice is in `web/DESIGN.md`.
 
+### 0.5 identity direction
+
+The 0.5 direction moves the web UI onto the shared tokens in `design/tokens.css`: violet `#C5A4FF`
+for active navigation, focus, selection and the primary action, dark neutrals for surfaces, Manrope
+for UI text and IBM Plex Mono for machine values. Glass blur and the ember accent are retired. The
+token table and the measured pairs above describe the shipped 0.4 web surface, not the 0.5 target.
+This file does not claim the web UI already matches 0.5. M28-a owns that change.
+
+Dark only stays. There is no light theme and no theme toggle on either surface, so the direction
+adds no second contrast pass. A status dot keeps its text label. Motion stays at one first-mount
+entrance with no per-card cascade, and reduced motion is respected. Copy for the shared surfaces is
+in [identity surface copy](SURFACES.md).
+
 ## Native launcher
 
 `client/src-tauri/` is a Tauri v2 app built as `sapie-launcher` (`sapie-launcher.exe` on Windows,
