@@ -1,7 +1,7 @@
 # Steam API Emulator (SAPIE) — Build Plan
 
-> Current plan: section 12 (0.4). Sections 1 to 11 are the 0.1 and 0.2 history and remain as a
-> decision record.
+> Current plan: section 13 (0.5). Section 12 is the 0.4 plan and stays as history. Sections 1 to 11
+> are the 0.1 and 0.2 history and remain as a decision record.
 
 ## 1. Goal
 
@@ -999,3 +999,1134 @@ Store, purchasing, cloud saves, chat, voice, streaming, workshop, inventory, ove
 macOS, Windows ARM64, 32-bit ARM, hole punching, app ownership enforcement, importing a Steam
 library, and full friend management inside the launcher. These are 0.5 candidates and are listed
 here so a phase cannot quietly grow into them.
+
+---
+
+## 13. 0.5 plan (next release)
+
+### 13.0 What 0.5 is
+
+0.4 proved the core, built a Tauri launcher and produced installers. 0.5 is the release where
+SAPIE gets a face, two homes and a launcher that is a real desktop application.
+
+The 0.4 launcher is a webview app. 0.5 removes the webview entirely. Both launchers are Qt 6 + Qt
+Quick, rendered by the Qt scene graph, with a Rust core behind a C ABI. No WebView2, no WebKitGTK,
+no embedded browser, no remote content.
+
+Outcomes:
+
+1. **Identity.** One visual and verbal system for the launcher, the web UI, the docs and the
+   installers. Not a GOG clone. A recognisable SAPIE.
+2. **Two launchers.** `SAPIE for Windows` and `SAPIE for Linux`. Same Qt Quick UI, same Rust core,
+   separate platform code, installers and update channels.
+3. **A finished library.** Covers, collections, favorites, recently played, playtime, a game page
+   with achievements, full friend management and one-click play.
+4. **Distribution.** Signed Windows installers, an AppImage, a deb, a Flatpak, a working server
+   container, auto-update with rollback, and a release a normal person can install.
+
+0.5 is scoped to identity, the two launchers, the product features around them, and the 0.4
+security debts. It is not a store, a chat client or a cloud platform. Those stay out. The Qt
+rewrite replaces the 0.4 Tauri shell; it is not a third launcher on top of it.
+
+### 13.1 Inputs from 0.4
+
+The `0.4` tag exists and produced Windows NSIS/MSI and Linux AppImage installers. The tree records
+that the installers were built, not executed. The following 0.4 limits are 0.5 must-fix items:
+
+- Real MW2 run is UNVERIFIED.
+- The 0.4 launcher is a Tauri webview shell. Its native window, real IPC, keychain access and
+  webview navigation are UNVERIFIED. 0.5 replaces it with Qt rather than shipping it further.
+- Keyboard-only and screen-reader passes are UNVERIFIED.
+- NAT, direct UDP and relay with two real networks are UNVERIFIED.
+- Installer execution on clean machines is UNVERIFIED.
+- Session tokens are replayable for up to 24 hours; no rotation, no revoke-on-password-change.
+- Login and social limiters are in memory and reset on restart.
+- Blocked peers stay in lobby membership and can receive lobby frames.
+- Windows has no explicit ACL on the token file; it inherits the directory ACL.
+- The web UI is plain HTTP unless an operator adds TLS.
+- The launcher has no auto-update path and no rollback.
+
+These are not 0.5 features. They are the price of calling 0.5 done.
+
+### 13.2 Project identity
+
+Identity is not a logo. It is the set of decisions a user can recognise without seeing the name:
+the mark, the palette, the type, the voice, the motion and the way a game tile behaves.
+
+#### 13.2.1 Name and positioning
+
+- The name is **SAPIE**, always uppercase in product surfaces. Do not expand the acronym in the UI.
+  The README may explain it once.
+- Product family: `SAPIE for Windows`, `SAPIE for Linux`, `SAPIE Server`, `SAPIE Web`.
+- Public tagline: **Your games. Your server.**
+- Descriptor: **Old Steam games, no Steam client.** This is the honest one-line explanation.
+- The promise: you own the game, you own the machine, you own the server. SAPIE removes the
+  dependency on Valve's client, not the game.
+- The tone is quiet and factual. No hype, no "next generation", no "seamless", no fake scale.
+
+#### 13.2.2 Mark and wordmark
+
+The current ember `S` square is a placeholder. 0.5 replaces it with a mark that means something:
+
+- Concept: a **keyhole with a play triangle in the negative space**. It joins "unlock" and "play",
+  which is the product. It is not a gamepad, a robot, a sparkle or a diamond.
+- Construction: one rounded square field, one keyhole cut, one triangle cut. Works at 16px as a
+  solid silhouette and at 512px as a detailed icon.
+- Wordmark: `SAPIE` set in Manrope ExtraBold, tight tracking, with the mark to the left. The wordmark
+  is text, not custom lettering, until a type designer says otherwise.
+- App icon: the mark on the brand background, one accent, no gradient, no glow.
+- Tray icon: the silhouette at 16/22px, monochrome on Linux where the desktop asks for it.
+- Monogram fallback for game covers: a deterministic geometric tile derived from the appid, not a
+  fake cover. The same appid always produces the same tile.
+
+The mark is a G1 artifact. Do not generate final art before G1 approves the direction. R-23 applies.
+
+#### 13.2.3 Palette
+
+The 0.5 palette follows `AGENTS-UI.md`, with the ember retired as the brand accent.
+
+| Token | Value | Job |
+| --- | --- | --- |
+| `--bg-app` | `#17191D` | Application background, never pure black |
+| `--bg-sidebar` | `#14161A` | Persistent rail |
+| `--bg-panel` | `#1D2025` | Panels, cards, menus |
+| `--bg-panel-hover` | `#252930` | Hover and quiet selection |
+| `--bg-elevated` | `#292D34` | Dialogs and popovers |
+| `--border-subtle` | `#2A2E35` | Hairline separators |
+| `--border-strong` | `#383E47` | Strong boundaries and focus containers |
+| `--text-primary` | `#E6E8EB` | Main text |
+| `--text-secondary` | `#A0A5AE` | Secondary text |
+| `--text-muted` | `#737984` | Metadata |
+| `--accent` | `#C5A4FF` | Brand accent, active nav, focus, primary action |
+| `--accent-soft` | `#342A46` | Selected background |
+| `--success` | `#73C991` | Online and success |
+| `--warning` | `#E6B86C` | Away and warning |
+| `--danger` | `#E17B7B` | Errors and destructive actions |
+| `--info` | `#82B8E8` | Informational status |
+
+Rules: one accent, used for active navigation, focus, selection and the primary action. Green, amber,
+red and blue are status only. No gradients as a default. No glow. No glass. The ember is retired
+from brand use; if a warm tone survives it is a status warning, not identity.
+
+#### 13.2.4 Type
+
+- UI: **Manrope**, with the platform stack as fallback. This is a deliberate override of the
+  `AGENTS-UI.md` suggestion of Inter. Inter is the default AI choice and would erase the one type
+  decision SAPIE already owns. Manrope is compact in dense rows and already in the product.
+- Machine values: **IBM Plex Mono** for paths, appids, SteamIDs, lobby IDs and logs.
+- Qt cannot load woff2. Ship Manrope and IBM Plex Mono as TTF or OTF inside the Qt resource file,
+  and woff2 in the web build. No remote font import. Both apps must render the intended face on a
+  clean machine.
+- Scale: 12, 13, 14, 16, 20, 24. Page titles 20 to 24, card titles 13 to 14, metadata 11 to 12.
+  No oversized marketing headings.
+- Weights: 400, 500, 600, 700. No 800 or 900.
+
+#### 13.2.5 Voice
+
+Short, factual, second person. The user is "you". The server is "your server". The product does not
+brag and does not apologize.
+
+| Instead of | Write |
+| --- | --- |
+| Get Started | Add a game |
+| Seamless experience | Your server, your games |
+| Oops! Something went wrong | The server did not answer. Check the address and try again. |
+| Unlock your gaming potential | Play the games you already own |
+| AI-powered | (delete) |
+
+No em dash. No exclamation marks in system messages. No fake numbers. No fake testimonials. No fake
+players. The full copy rules live in `design/identity.md`.
+
+#### 13.2.6 Motion and sound
+
+- Motion: 120 to 180ms on hover, 140 to 200ms on menus and dialogs, ease-out entering, ease-in
+  leaving. No bounce, no spring, no looping background.
+- One first-mount entrance in the launcher. No per-card cascade.
+- Respect the OS reduced-motion setting. Qt does not expose it as a QML property, so the platform
+  layer reads it (Windows `SPI_GETCLIENTAREAANIMATION`, the desktop portal or the GTK setting on
+  Linux) and exposes `Platform.reducedMotion`. Fall back to an in-app toggle when the OS value is
+  unavailable.
+- Sound: none. A launcher that beeps is a toy.
+
+#### 13.2.7 Art and covers
+
+- Cover art is the main colour source. Portrait 2:3, `object-fit: cover`.
+- Missing art uses the monogram tile, never a fake store cover, never a generic gradient blob.
+- The user can set a cover from a local image. Store the path and a cached thumbnail, not a remote
+  URL.
+- No invented game metadata. If the server does not know the game name, show the executable name.
+
+#### 13.2.8 Platform expression
+
+Same identity, different manners:
+
+- **Windows:** native title bar in 0.5, Windows system dialogs, Segoe UI fallback, taskbar progress,
+  jump list, per-user install by default. No fake Mica, no custom chrome that breaks accessibility.
+- **Linux:** native title bar, GTK file picker, desktop entry, AppStream metadata, AppIndicator tray
+  where available. No fake macOS traffic lights.
+- The in-app surfaces are identical. The difference is integration, not branding.
+
+#### 13.2.9 Surfaces that carry the identity
+
+- Launcher: icon, tray, About, installer, empty states, monogram tiles.
+- Web UI: same tokens and components, no separate theme.
+- Docs: README banner, screenshots with real data only, a short identity page.
+- Releases: one release-notes template, one artifact naming scheme, one checksum format.
+- GitHub: social preview, issue templates with the same voice.
+- Server: startup banner and admin page use the wordmark, not ASCII art.
+
+#### 13.2.10 Identity governance
+
+- `design/identity.md` is the source of truth for name, mark, palette, type, voice and motion.
+- `design/tokens.css` is the only place colour, type, spacing and radius values live.
+- `design/DESIGN.md` holds the screen-level direction and the one-line reason for each major choice.
+- Any change to the mark, accent or type needs a G1 review. Do not drift one screen at a time.
+- The clone test: swap the logo and the product name. If it could be GOG, Steam or Heroic, it is too
+  close. The layout language may be inspired by them. The mark, type, voice and monogram system must
+  be SAPIE's.
+
+### 13.3 UI direction
+
+`AGENTS-UI.md` is the visual base for 0.5. It replaces the glass instrument panel in
+`web/DESIGN.md` and `design/DESIGN.md`. The launcher implements it in QML. The web UI implements it
+in React. They share tokens and behaviour, not component code.
+
+Adopt from it:
+
+- Dark, low-glare, desktop-first frame. Background `#17191D`, panels `#1D2025`.
+- Persistent sidebar, 164px at a 1440px baseline, 1px divider, quiet active state.
+- Compact 42 to 48px toolbar. Small 28 to 32px icon buttons.
+- Cover-art-first library, 5 columns at desktop, 2:3 portrait, 12 to 16px gaps.
+- 4 to 6px radius on cards and controls. One level of shadow, only on dialogs and menus.
+- Quiet violet accent, used sparingly.
+- Real empty, loading and error states. Skeletons match the final layout.
+- Content dominates, chrome stays quiet.
+
+Deliberate overrides:
+
+- **Type stays Manrope**, not Inter, for the reason in 13.2.4.
+- **No glass** anywhere, even though the old web UI uses it.
+- **Dark only** in 0.5. The reason is recorded in `design/DESIGN.md`. A light theme is a separate
+  decision with its own contrast evidence.
+- **No store, download or install UI** unless the feature exists. The launcher adds games from
+  disk; it does not download them.
+- **No fake art** and no invented game metadata.
+
+#### 13.3.1 Screens
+
+| Screen | Content | Primary action |
+| --- | --- | --- |
+| Sign in | Server, username, password, connection status | Sign in |
+| Library | Recently played, all games, favorites, search, filters, sort | Play |
+| Game | Cover, title, status, Play, details, achievements, recent launches | Play |
+| Add game | Pick, review, install, advanced options | Add to library |
+| Friends | Online, away, offline, search | Add friend |
+| Requests | Incoming, outgoing, accept, decline, cancel | Accept |
+| Blocked | Blocked accounts, unblock | Unblock |
+| Lobbies | Joinable lobbies, member count, join | Join |
+| Settings | Account, server, updates, appearance, diagnostics | Save |
+| About | Version, license, notices, log folder | Copy diagnostics |
+| Logs | Activity, levels, copy | Copy log |
+
+No screen exists in the rail until it exists as a surface. No disabled fake destinations.
+
+#### 13.3.2 Component primitives
+
+Build these once as QML components in `launcher/ui` and use them in both launchers. The web UI
+keeps its React components and takes only the tokens and the behaviour rules.
+
+- `AppShell`, `Sidebar`, `SidebarGroup`, `SidebarItem`, `Toolbar`, `PageHeader`.
+- `GameCard`, `GameGrid`, `GameArt`, `MonogramTile`, `PlayButton`, `StatusPill`.
+- `FriendRow`, `FriendGroup`, `RequestRow`, `BlockedRow`, `Avatar`, `PresenceDot`.
+- `LobbyRow`, `LobbyBadge`, `MemberCount`.
+- `Button` (primary, quiet, danger), `IconButton`, `Input`, `SearchField`, `Select`, `Checkbox`.
+- `Dialog`, `Drawer`, `Toast`, `Tooltip`, `Menu`.
+- `EmptyState`, `LoadingSkeleton`, `ErrorState`, `OfflineBanner`.
+- `Section`, `Divider`, `KeyValue`.
+
+Every primitive ships with default, hover, active, focus, disabled and loading where relevant. Each
+one sets `Accessible.role`, `Accessible.name` and the focus policy, because a QML control without
+them is invisible to a screen reader.
+
+#### 13.3.3 Accessibility
+
+- Keyboard reachable in visual order. Focus ring is a 2px accent outline at 2px offset.
+- 44px minimum targets on touch-capable surfaces, 32px minimum on desktop toolbars.
+- Status is never colour alone: dot plus text.
+- Dialog focus trap, Escape closes, focus returns to the trigger.
+- Screen-reader names on every icon button. In QML this means explicit `Accessible` properties,
+  not the text label alone.
+- QML accessibility is opt-in. A custom `Item` or a styled `Control` is silent to the screen reader
+  until it declares a role, a name and its state. Treat that as part of the component, not a later
+  audit.
+- Verify through the platform bridge: Windows UI Automation, and AT-SPI with Orca on Linux.
+- Contrast AA at every text size in the dark palette.
+- Reduced motion respected in both shells.
+- The web UI must work at 360px. The launcher must work at 860x560.
+
+#### 13.3.4 The G1 prototype
+
+Before production UI work, build a clickable QML prototype with the real Qt Quick shell, the real
+component primitives and real empty states. Use one real local game record if a developer has one.
+Do not invent games, players, stats or covers. G1 signs off the prototype, then M23 to M28 build it.
+
+### 13.4 The two launchers
+
+#### 13.4.1 Decision
+
+Build **two launcher products on one Rust core and one Qt Quick UI**:
+
+- `SAPIE for Windows`
+- `SAPIE for Linux`
+
+They share the Rust core, the QML UI, the design tokens and the update manifest format. They do not
+share installers, platform integration or release gates.
+
+**The webview is gone in both.** The 0.4 launcher embedded a browser. 0.5 runs Qt 6 + Qt Quick and
+draws its own scene. There is no WebView2, no WebKitGTK, no HTML, no CSS and no browser JavaScript
+runtime in the launcher. QML is a declarative UI language, not a web page. The only web surface left
+in the project is the LAN web UI, which is a browser page on purpose.
+
+Why drop it:
+
+- The user wants a real launcher, not a browser wrapped in a window frame.
+- It removes a runtime dependency on Windows and a system library stack on Linux.
+- It removes the whole HTML, CSS and JS layer from the desktop trust boundary.
+- Native file dialogs, tray, accessibility bridge, credential storage and installers stop being
+  adapters around a webview and become the app.
+- Qt Quick is GPU rendered and handles a cover grid and animated states directly.
+
+What it costs, stated honestly: Qt adds roughly 40 to 60 MB installed, a C++ build step and LGPLv3
+obligations. Section 13.4.6 covers the licence work. That is the price of a real app.
+
+Why not WinUI 3 on Windows plus GTK4 on Linux: that doubles the UI code, the design system, the
+tests and the maintenance. One Qt Quick codebase already reaches both desktops. Native feel comes
+from platform integration, not from a second toolkit. A per-platform toolkit rewrite is a 0.6
+track, only if Qt proves insufficient.
+
+Why not keep Tauri on Windows and Qt on Linux: that is two UI codebases and two design systems for
+one product. Rejected.
+
+What "native" means in this plan: Qt Quick scene graph rendering, a native window frame, native file
+dialogs, a native tray, the native accessibility bridge, the OS credential store and a native
+installer. It does not mean a stock widget look; the SAPIE design system owns the visuals.
+
+#### 13.4.2 Stack
+
+| Layer | Windows | Linux | Shared |
+| --- | --- | --- | --- |
+| App shell | Qt 6.8 LTS + Qt Quick, MSVC 2022 | Qt 6.8 LTS + Qt Quick, GCC or Clang | Qt 6 |
+| UI | QML + Qt Quick Controls | same | `launcher/ui` |
+| Core | Rust `sapie-launcher-core` | same | `launcher/core` |
+| Bridge | C ABI plus a C++ `CoreBridge : QObject` | same | `launcher/bridge` |
+| Rendering | Qt Quick scene graph, GPU with software fallback | same | Qt |
+| Secrets | Windows Credential Manager | Secret Service (GNOME Keyring or KWallet) | `keyring` crate |
+| Library store | JSON with atomic write and schema version | same | `launcher/core` |
+| Packaging | `windeployqt`, NSIS, MSI, portable zip, MSIX later | `linuxdeploy` + Qt plugin, AppImage, deb, Flatpak | CI |
+| Updates | Signed manifest, installer apply | Signed manifest, AppImage replace, Flatpak | shared manifest format |
+| Native bits | Steamless, jump list, taskbar progress, ACL, `sapie://` | LD_PRELOAD, desktop entry, MIME, AppStream | platform interface |
+| Signing | Authenticode (OV/EV or Azure Trusted Signing) | GPG or AppImage signature, Flatpak | CI secrets |
+| Build | CMake 3.24+, MSVC, Rust, `windeployqt` | CMake 3.24+, Ninja, Rust, `linuxdeploy` | CMake |
+| Minimum OS | Windows 10 1809 and 11 | Ubuntu 22.04+, Fedora 40+, Arch | document per release |
+
+The bridge is deliberately small. The Rust core exposes a versioned C ABI (`sapie_core.h`) with
+command functions, an event callback and opaque handles. One hand-written `CoreBridge : QObject`
+wraps it for QML with `Q_INVOKABLE` methods and signals. No cxx-qt, no generated bindings, no IPC
+socket and no JSON command channel on the hot path. The network protocol to the SAPIE server is
+unchanged; this is only the UI-to-core boundary. If the surface ever outgrows one header, cxx-qt is
+the upgrade path, not the starting point.
+
+#### 13.4.3 Directory layout
+
+```
+launcher/
+├─ CMakeLists.txt             # top-level build, Qt 6 and Rust core
+├─ Cargo.toml                 # Rust workspace
+├─ core/                      # Rust: auth, detect, install, config, launch, library, updates
+│  ├─ include/sapie_core.h    # the C ABI, the only contract QML sees
+│  └─ src/
+├─ bridge/                    # C++ CoreBridge QObject over the C ABI
+├─ ui/                        # QML: Tokens.qml, components/, screens/, icons/, fonts/, qrc
+├─ app/                       # shared main.cpp, application setup, platform interface
+├─ windows/                   # Win32 integration, .rc, NSIS/MSI scripts, windeployqt
+├─ linux/                     # XDG integration, desktop entry, metainfo, AppImage/Flatpak
+└─ tests/                     # fake platform, fixtures, QML tests, screenshots
+```
+
+The Rust core inside `client/src-tauri` migrates into `launcher/core`. The Tauri shell and its React
+UI are deleted, not ported. The DLL, server, web and proto keep their current paths. Design lives in
+the top-level `design/` directory, not inside `launcher/`, so the web UI and the docs consume the
+same tokens and icon sources.
+
+`design/tokens.css` stays the single source for the web. A small generator in `tools/` emits
+`launcher/ui/Tokens.qml` from it. Font sources live in `design/fonts/`; the build copies the TTF or
+OTF files into `launcher/ui/fonts/` and compiles them into the resource file. Do not hand-maintain
+two palettes or two font sets.
+
+#### 13.4.4 Platform differences
+
+| Concern | Windows | Linux |
+| --- | --- | --- |
+| File picker | `QFileDialog`, which uses `IFileDialog` | `QFileDialog` through the XDG portal |
+| Tray | `QSystemTrayIcon`, jump list, taskbar progress via Win32 | `QSystemTrayIcon` / StatusNotifierItem, desktop entry |
+| Single instance | `QLocalServer` named pipe | `QLocalServer` Unix socket |
+| Token ACL | Owner-only DACL via the Windows API | `0600` |
+| Library install | Copy DLL, Steamless sidecar | Copy `.so`, `LD_PRELOAD` |
+| Protocol handler | `HKCU\Software\Classes\sapie` | `x-scheme-handler/sapie` desktop entry |
+| Updates | Signed manifest, silent NSIS apply | Signed manifest, AppImage replace, Flatpak |
+| Elevation | Per-user by default, per-machine MSI | Never root; user install |
+| Sandbox | None beyond the OS | Flatpak sandbox with documented permissions |
+| High DPI | Qt 6 automatic scaling | Qt 6 automatic scaling, 1x and 2x tested |
+| Antivirus | Sign binaries, avoid packers | Not applicable |
+
+#### 13.4.5 What both launchers must do
+
+- Real login against the server. No fake "connected" state.
+- Token in the OS credential store. No password on disk.
+- Detect arch, era, interfaces and appid.
+- Install, repair and restore the game library.
+- Launch the game in one click with a 0600 token file.
+- Full friends, requests, blocked, lobby join and invite.
+- Library with covers, monograms, favorites, recent and playtime.
+- Auto-update with a visible version and a rollback path.
+- Empty, loading, error, offline and missing-game states.
+- Keyboard and screen-reader use through the Qt accessibility bridge.
+- Start without a browser runtime. If WebView2 or WebKitGTK is missing, nothing changes, because
+  neither is used.
+
+#### 13.4.6 Qt licensing and runtime
+
+- Pin Qt 6.8 LTS for the whole 0.5 cycle. Do not float to a new minor inside a release.
+- Qt is used under LGPLv3 with dynamic linking. Ship the Qt libraries, the licence texts and the
+  third-party notices. Provide the relink path LGPLv3 requires: the app must be relinkable against
+  a modified Qt, with instructions in `docs/BUILD.md`.
+- Do not static-link Qt without a legal review.
+- Do not add a Qt module with a different licence (Charts and Virtual Keyboard are the common
+  traps) unless the licence is checked and recorded. Draw charts in QML instead.
+- `windeployqt` and `linuxdeploy-plugin-qt` decide which plugins ship. A missing `platforms`,
+  `imageformats` or `styles` plugin is a blank window, so the packaging test asserts that the app
+  starts on a clean machine.
+- Compile QML ahead of time (`qmlcachegen`/`qmlsc`) and run `qmllint` in CI. A QML file that only
+  fails at load time is a blank window on a user's machine.
+- The Rust core stays under the repository licence. Qt stays a separate, replaceable shared
+  library.
+
+### 13.5 What to add in 0.5
+
+#### 13.5.1 Must ship
+
+- The identity system in 13.2 and the UI direction in 13.3.
+- Two launchers on the shared Rust core and Qt Quick UI in 13.4. No webview runtime on either OS.
+- Full friend management in both launchers, not only the web UI.
+- Library: covers, monograms, favorites, recent, playtime, search, filters, sort.
+- Game page with achievements, repair, restore and per-game settings.
+- Add game flow with detection, review, install, rollback and editable appid.
+- Settings, logs, About, diagnostics and sign out.
+- System tray, single instance and `sapie://` links.
+- Auto-update with signed manifests and rollback.
+- The 0.4 security debts in 13.1, including the launcher replacement.
+- Windows and Linux installers that a normal person can install and remove.
+
+#### 13.5.2 Should ship
+
+- MSIX for Windows and Flathub listing for Linux.
+- A beta update channel next to stable.
+- Server-side avatars or deterministic monograms. Start with monograms; upload only if it earns its
+  keep.
+- `sapie://join/<lobby>` invite links from the web and the launcher.
+- A server-side game catalog for names and metadata, if it can be populated without fake data.
+
+#### 13.5.3 Stretch, not 0.5
+
+- Per-platform toolkit shells (WinUI 3 and GTK4) replacing Qt.
+- Qt Widgets as a second UI toolkit. One toolkit, one UI language.
+- Chat, voice, streaming, cloud saves, workshop, inventory, overlay.
+- Store, purchasing, downloads, DRM.
+- macOS, Windows ARM64, 32-bit ARM.
+- Importing a Steam library or scanning all disks.
+- App ownership enforcement.
+
+### 13.6 Bundling and distribution
+
+#### 13.6.1 Windows
+
+Artifacts:
+
+- `SAPIE-0.5.0-windows-x64-setup.exe` (NSIS, per-user, no admin).
+- `SAPIE-0.5.0-windows-x64.msi` (per-machine, enterprise).
+- `SAPIE-0.5.0-windows-x64-portable.zip`.
+- `SAPIE-0.5.0-windows-x64.msix` only if 13.5.2 lands.
+
+Rules:
+
+- Sign every executable and installer with Authenticode and a timestamp. Use Azure Trusted Signing
+  or an OV/EV certificate. Document that SmartScreen reputation takes time.
+- Deploy Qt with `windeployqt --release --compiler-runtime`: Qt Core, Gui, Quick, QuickControls2,
+  Network, Svg, the `platforms/qwindows.dll` plugin, the styles and image format plugins, the MSVC
+  runtime, and a `qt.conf` that points at the bundled tree. There is no WebView2 bootstrapper and no
+  runtime to detect.
+- Test the portable zip on a clean Windows 10 and 11 machine with no Qt, no MSVC and no developer
+  tools installed. A missing plugin is a blank window, so this test is mandatory.
+- Write to `%LOCALAPPDATA%\SAPIE`, not `Program Files`, for the per-user install. Keep game files
+  where the user put them.
+- Token file ACL: owner-only, explicit, not inherited.
+- Uninstall removes the app and the shortcut. Ask before deleting the library record and never
+  delete game files.
+- Auto-update: signed JSON manifest on GitHub Releases, stable and beta channels, rollback to the
+  previous signed version. Apply through the per-user NSIS installer in silent mode, then verify the
+  new binary's signature before restarting. A portable zip is updated by replacing the extracted
+  folder, so the app never patches itself in place there.
+
+#### 13.6.2 Linux
+
+Artifacts:
+
+- `SAPIE-0.5.0-linux-x64.AppImage`.
+- `SAPIE-0.5.0-linux-amd64.deb`.
+- `SAPIE-0.5.0-linux-x64.flatpak` and a Flathub manifest.
+- `SAPIE-0.5.0-linux-arm64.AppImage` and deb if the runner holds.
+- `SAPIE-0.5.0-linux-x64.rpm` only if a maintainer signs up for it.
+
+Rules:
+
+- AppStream metadata, a `.desktop` entry, `x-scheme-handler/sapie`, and hicolor icons at the sizes
+  the desktops ask for.
+- Bundle Qt. The AppImage uses `linuxdeploy` with the Qt plugin, the deb installs a private Qt tree
+  under `/opt/SAPIE`, and the Flatpak uses `org.kde.Platform` with the matching Qt 6 runtime. Do not
+  link against the distro Qt: Ubuntu 22.04 ships 6.2 and 24.04 ships 6.4, both older than the pinned
+  6.8. Bundling keeps one build working across the matrix.
+- Flatpak documents its filesystem permissions. A game directory outside the sandbox needs a portal
+  or an explicit `--filesystem` grant. Say so in the UI.
+- Token file mode `0600`. Never write to `/usr` or `/etc` from the app.
+- Install the AppImage and the deb user install per user; the system deb goes through the package
+  manager. The deb does not require root to run, only to install system-wide.
+- Auto-update: AppImage replaces itself after verifying the signed manifest. Flatpak updates through
+  its runtime. Debs update through the distro or a signed repository later.
+- Wayland and X11 both work. Test Qt's `wayland` and `xcb` platform plugins explicitly. HiDPI works.
+  Test at 1x and 2x.
+
+#### 13.6.3 Server, DLL and web
+
+- Server: `linux/amd64`, `linux/arm64`, `windows/amd64`, `windows/arm64` binaries plus a multi-arch
+  container with `web/dist`.
+- DLL: the 10 target-era variants, unchanged naming.
+- Web: `web/dist` inside the container and the release archive.
+- Checksums: one `SHA256SUMS` file per release.
+- SBOM: one per artifact family.
+- Third-party notices: Qt 6 and the Qt modules used (LGPLv3), Manrope and IBM Plex (OFL), Rust
+  crates, Steamless, and GSAP for the web UI only.
+
+#### 13.6.4 Release channels and rollback
+
+- `stable` and `beta` channels. The launcher shows the channel and the version.
+- Update manifest is signed. The app verifies the signature before applying.
+- Keep the previous version downloadable. Rollback is a documented manual step in 0.5, automatic
+  only if the updater supports it.
+- A failed update leaves the old version runnable and says so.
+
+#### 13.6.5 Artifact naming
+
+`SAPIE-<version>-<os>-<arch>-<kind>.<ext>`, for example
+`SAPIE-0.5.0-windows-x64-setup.exe` and `SAPIE-0.5.0-linux-x64.AppImage`. No spaces, no dates in the
+name, no `latest` in a file name.
+
+### 13.7 M stages and phases
+
+M22 to M30 are 0.5. M13 to M21 are 0.4 and stay above as history. Each phase is one agent, one
+worktree, one artifact. Risk tiers as in 12.1.
+
+Stage map:
+
+| Stage | Theme | Gate |
+| --- | --- | --- |
+| M22 | Identity foundation | G1 |
+| M23 | Shared launcher core | G1 holds |
+| M24 | SAPIE for Windows | G2 |
+| M25 | SAPIE for Linux | G2 |
+| M26 | Launcher product | G3 |
+| M27 | Server, protocol and security debts | G3 |
+| M28 | Web UI identity | G1 and G3 |
+| M29 | Bundling, updates and CI | G4 |
+| M30 | Migration, release candidate and tag | G4 |
+
+#### M22: Identity foundation
+
+##### M22-a Identity decision record
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** none.
+- **Scope:** read `AGENTS-UI.md`, the existing `design/` and `web/DESIGN.md`. Write
+  `design/identity.md` with name, tagline, mark brief, palette, type, voice, motion, art rules and
+  the GOG-inspiration boundary. Record every override of `AGENTS-UI.md` with a reason.
+- **Acceptance:** the doc is approved at G1. No em dash. Every choice has one line of reason.
+
+##### M22-b Tokens v2
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M22-a.
+- **Scope:** rewrite `design/tokens.css` with the 0.5 palette, type, spacing, radius, shadows and
+  motion. Retire the ember brand accent. Add the generator that emits `launcher/ui/Tokens.qml`, and
+  a contrast table in `design/DESIGN.md`.
+- **Acceptance:** web and Qt consume the same source. No hardcoded colour outside tokens. AA
+  measured for every text pair. Regenerating produces no diff.
+
+##### M22-c Mark, wordmark and monogram
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M22-a, G1 direction.
+- **Scope:** three mark directions, user picks one at G1. Produce SVG wordmark, app icon at all
+  sizes, tray silhouette, and a deterministic monogram generator. No final art before approval.
+- **Acceptance:** mark works at 16px and 512px. Icon set is complete for Windows and Linux. The
+  monogram is stable for the same appid. G1 signs off.
+
+##### M22-d Component primitives
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M22-b.
+- **Scope:** build the primitives in 13.3.2 as QML components in `launcher/ui`. Every custom control
+  declares its `Accessible` role, name and state. Include all states and keyboard behavior.
+- **Acceptance:** a gallery screen renders every primitive in every state. Focus order is correct.
+  `qmllint` is clean. The accessibility bridge reports each control on Windows and Linux.
+
+##### M22-e Identity prototype
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M22-c, M22-d.
+- **Scope:** clickable QML prototype of Sign in, Library, Game, Friends, Settings, plus empty,
+  loading and error states. Use a real local record if available. No invented content.
+- **Acceptance:** G1 approves the prototype. Swap-the-logo test fails to identify GOG, Steam or
+  Heroic. Antislop audit passes.
+
+##### M22-f Identity surfaces
+- **Agent:** one worker. **Risk:** green. **Priority:** should. **Depends:** M22-c.
+- **Scope:** README banner, social preview, About screen, installer splash, release-notes template,
+  startup banner, docs theme.
+- **Acceptance:** the same mark, palette and voice across all surfaces. No fake screenshots.
+
+#### M23: Shared launcher core
+
+##### M23-a Extract the core crate
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M22.
+- **Scope:** create `launcher/core` and move auth, detection, install, config, launch, library,
+  keychain, paths and update logic out of the current Tauri shell. Expose it as a C ABI
+  (`sapie_core.h`) with no Qt dependency.
+- **Acceptance:** the Rust tests pass. A C smoke test calls every exported function. The crate
+  builds without Qt installed.
+
+##### M23-b C ABI and CoreBridge
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M23-a.
+- **Scope:** versioned `sapie_core.h`: opaque handles, status codes, owned strings with explicit free
+  functions, one event callback. One hand-written `CoreBridge : QObject` in `launcher/bridge` with
+  `Q_INVOKABLE` methods and signals for QML. No JSON command channel and no local socket.
+- **Acceptance:** a Qt test drives login, detect and launch through the bridge with a fake core.
+  Unknown ABI versions fail with a clear message. No leaked strings under ASan.
+
+##### M23-c Platform boundary
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M23-a.
+- **Scope:** Rust traits for paths, process, keychain, ACL and updater. A C++ `Platform` interface for
+  dialogs, tray, protocol registration and single instance. Fake implementations for tests.
+- **Acceptance:** core tests run on Linux and Windows with the fake platform. No platform `cfg`
+  leaks into product logic. The C++ side has exactly one implementation per OS.
+
+##### M23-d Library store migration
+- **Agent:** one worker. **Risk:** red. **Priority:** must. **Depends:** M23-a.
+- **Scope:** schema v2 for the local library, atomic write, backup, migration from the 0.4 state,
+  recovery from a corrupt file.
+- **Acceptance:** a 0.4 state file migrates with no data loss. A truncated write leaves the previous
+  file usable. Tests cover both.
+
+##### M23-e Core test harness
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M23-c, M23-d.
+- **Scope:** fixtures for real game directory layouts, fake filesystem, fake keychain, fake
+  process spawn.
+- **Acceptance:** the core suite runs on both OSes in CI without opening a window.
+
+##### M23-f Qt application skeleton
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M22-d, M23-b.
+- **Scope:** `launcher/app` and the top-level CMake build. QML engine loading from the resource file,
+  bundled fonts, the `Tokens.qml` singleton, window state, the dark frame, single instance, logging
+  and clean shutdown. No webview and no remote URL.
+- **Acceptance:** an empty SAPIE shell opens on Windows and Linux from the same QML. Assets load
+  from the binary. A network trace shows no remote request at startup.
+
+#### M24: SAPIE for Windows
+
+##### M24-a Windows shell
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M23.
+- **Scope:** `launcher/windows`, Qt 6 app target with MSVC, native frame and dark title bar, Qt Quick
+  window, tray, jump list, taskbar progress, `QLocalServer` single instance.
+- **Acceptance:** builds on `windows-latest` with Qt 6.8, opens the shared QML, and runs with no
+  WebView2 installed.
+
+##### M24-b Windows integration
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M24-a.
+- **Scope:** file associations, `sapie://` handler, long paths, token ACL, Steamless, antivirus
+  notes, `%LOCALAPPDATA%` paths.
+- **Acceptance:** protocol opens the launcher, ACL is owner-only, Steamless unpack works, long path
+  test passes.
+
+##### M24-c Windows packaging
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M24-b.
+- **Scope:** `windeployqt` with plugins, styles and the MSVC runtime, NSIS per-user, MSI per-machine,
+  portable zip, icons, version info, uninstall behavior. No WebView2 bootstrapper.
+- **Acceptance:** clean Windows 10 and 11 install, launch, update prompt and uninstall without
+  admin for the per-user path. The portable zip runs on a machine with no Qt or MSVC installed.
+
+##### M24-d Windows signing
+- **Agent:** one worker. **Risk:** red. **Priority:** must. **Depends:** M24-c.
+- **Scope:** Authenticode signing in CI, timestamping, secret handling, SmartScreen documentation.
+- **Acceptance:** every shipped executable and installer is signed. The SmartScreen reputation risk
+  is documented, not hidden.
+
+##### M24-e Windows update path
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M24-d.
+- **Scope:** update check in the core, signed manifest, download, signature and version verify,
+  silent per-user NSIS apply, stable and beta channels, rollback.
+- **Acceptance:** 0.4 to 0.5 update and a 0.5 to 0.5.1 dry run succeed. A tampered manifest is
+  rejected. A failed update leaves 0.4 runnable.
+
+#### M25: SAPIE for Linux
+
+##### M25-a Linux shell
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M23.
+- **Scope:** `launcher/linux`, Qt 6 app target, native frame, Qt Quick window, `QLocalServer` single
+  instance, tray through StatusNotifierItem where the desktop provides it.
+- **Acceptance:** builds on `ubuntu-24.04` and `ubuntu-24.04-arm`, opens the shared QML, starts
+  under Wayland and X11, and needs no WebKitGTK.
+
+##### M25-b Linux integration
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M25-a.
+- **Scope:** XDG dirs, desktop entry, MIME, AppStream, LD_PRELOAD, 0600 token file, no Steamless,
+  Wayland and X11, HiDPI.
+- **Acceptance:** file manager launch, protocol handler, game launch with preload, 1x and 2x.
+
+##### M25-c Linux packaging
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M25-b.
+- **Scope:** AppImage through `linuxdeploy` with the Qt plugin, deb with a private Qt tree under
+  `/opt/SAPIE`, Flatpak on `org.kde.Platform` with the Qt 6 runtime, icons, desktop file, metainfo,
+  sandbox permissions.
+- **Acceptance:** install, launch and uninstall on Ubuntu 22.04, Ubuntu 24.04, Fedora and Arch.
+  Flatpak runs with a documented filesystem grant. The AppImage runs without Qt installed.
+
+##### M25-d Linux update path
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M25-c.
+- **Scope:** signed manifest in the core, AppImage replace with signature check, Flatpak update,
+  deb policy, rollback.
+- **Acceptance:** 0.4 to 0.5 update via AppImage and Flatpak. A tampered manifest is rejected. A
+  failed update leaves the old version runnable.
+
+##### M25-e Distro and desktop matrix
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M25-c.
+- **Scope:** VM scripts and evidence for GNOME, KDE, Wayland and X11, 1x and 2x.
+- **Acceptance:** `docs/verification/0.5-linux-matrix.md` with screenshots and notes.
+
+#### M26: Launcher product
+
+##### M26-a Library
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M22-e, M23.
+- **Scope:** grid, covers, monograms, favorites, recent, search, filter, sort, playtime, missing game
+  state.
+- **Acceptance:** 0, 1 and 100 games render without overflow. Search and sort persist. Keyboard
+  reaches every tile and Play action.
+
+##### M26-b Game page
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M26-a.
+- **Scope:** cover, Play, status, details, achievements, repair, restore, launch args, preload,
+  recent launches.
+- **Acceptance:** restore puts the original library back. Hidden achievements stay hidden. Every
+  action has a confirmation or undo.
+
+##### M26-c Add game
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M23.
+- **Scope:** pick, detect, review, install, rollback, editable appid and era, advanced options.
+- **Acceptance:** adding a real game works end to end. A failed copy rolls back. A duplicate focuses
+  the existing record.
+
+##### M26-d Friends
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M27-a to M27-c.
+- **Scope:** friends, requests, blocked, search, add, remove, block, unblock, lobby join, invite,
+  monogram avatars.
+- **Acceptance:** cross-surface: a request sent in the launcher is accepted in the web and the
+  reverse. Remove and block take effect on both.
+
+##### M26-e Settings, logs and About
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M26-a.
+- **Scope:** account, server, updates, appearance, diagnostics, About, sign out, copy log, open data
+  folder.
+- **Acceptance:** no secret in any log. Sign out clears the keychain token. Update channel is
+  visible.
+
+##### M26-f Onboarding and states
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M26-a to M26-e.
+- **Scope:** first run, empty, loading, error, offline, missing game, launch failed, update failed.
+- **Acceptance:** every state has a specific message and an action. No raw stack trace reaches the
+  user.
+
+##### M26-g Accessibility
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M26-a to M26-f.
+- **Scope:** keyboard, screen reader through `Accessible` properties, contrast, reduced motion, 44px
+  targets, focus return.
+- **Acceptance:** a keyboard-only user signs in, adds a game and launches it. A UIA pass on Windows
+  and an AT-SPI/Orca pass on Linux are recorded. Both OSes.
+
+##### M26-h Launcher tests
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M26-a to M26-g.
+- **Scope:** Qt Quick Test and `qmltestrunner` against a fake `CoreBridge`, screenshot checks with
+  `grabToImage`, `qmllint`, and platform integration tests.
+- **Acceptance:** CI runs the suite on both OSes. No test needs a real game or a real server to
+  pass.
+
+#### M27: Server, protocol and security debts
+
+##### M27-a Token rotation and revoke
+- **Agent:** one worker. **Risk:** red. **Priority:** must. **Depends:** none.
+- **Scope:** rotate on login, revoke on password change, list sessions, cap lifetime, invalidate on
+  logout-all, tests for replay.
+- **Acceptance:** a revoked or rotated token fails immediately. A password change kills every other
+  session.
+
+##### M27-b Limiter persistence
+- **Agent:** one worker. **Risk:** red. **Priority:** must. **Depends:** M27-a.
+- **Scope:** persist login, social and game-login limiters. Add a lockout status to the wire enum or
+  a clear error path. Cleanup expired rows.
+- **Acceptance:** a restart does not reset a lockout. Tests cover the lockout window.
+
+##### M27-c Blocked peers in lobbies
+- **Agent:** one worker. **Risk:** red. **Priority:** must. **Depends:** M27-a.
+- **Scope:** filter `router.lobbyRecipients`, invitations and signaling by the block list. Keep the
+  owner and member rules intact.
+- **Acceptance:** a blocked peer receives no lobby frames and cannot join or relay. Tests for each
+  path.
+
+##### M27-d Windows token ACL
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M23.
+- **Scope:** write the token file with an explicit owner-only ACL on Windows. Verify on a clean
+  profile.
+- **Acceptance:** `icacls` shows only the owner. The DLL can still read it. Documented.
+
+##### M27-e Deep links and invites
+- **Agent:** one worker. **Risk:** yellow. **Priority:** should. **Depends:** M27-c.
+- **Scope:** `sapie://join/<lobby>`, resolve and join, web fallback, invite copy link.
+- **Acceptance:** a link from the web opens the launcher and joins. A bad or expired link shows a
+  specific error.
+
+##### M27-f Protocol tests and docs
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M27-a to M27-e.
+- **Scope:** table-driven tests for every new path, updated `docs/PROTOCOL.md`, `docs/API.md`,
+  `docs/SECURITY.md`.
+- **Acceptance:** every new route has a test and a doc line. The 0.4 risk list is updated.
+
+#### M28: Web UI identity
+
+##### M28-a Tokens and primitives
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M22-b, M22-d.
+- **Scope:** consume the shared tokens and the behaviour rules. Keep the React components; there is
+  no QML reuse on the web. Remove the glass panels and the ember accent. Match the Qt launcher frame
+  and type.
+- **Acceptance:** web and launcher look like one product. No duplicated colour values. The token
+  generator is the only path from `design/tokens.css` to either surface.
+
+##### M28-b Friends, requests and lobbies
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M28-a, M27.
+- **Scope:** restyle the friends, requests, blocked and lobby surfaces to the 0.5 direction. Keep the
+  real states and data.
+- **Acceptance:** keyboard and contrast pass. No fake content. Cross-surface actions work.
+
+##### M28-c Account and admin
+- **Agent:** one worker. **Risk:** green. **Priority:** should. **Depends:** M28-a.
+- **Scope:** account, achievements, admin view, monogram avatar, sign out.
+- **Acceptance:** admin routes stay on loopback. No secret leaks.
+
+##### M28-d Docs and surfaces
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M22-f.
+- **Scope:** README, `docs/UI.md`, screenshots with real data, social preview, issue templates.
+- **Acceptance:** every image is real or clearly a placeholder. The voice matches 13.2.5.
+
+##### M28-e Accessibility and responsive
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M28-b.
+- **Scope:** keyboard, focus, 360px, contrast, reduced motion, screen reader.
+- **Acceptance:** recorded pass at 360, 768 and 1440. No horizontal overflow.
+
+#### M29: Bundling, updates and CI
+
+##### M29-a Windows CI
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M24.
+- **Scope:** Qt 6.8 MSVC build, `windeployqt`, sign, package NSIS/MSI/portable, checksums, SBOM,
+  upload.
+- **Acceptance:** a tag produces all Windows artifacts. Signing is verified. A portable artifact
+  starts on a runner with no Qt installed.
+
+##### M29-b Linux CI
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M25.
+- **Scope:** Qt 6.8 build, AppImage through `linuxdeploy` and the Qt plugin, deb with the private Qt
+  tree, Flatpak on `org.kde.Platform`, AppStream, checksums, SBOM, upload.
+- **Acceptance:** a tag produces all Linux artifacts. Flatpak lint passes. The AppImage starts on a
+  runner with no distro Qt.
+
+##### M29-c Update manifests and channels
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M29-a, M29-b.
+- **Scope:** signed update manifests, stable and beta, version pinning, rollback notes.
+- **Acceptance:** the launcher sees the channel and version. A tampered manifest is rejected.
+
+##### M29-d Release bundles
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M29-a to M29-c.
+- **Scope:** update `tools/release-bundle.sh` for two launchers, server, DLLs, web, checksums,
+  notices, SBOM. One archive per OS plus the container.
+- **Acceptance:** a dry-run tag produces the full set. No artifact is missing or misnamed.
+
+##### M29-e Container and server bundles
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M29-d.
+- **Scope:** multi-arch container with `web/dist`, healthcheck, compose, server binaries.
+- **Acceptance:** `docker compose up` serves the web on 8081. The admin API stays loopback.
+
+##### M29-f Security and dependency gates
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M29-a to M29-e.
+- **Scope:** `govulncheck`, `npm audit`, `cargo audit`, secret scanning, signed release, dependency
+  policy.
+- **Acceptance:** no new high finding is silently accepted. The allowlist is documented.
+
+#### M30: Migration, release candidate and tag
+
+##### M30-a State migration
+- **Agent:** one worker. **Risk:** red. **Priority:** must. **Depends:** M23-d.
+- **Scope:** migrate a 0.4 library, server, token and per-game settings into 0.5. Keep the original
+  library backup intact.
+- **Acceptance:** a 0.4 profile upgrades with no lost game. A failed migration backs up and tells
+  the user.
+
+##### M30-b Upgrade path
+- **Agent:** one worker. **Risk:** yellow. **Priority:** must. **Depends:** M30-a, M24-e, M25-d.
+- **Scope:** install 0.4, then 0.5, on Windows and Linux. Verify library, token, friends and launch.
+- **Acceptance:** documented upgrade path. A downgrade does not destroy the 0.5 state.
+
+##### M30-c Release candidate verification
+- **Agent:** one worker. **Risk:** red. **Priority:** must. **Depends:** all.
+- **Scope:** clean VMs, both OSes, install, sign in, add game, launch, friends, requests, block,
+  lobby, update, uninstall. Run the M13 core evidence again. Confirm no webview runtime is present
+  on either VM.
+- **Acceptance:** `docs/verification/0.5-rc-checklist.md` signed off. G2, G3 and G4 pass.
+
+##### M30-d Docs and changelog
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M30-c.
+- **Scope:** README, QUICKSTART, BUILD, PROTOCOL, API, SECURITY, UI, CONTRIBUTING, CHANGELOG,
+  AGENTS, identity docs. Remove 0.4-only claims.
+- **Acceptance:** every command runs. No doc references a removed path.
+
+##### M30-e Tag and publish
+- **Agent:** one worker. **Risk:** red. **Priority:** must. **Depends:** M30-d.
+- **Scope:** bump to 0.5.0, tag `v0.5.0`, publish artifacts, container, notes, known limits.
+- **Acceptance:** artifacts exist, checksums verify, container pulls, notes state what was and was
+  not verified.
+
+### 13.8 G gates
+
+G stages are acceptance gates, not merge stages. A gate is signed off by the user or the chief with
+recorded evidence. A failed gate blocks the next stage.
+
+#### G1: Identity gate
+- **When:** after M22-e, before M23 production UI.
+- **Owner:** user plus chief.
+- **Criteria:** `design/identity.md` approved. Mark and wordmark chosen. Palette, type and voice
+  final. QML prototype of Sign in, Library, Game, Friends and Settings approved. Contrast AA.
+  Swap-the-logo test passes. No GOG clone. No fake content. Antislop audit passes.
+- **Evidence:** `docs/verification/0.5-identity-gate.md` with screenshots and the decisions.
+
+#### G2: Platform gate
+- **When:** after M24-c and M25-c, before M29 release work.
+- **Owner:** chief, with user sign-off for signing exceptions.
+- **Criteria:** clean install, launch and uninstall on Windows 10, Windows 11, Ubuntu 22.04,
+  Ubuntu 24.04, Fedora and Arch. File picker, tray, protocol handler, token storage and update check
+  work. Per-user Windows install needs no admin. Linux install needs no root. Neither OS has
+  WebView2 or WebKitGTK installed during the test.
+- **Evidence:** `docs/verification/0.5-platform-gate.md` with VM logs and screenshots.
+
+#### G3: Core gate
+- **When:** after M26 and M27, before M30-c.
+- **Owner:** user plus chief.
+- **Criteria:** live two-client session, a real game run on Windows and Linux, token login with no
+  password, friend request, accept, remove, block, lobby join, achievements. No plaintext secret in
+  disk or logs. The 0.4 security debts are closed.
+- **Evidence:** `docs/verification/0.5-core-gate.md` with logs and the exact builds.
+
+#### G4: Release gate
+- **When:** after M30-c, before the tag.
+- **Owner:** user.
+- **Criteria:** signed Windows and Linux artifacts, checksums, SBOM, signed update manifest, upgrade
+  from 0.4, rollback path, container, docs, known limits. Qt libraries are bundled and the LGPLv3
+  relink path is documented. No webview is linked. A user can install, add a game, play and
+  uninstall without reading source docs.
+- **Evidence:** `docs/verification/0.5-rc-checklist.md` signed off.
+
+### 13.9 Full change inventory
+
+#### Design and identity
+
+- `design/identity.md`: new, source of truth for name, mark, palette, type, voice, motion, art.
+- `design/DESIGN.md`: rewrite for the 0.5 direction, GOG boundary, dark-only reason, screen reasons.
+- `design/tokens.css`: rewrite, violet accent, new neutrals, type, spacing, radius, elevation.
+- `tools/gen-qml-tokens`: new, emits `launcher/ui/Tokens.qml` from `design/tokens.css`.
+- `design/fonts/`: Manrope and IBM Plex Mono as TTF or OTF for the Qt build, woff2 for the web.
+- `design/icons/`: new SVG sources and exported sizes.
+- `design/wordmark.svg`, `design/mark.svg`, `design/app-icon.svg`: new.
+- `web/DESIGN.md`: replace the glass direction with the shared 0.5 direction.
+- `AGENTS-UI.md`: keep as the reference, mark the overrides in `design/identity.md`.
+
+#### Launcher
+
+- `launcher/CMakeLists.txt`: Qt 6 build, Rust core, both platform targets.
+- `launcher/Cargo.toml`: workspace.
+- `launcher/core/`: auth, detect, install, config, launch, library, keychain, paths, update, errors,
+  platform traits and tests. Exposes `include/sapie_core.h`.
+- `launcher/bridge/`: `CoreBridge.h` and `CoreBridge.cpp`, the only C++ that touches the C ABI.
+- `launcher/ui/`: QML components, screens, `Tokens.qml`, icons, TTF fonts, `qrc`.
+- `launcher/app/`: `main.cpp`, QML engine setup, fonts, window state, single instance, platform
+  interface.
+- `launcher/windows/`: Win32 integration, `.rc`, NSIS/MSI scripts, `windeployqt`.
+- `launcher/linux/`: XDG integration, `.desktop`, metainfo, AppImage and Flatpak manifests.
+- `launcher/tests/`: fake platform and bridge, fixtures, QML tests, screenshots.
+- `client/src-tauri/`: migrate out and remove in M23/M30.
+- `client/src-tauri/resources/steamless/`: move to the Windows launcher resources.
+- `client/src-tauri/ui/`: deleted with the Tauri shell. The QML UI is new work, not a port.
+
+#### Launcher screens and components
+
+- Sign in, Library, Game, Add game, Friends, Requests, Blocked, Lobbies, Settings, About, Logs.
+- QML: `AppShell`, `Sidebar`, `Toolbar`, `GameCard`, `GameGrid`, `MonogramTile`, `PlayButton`,
+  `FriendRow`, `RequestRow`, `BlockedRow`, `Avatar`, `PresenceDot`, `LobbyRow`, `Dialog`, `Drawer`,
+  `Toast`, `Menu`, `EmptyState`, `LoadingSkeleton`, `ErrorState`, `OfflineBanner`.
+- Every custom control sets `Accessible.role`, `Accessible.name` and its state.
+- State: library snapshot, session, update state, online state, progress events.
+
+#### Server and protocol
+
+- `server/migrations/003_0_5.sql`: limiter persistence, session rotation metadata, any new tables.
+- `server/internal/state/state.go`: session rotation, revoke, limiter storage, block-aware lobby
+  queries.
+- `server/internal/api/api.go`: rotation, revoke, deep-link resolve, invite link, lockout status.
+- `server/internal/session/session.go`: token rotation, revoked token, game login lockout.
+- `server/internal/router/router.go`: block-aware lobby recipients.
+- `server/internal/ui/ui.go`: deep-link fallback, new user routes.
+- `server/cmd/sapie-server/main.go`: version, limiter store, deep-link base, TLS status.
+- `proto/sapie.proto`: lockout status if added, any new frame for invites.
+- `client/dll/sapie.proto`: mirror.
+- `server/internal/protocol/*.pb.go`: regenerate.
+- Tests for every new path.
+
+#### DLL and client
+
+- `client/dll/settings_parser.cpp`: token file, appid, era, preload, deep-link join.
+- `client/dll/settings.h`: new fields.
+- `client/dll/network.cpp` and `.h`: rotation, lockout, friend events, reconnect, path logs.
+- `client/dll/steam_friends.h`: block and request state.
+- `client/sapie/local_mirror.h`: friend, request, block state.
+- `client/harness/sapie_login_smoke.cpp`: token rotation, lockout, friends, lobby.
+- `tools/harness/`: two-client scenario for CI if feasible.
+
+#### Web
+
+- `web/src/api.ts`: new endpoints, typed errors, session rotation.
+- `web/src/components/`: shared primitives and social rows.
+- `web/src/screens/`: Friends, Requests, Blocked, Lobbies, Account, Admin, Sign in.
+- `web/src/styles.css`: consume shared tokens, remove glass and ember.
+- `web/DESIGN.md`: 0.5 direction.
+- `web/package.json`: scripts and version.
+- `web/e2e/`: Playwright.
+- `web/src/**/*.test.tsx`: Vitest.
+
+#### CI, packaging and release
+
+- `.github/workflows/ci.yml`: core, Qt build, QML lint and tests, web, server, DLL, audits.
+- `.github/workflows/release-windows.yml`: Qt build, `windeployqt`, sign, package, sign manifest.
+- `.github/workflows/release-linux.yml`: Qt build, AppImage, deb, Flatpak, AppStream, sign.
+- `.github/workflows/release.yml`: orchestrate, bundle, container, publish.
+- `.github/workflows/build.yml`: remove or fold into the above.
+- `.github/dependabot.yml`: Go, npm, Cargo, Actions, and Qt version bumps handled by hand.
+- `tools/release-bundle.sh`: two launchers, new names, checksums, notices, SBOM.
+- `tools/verify-checksums.sh`: new.
+- `Dockerfile`, `compose.yaml`: 0.5 server, web, healthcheck.
+- Signing secrets: Authenticode, AppImage GPG, Flatpak.
+- `docs/RELEASE.md`: new.
+
+#### Docs
+
+- `README.md`: 0.5 install, identity, two launchers, limits.
+- `docs/QUICKSTART.md`: Windows and Linux paths, no SQLite friend editing.
+- `docs/BUILD.md`: Qt 6.8, CMake, MSVC and Ninja, Rust, Qt LGPL relink steps, signing, Flatpak.
+- `docs/PROTOCOL.md`: token rotation, lockout, deep links.
+- `docs/API.md`: new endpoints.
+- `docs/SECURITY.md`: 0.5 threat model, Windows ACL, Flatpak sandbox, TLS.
+- `docs/UI.md`: 0.5 screens and tokens.
+- `docs/IDENTITY.md`: public identity page, or `design/identity.md` linked.
+- `docs/CONTRIBUTING.md`: two-launcher workflow.
+- `docs/CHANGELOG.md`: 0.5 entries.
+- `docs/verification/0.5-identity-gate.md`, `0.5-platform-gate.md`, `0.5-core-gate.md`,
+  `0.5-linux-matrix.md`, `0.5-rc-checklist.md`: new.
+- `AGENTS.md`: 0.5 stack, launcher split, commands, gates.
+- `plan.md`: this section is the live 0.5 plan.
+- `dev_notes.md`: 0.5 limits and evidence.
+
+#### Repo hygiene
+
+- Move `client/src-tauri` to `launcher/` with `core`, `bridge`, `ui`, `app`, `windows`, `linux`.
+- Remove the Tauri shell, its `gen/schemas`, `tauri.conf.json`, capabilities and React UI. Nothing
+  Tauri survives 0.5.
+- Keep `client/dll`, `client/sapie`, `server`, `web`, `proto`, `tools` in place.
+- Update `.gitignore` for `launcher/build*`, `launcher/core/target`, generated QML caches and
+  packaging output.
+- Bump versions to 0.5.0 in the Cargo workspace, CMake project, web and docs.
+- Add third-party notices for Qt 6 (LGPLv3), Manrope and IBM Plex (OFL), Rust crates, Steamless and
+  GSAP for the web UI.
+- Archive 0.4 plan detail as history if `plan.md` becomes too long. Do not delete the decision log.
+
+### 13.10 Dependency lanes
+
+| Lane | Phases | Rule |
+| --- | --- | --- |
+| Identity | M22-a to M22-f | G1 blocks production UI |
+| Core | M23-a to M23-f | Must land before both shells |
+| Windows | M24-a to M24-e | Parallel with Linux after core |
+| Linux | M25-a to M25-e | Parallel with Windows after core |
+| Product | M26-a to M26-h | After core, uses shared QML |
+| Server and security | M27-a to M27-f | Parallel with shells, blocks friends UI |
+| Web | M28-a to M28-e | After tokens and server routes |
+| Packaging | M29-a to M29-f | After both shells |
+| Release | M30-a to M30-e | Last |
+
+Parallel lanes: Windows and Linux after M23. Server security and identity can run in parallel.
+M26-c can start after M23. M26-d waits on M27-a to M27-c.
+
+### 13.11 Verification matrix
+
+| Layer | Command or run | Gate |
+| --- | --- | --- |
+| Identity | G1 prototype review, contrast, swap test | G1 |
+| Core | `cargo test` in `launcher/core`, fake platform, ASan on the C ABI | Every PR |
+| Qt build | CMake build on Windows and Linux, `qmllint` clean | Every PR |
+| Launcher UI | Qt Quick Test, `qmltestrunner`, fake `CoreBridge`, screenshot checks | Every PR |
+| No webview | dependency and import scan, clean machine without WebView2 or WebKitGTK | G2 |
+| Accessibility | Windows UIA pass, AT-SPI/Orca pass | G2 and G3 |
+| Windows | build on `windows-latest`, install, launch, uninstall | G2 |
+| Linux | build on `ubuntu-24.04`, AppImage, deb, Flatpak, Wayland and X11 | G2 |
+| Server | `go test ./...`, `go vet ./...` | Every PR |
+| Web | `tsc --noEmit`, `vite build`, Vitest, Playwright | Every PR |
+| DLL | 10 builds, smoke modern and legacy | Every PR |
+| Core live | two-client, real game, friends, lobby, achievements | G3 |
+| Security | `govulncheck`, `npm audit`, `cargo audit`, secret scan | Every PR |
+| Licensing | Qt LGPL notices, relink instructions, no non-LGPL Qt module | G4 |
+| Packaging | tag dry run, checksums, SBOM, signatures | G4 |
+| Upgrade | 0.4 to 0.5 on Windows and Linux | G4 |
+
+### 13.12 0.5 release definition
+
+0.5 is shippable when all of these are true:
+
+- G1, G2, G3 and G4 are signed off with evidence.
+- `SAPIE for Windows` installs per-user without admin, launches, updates and uninstalls.
+- `SAPIE for Linux` installs as AppImage, deb and Flatpak, launches, updates and uninstalls.
+- Neither launcher uses a webview. No WebView2, WebKitGTK or embedded browser is linked or loaded.
+- The Qt runtime is bundled and the LGPLv3 relink path is documented and tested.
+- The identity is applied to launcher, web, docs, installer and release notes.
+- Both launchers do full friend management, library, game page, add game and settings.
+- The password is never on disk, in a log or in a URL.
+- Token rotation and revoke work. Blocked peers cannot join or receive lobby frames.
+- The 0.4 security debts in 13.1 are closed or explicitly accepted with a reason.
+- The tag produces signed Windows and Linux artifacts, checksums, SBOM and the container.
+- `dev_notes.md` states what was and was not verified.
+
+### 13.13 Out of scope for 0.5
+
+Store, purchasing, downloads, DRM, chat, voice, streaming, cloud saves, workshop, inventory, overlay,
+controller, macOS, Windows ARM64, 32-bit ARM, hole punching, app ownership enforcement, importing a
+Steam library, fully native WinUI 3 or GTK4 shells, user-uploaded avatars, and server-side game
+metadata beyond what the API already returns. These are 0.6 candidates and are listed here so a
+phase cannot quietly grow into them.

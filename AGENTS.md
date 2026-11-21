@@ -5,8 +5,10 @@ accounts, presence, lobbies, achievements and stats. A forked Goldberg `steam_ap
 the game forwards calls to that server. A native launcher sets the game up and starts it.
 
 This file is the entry point for coding agents. Read it before changing code. For UI work also read
-`web/DESIGN.md` (web UI direction), `design/DESIGN.md` (launcher direction), `design/tokens.css`
-(shared tokens) and the antislop core rules.
+`AGENTS-UI.md` (0.5 visual direction), `design/DESIGN.md` (launcher direction), `design/tokens.css`
+(shared tokens) and the antislop core rules. When `AGENTS-UI.md` and the older design docs disagree,
+`AGENTS-UI.md` wins; the deliberate overrides are listed in `plan.md` section 13.3 and belong in
+`design/identity.md`.
 
 ## Repository map
 
@@ -15,12 +17,15 @@ This file is the entry point for coding agents. Read it before changing code. Fo
 | `server/` | Go server, SQLite via `modernc.org/sqlite`, no cgo. Entry: `cmd/sapie-server`. |
 | `client/dll/` | Goldberg fork, minimal edits. Game-side Steam API emulation. |
 | `client/sapie/` | New client transport, mirror and stats code. |
-| `client/src-tauri/` | Native launcher: Tauri v2 shell in `src/`, React UI in `ui/`. The directory keeps its name. No egui source remains in this tree. |
+| `client/src-tauri/` | Current launcher: Tauri v2 shell in `src/`, React UI in `ui/`. Migrates to `launcher/` in 0.5 (M23). No egui source remains. |
+| `launcher/` | 0.5 target: Qt 6 + Qt Quick UI, Rust core behind a C ABI, `windows/` and `linux/` platform code. Not created yet. |
 | `web/` | React 18 + TypeScript + Vite SPA served by the Go server on the LAN. |
+| `design/` | `tokens.css` (single token source), `DESIGN.md` (launcher direction), `identity.md` (0.5, M22), fonts and icons. |
+| `AGENTS-UI.md` | 0.5 visual direction for the launchers and the web UI. Reference, not code. |
 | `proto/` | `net.proto` (vendored) and `sapie.proto` (envelope). Copies in `client/dll` must stay in sync. |
 | `tools/` | Harness, protobuf build, release bundling, proto sync check. |
 | `docs/` | Protocol, API, security, build, quickstart, UI, contributing, changelog and verification evidence. |
-| `plan.md` | Decision log and milestone history. Historical, not a live plan. |
+| `plan.md` | Decision log and milestone history. Section 12 is the 0.4 plan, section 13 the live 0.5 plan. |
 
 Branches: `dev-client` is the default and integration trunk. Release PRs go `dev-client` to
 `main-client`. Do not push directly to `main-client`.
@@ -74,8 +79,9 @@ Status at the 0.4 documentation refresh: the Tauri v2 shell and React UI in `cli
 what this tree builds. The old egui source is gone. The launcher is dark only; that decision is
 recorded in `design/DESIGN.md` and supersedes the two-theme lines in the spec below. Game
 authentication uses a 0600 session-token file with environment fallback, described in
-`docs/PROTOCOL.md` and `docs/SECURITY.md`. No `0.4` tag or release has been published. The
-verification status is tracked in `docs/verification/0.4-rc-checklist.md` (draft).
+`docs/PROTOCOL.md` and `docs/SECURITY.md`. The `0.4` tag exists and installer builds were recorded;
+execution on clean machines is UNVERIFIED. The verification status is tracked in
+`docs/verification/0.4-rc-checklist.md` (draft).
 
 ## Diagnosis
 
@@ -254,6 +260,44 @@ is in `plan.md` section 12. This section is the summary, not the source of truth
    LAN web UI owns that surface. The old advice to edit SQLite by hand is stale.
 5. **Release hygiene.** One CI workflow, version stamping from the tag, changelog, container with
    `web/dist` and port 8081.
+
+# 0.5 direction
+
+The live 0.5 plan is `plan.md` section 13: M22 to M30, four gates G1 to G4, the full change
+inventory and the release definition. This section is the summary, not the source of truth.
+
+0.5 gives SAPIE an identity and two launchers.
+
+- **Identity.** Name, mark, palette, type, voice and motion in `design/identity.md`. Quiet violet
+  accent `#C5A4FF`, dark neutrals from `AGENTS-UI.md`, Manrope for UI, IBM Plex Mono for machine
+  values. No glass, no ember brand accent, no fake art. The ember is retired as identity and may
+  survive only as a warning status.
+- **Two products, one core.** `SAPIE for Windows` and `SAPIE for Linux`. Shared `launcher/core`
+  (Rust, C ABI), shared `launcher/ui` (Qt Quick QML), separate platform code for integration,
+  packaging and updates.
+- **No webview.** The 0.4 Tauri shell is replaced. The launchers are Qt 6 applications rendered by
+  the Qt scene graph. No WebView2, no WebKitGTK, no HTML or JS in the launcher. The only browser
+  surface is the LAN web UI.
+- **Why not WinUI 3 plus GTK4.** That doubles the UI, the tests and the maintenance. One Qt Quick
+  codebase reaches both desktops. Native feel comes from dialogs, tray, protocol handler and
+  installers, not a second toolkit.
+- **Windows:** Qt 6.8 + MSVC, Credential Manager, Authenticode, `windeployqt`, NSIS per-user and MSI
+  per-machine, portable zip, Steamless sidecar, owner-only token ACL.
+- **Linux:** Qt 6.8, bundled Qt in AppImage, deb and Flatpak (`org.kde.Platform`), Secret Service,
+  AppStream, desktop entry, `x-scheme-handler/sapie`, `0600` token file, LD_PRELOAD.
+- **Licensing:** Qt is LGPLv3 with dynamic linking. Ship the libraries, notices and the relink
+  instructions. No static Qt and no non-LGPL Qt module without review.
+- **Bundling:** `SAPIE-<version>-<os>-<arch>-<kind>.<ext>`, signed update manifests, stable and beta
+  channels, one `SHA256SUMS`, one SBOM per family.
+- **Security debts from 0.4 are must-fix,** not features: token rotation and revoke, persistent
+  limiters, block list enforced in lobby routing, Windows token ACL, TLS guidance.
+- **Gates.** G1 identity, G2 platform, G3 core, G4 release. A gate needs recorded evidence and the
+  user's sign-off. Do not start production UI before G1.
+
+The current `client/src-tauri` launcher is the 0.4 artifact. It is the source for the Rust core, not
+for the UI. It moves to `launcher/` in M23 and the Tauri shell is deleted. Until then, the launcher
+commands above still target `client/src-tauri`; the 0.5 commands will be CMake plus
+`cargo test` in `launcher/core`.
 
 # Definition of done
 
