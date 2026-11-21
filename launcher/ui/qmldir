@@ -1,0 +1,2 @@
+# Tokens singleton for tooling. CMake QML module registration belongs to M23-f.
+singleton Tokens 1.0 Tokens.qml
