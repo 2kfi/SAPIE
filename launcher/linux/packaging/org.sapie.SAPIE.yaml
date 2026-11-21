@@ -1,0 +1,25 @@
+id: org.sapie.SAPIE
+runtime: org.kde.Platform
+runtime-version: '6.8'
+sdk: org.kde.Sdk
+command: sapie-launcher
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=session-bus
+  - --device=dri
+  - --filesystem=xdg-data/sapie:create
+  - --filesystem=xdg-config/sapie:create
+  - --filesystem=xdg-cache/sapie:create
+  - --filesystem=xdg-run/sapie:create
+
+modules:
+  - name: sapie-launcher
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+    sources:
+      - type: dir
+        path: ../..
