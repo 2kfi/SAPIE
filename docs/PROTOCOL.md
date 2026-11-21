@@ -26,18 +26,19 @@ a zero length is invalid. A truncated header or body closes the connection.
    Any other first payload closes the connection without a response.
 2. Server verifies `LoginRequest.session_token` when present by resolving an
    unexpired session hash and binding the connection to that session's account.
-   The presented token is consumed and replaced, so a replay fails immediately.
+   The presented token stays valid: game-protocol token login does not rotate it.
    Otherwise it verifies the password against the stored argon2id hash. Failed
    logins return `LoginResponse{status: BAD_CREDENTIALS}`. Five failures per
    source IP or per account within one minute return `RATE_LIMITED`; counters
    persist across restart.
 3. On success the server creates a 32-byte session token (stored hashed, 24 h
    lifetime) and replies `LoginResponse{status: OK, steam_id, persona_name,
-   session_token, friends}`. A token login rotates the existing session without
-   extending its original expiry cap. `friends` lists the account's friends with
-   their stored name, appid, lobby and rich presence (offline friends included),
-   plus the `persona_state` key (`1` online, `0` offline). `connect_str` is
-   stripped from the rich-presence map.
+   session_token, friends}`. The 0.4 game client keeps using the token it
+   presented; rotation is available to HTTP clients that opt in by supplying
+   `session_token`. `friends` lists the account's friends with their stored name,
+   appid, lobby and rich presence (offline friends included), plus the
+   `persona_state` key (`1` online, `0` offline). `connect_str` is stripped from
+   the rich-presence map.
 
 `RATE_LIMITED` is emitted for IP and account lockouts. `BANNED`, `SERVER_FULL` and
 `VERSION_MISMATCH` statuses exist in the contract but are never emitted.
@@ -47,13 +48,13 @@ a zero length is invalid. A truncated header or body closes the connection.
 The launcher writes a short-lived token file immediately before spawning the game and passes no
 credential environment variables. The DLL reads that file once at login, removes it, and sends the
 token in `LoginRequest.session_token` (field 5). The server resolves an unexpired session by
-`auth.HashToken(token)`, derives identity from that session and consumes the presented token.
+`auth.HashToken(token)`, derives identity from that session and leaves the presented token valid.
 The password path remains for compatibility. `source_id` stamping in `router.Route` is unchanged
 and remains authoritative.
 
-The shipped DLL does not yet adopt `LoginResponse.session_token`. After one token login the file
-holds the consumed token, so a DLL reconnect needs a fresh token file from the launcher. Updating
-the DLL to persist the response token is a separate client-side change.
+The shipped DLL does not adopt `LoginResponse.session_token`, so it keeps using its in-memory
+token. The launcher keeps the same token in its keychain for HTTP calls. Game-protocol token
+login does not rotate that token, so both 0.4 flows keep working.
 
 The shipped contract is:
 

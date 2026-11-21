@@ -14,10 +14,10 @@ only the user routes listed in the proxy section.
 `POST /login` returns a fresh session token on every call. Password login creates
 a new session and leaves other sessions valid. Sending `session_token` in the
 body rotates that session: the old token is consumed immediately and fails on the
-next request, while the replacement keeps the original expiry cap. The game
-protocol's `LoginRequest.session_token` rotates the same way. `POST /password`
-verifies the old password, replaces the hash and revokes every session except the
-one that made the change.
+next request, while the replacement keeps the original expiry cap. Game-protocol
+`LoginRequest.session_token` does not rotate; the presented token stays valid.
+`POST /password` verifies the old password, replaces the hash and revokes every
+session except the one that made the change.
 
 Session rows store a SHA-256 digest of the token, never the token itself.
 `GET /sessions` shows a 12-character digest prefix as the session ID, so the list

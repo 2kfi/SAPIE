@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -194,16 +193,9 @@ func (s *Server) handle(conn net.Conn) {
 		log.Printf("session: token generation: %v", err)
 		return
 	}
-	if oldHash != "" {
-		_, _, err = s.store.RotateSession(oldHash, auth.HashToken(token), time.Now().Add(tokenLifetime))
-	} else {
-		err = s.store.CreateSession(account.SteamID, auth.HashToken(token), time.Now().Add(tokenLifetime))
-	}
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			s.sendLoginResult(session, protocol.LoginResponse_BAD_CREDENTIALS, 0, nil, nil, nil)
-			return
-		}
+	// A game login does not rotate a presented token: the shipped DLL keeps its
+	// in-memory token and the launcher keeps the same token in the keychain.
+	if err := s.store.CreateSession(account.SteamID, auth.HashToken(token), time.Now().Add(tokenLifetime)); err != nil {
 		log.Printf("session: store session: %v", err)
 		return
 	}

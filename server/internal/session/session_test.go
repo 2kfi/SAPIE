@@ -1162,7 +1162,7 @@ func TestIPLockoutUsesRateLimitedStatus(t *testing.T) {
 	}
 }
 
-func TestGameLoginRotatesTokenAndRejectsReplay(t *testing.T) {
+func TestGameLoginKeepsPresentedTokenValid(t *testing.T) {
 	store, err := state.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -1176,7 +1176,7 @@ func TestGameLoginRotatesTokenAndRejectsReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateSession(id, auth.HashToken("old-token"), time.Now().Add(time.Hour)); err != nil {
+	if err := store.CreateSession(id, auth.HashToken("presented-token"), time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1203,17 +1203,16 @@ func TestGameLoginRotatesTokenAndRejectsReplay(t *testing.T) {
 		return readLoginResponse(t, c)
 	}
 
-	first := login("old-token")
+	first := login("presented-token")
 	if first.GetStatus() != protocol.LoginResponse_OK || len(first.GetSessionToken()) == 0 {
 		t.Fatalf("token login = %v, token length %d", first.GetStatus(), len(first.GetSessionToken()))
 	}
-	if replay := login("old-token"); replay.GetStatus() != protocol.LoginResponse_BAD_CREDENTIALS {
-		t.Fatalf("rotated token replay = %v, want BAD_CREDENTIALS", replay.GetStatus())
+	second := login("presented-token")
+	if second.GetStatus() != protocol.LoginResponse_OK {
+		t.Fatalf("second token login = %v, want OK; 0.4 DLL and keychain tokens must stay valid", second.GetStatus())
 	}
-	second := login(string(first.GetSessionToken()))
-	if second.GetStatus() != protocol.LoginResponse_OK || len(second.GetSessionToken()) == 0 ||
-		string(second.GetSessionToken()) == string(first.GetSessionToken()) {
-		t.Fatalf("rotated token login = %v, token %q", second.GetStatus(), second.GetSessionToken())
+	if resolved, err := store.ResolveSession(auth.HashToken("presented-token")); err != nil || resolved != id {
+		t.Fatalf("presented token after game login = %d, %v", resolved, err)
 	}
 }
 

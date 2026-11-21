@@ -116,10 +116,11 @@ actually used in the SAN, and protect the private key. Do not expose this setup 
 
 Passwords are stored as self-describing argon2id hashes with `m=65536,t=3,p=4`
 (`server/internal/auth/auth.go`). No read endpoint returns a hash. Session tokens are 32 random
-bytes, stored as SHA-256 digests and expire after 24 hours. A game or HTTP login that presents a
-token rotates it: the old token is deleted, the replacement keeps the original expiry cap, and a
-replay fails immediately. A password change revokes every other session. Expired rows are deleted
-hourly (`server/internal/api/api.go`, `server/internal/state/sessions.go`,
+bytes, stored as SHA-256 digests and expire after 24 hours. Rotation is available to HTTP clients
+that opt in by supplying `session_token`: the old token is deleted, the replacement keeps the
+original expiry cap, and a replay fails immediately. Game-protocol token login does not rotate, so
+0.4 DLL and keychain tokens stay valid. A password change revokes every other session. Expired rows
+are deleted hourly (`server/internal/api/api.go`, `server/internal/state/sessions.go`,
 `server/cmd/sapie-server/main.go`). Server log lines contain no session token or password. The
 exception is the admin token, printed once when generated.
 
@@ -147,9 +148,9 @@ file holds only `session_token`; the launcher removes it if spawn fails. Windows
 ACL change, so the file inherits the game directory's default ACL. The DLL reads the file once,
 removes it after the read attempt, rejects files older than 10 minutes, and sends the token in
 `LoginRequest.session_token` (`client/dll/settings_parser.cpp`, `client/dll/network.cpp`). The
-server resolves the token hash against unexpired sessions and rotates it
-(`server/internal/session/session.go`). The shipped DLL does not adopt `LoginResponse.session_token`,
-so its next reconnect needs a fresh token file from the launcher. When no token file exists, the DLL falls back to `SAPIE_SESSION_TOKEN`, then to
+server resolves the token hash against unexpired sessions and leaves it valid
+(`server/internal/session/session.go`). The shipped DLL keeps its in-memory token and the launcher
+keeps the same token in its keychain, so both 0.4 flows keep working. When no token file exists, the DLL falls back to `SAPIE_SESSION_TOKEN`, then to
 `SAPIE_USERNAME`/`SAPIE_PASSWORD` for compatibility. The launcher does not set those variables; the
 fallback serves older setups that still do. Env values remain visible under the same OS account and
 in `/proc` on Linux; no password is read from the token file, and neither credential is logged.
@@ -192,9 +193,8 @@ Operator guidance:
   had a teardown-order race; it now waits for guest completion and five consecutive runs passed.
 - The native Tauri window, real IPC and real keychain access were not exercised headless. Webview
   navigation and keyboard-only paths were not exercised either.
-- The shipped DLL does not persist the rotated `LoginResponse.session_token`. A token-file game
-  login consumes the file's token; the next reconnect needs a new file from the launcher. Client
-  changes are outside this server-only work.
+- HTTP rotation is opt-in. The shipped 0.4 web UI and launcher sign in with username and password
+  only, so their tokens remain replayable until expiry or revocation.
 - Lobby membership rows are not rewritten when a block is added. Delivery and join checks filter
   blocked peers, but an existing row remains until the peer leaves or the lobby is deleted.
 - The admin token is written to the server log once at first start. Treat first-run logs as
