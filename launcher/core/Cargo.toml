@@ -1,0 +1,23 @@
+[package]
+name = "sapie-core"
+version = "0.5.0"
+description = "SAPIE launcher core behind a versioned C ABI"
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "sapie_core"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+dirs = "7"
+keyring = { version = "3", features = [
+  "apple-native",
+  "windows-native",
+  "linux-native-sync-persistent",
+  "sync-secret-service",
+  "crypto-rust",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2", default-features = false, features = ["json", "tls"] }
