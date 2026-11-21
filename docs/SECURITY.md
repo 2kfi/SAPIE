@@ -204,7 +204,9 @@ Operator guidance:
 
 CI runs all three audits in the `dependency-audits` job of `.github/workflows/ci.yml`. Dependabot
 opens weekly updates for the Go module, npm in both UIs, Cargo and GitHub Actions
-(`.github/dependabot.yml`).
+(`.github/dependabot.yml`). The same job runs `tools/scan-secrets.py` and
+`tools/check-dependency-policy.py`. The accepted-advisory list and the release
+evidence rules are in `docs/DEPENDENCY_POLICY.md`.
 
 Results from this tree on 2026-11-21:
 

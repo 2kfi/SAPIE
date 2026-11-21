@@ -173,6 +173,44 @@ Release and pushes the server container. `tools/release-bundle.sh` copies `web/d
 root as `web/dist`, so `--ui-dir ./web/dist` works from an unpacked bundle. Tag `0.4` run
 44882984036 passed and attached NSIS, MSI and AppImage installers. The installers were not executed.
 
+### 0.5 release inputs
+
+`tools/release-bundle.sh` takes `<tag> <artifacts-dir> <output-dir>`. It expects
+these artifact directories from the packaging jobs:
+
+- `launcher-windows-x64`, `launcher-linux-x64`, `launcher-linux-arm64`: the
+  packaged launcher payload for each OS. The script copies the directory tree to
+  `launcher/` inside the archive.
+- `client-<target>-<era>` for the existing five targets and two eras: the ten
+  `steam_api` variants.
+- `web-dist`: the built SPA.
+- `server-windows-amd64`, `server-windows-arm64`, `server-linux-amd64`,
+  `server-linux-arm64`: plain files or same-named artifact directories.
+
+It writes one archive per OS and arch, a `container/` bundle with the Dockerfile,
+compose file, all four server binaries and `web/dist`, six SPDX SBOMs in
+`SBOM-<tag>-<family>.spdx.json`, `THIRD_PARTY_NOTICES.md`, `SHA256SUMS`,
+`update-signing-public.pem`, and signed `update-stable.json` and
+`update-beta.json` with `.sig` files. The manifests pin the exact tag, version,
+per-artifact SHA-256, checksum-file SHA-256 and optional previous version. Verify
+one with:
+
+```sh
+python3 tools/update-manifest.py verify \
+  --manifest update-stable.json --public-key update-signing-public.pem \
+  --channel stable --version 0.5.0
+```
+
+The signing key is the `SAPIE_UPDATE_SIGNING_KEY` repository secret. It can be
+an inline PEM key or a path to one. The public trust root is
+`tools/update-signing-public.pem` and ships in every bundle. Signing is a release
+gate: the bundle step fails if the key is missing or a manifest does not verify.
+Rollback stays manual. Download the previous signed release and reinstall it.
+
+`compose.yaml` publishes the web UI on 8081 and keeps the admin API bound to
+loopback inside the container. It declares the same healthcheck as the
+Dockerfile. The admin port is not published.
+
 The 0.1 release is published and frozen at tag `0.1` (`62007f5`) at
 https://github.com/2kfi/SAPIE/releases/tag/0.1 with the assets
 `SAPIE-0.1-linux-x64.tar.gz`, `SAPIE-0.1-linux-arm64.tar.gz` and `SAPIE-0.1-windows-x64.zip`.
