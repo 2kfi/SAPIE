@@ -1,5 +1,7 @@
 pub mod abi;
 pub mod auth;
+#[cfg(test)]
+mod fixtures;
 pub mod detection;
 pub mod error;
 pub mod game;

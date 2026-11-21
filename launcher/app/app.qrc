@@ -2,5 +2,16 @@
 <RCC version="1.0">
     <qresource prefix="/">
         <file>main.qml</file>
+        <file alias="Manrope.ttf">fonts/Manrope.ttf</file>
+        <file alias="Manrope-OFL.txt">fonts/Manrope-OFL.txt</file>
+        <file alias="IBMPlexMono-Regular.ttf">fonts/IBMPlexMono-Regular.ttf</file>
+        <file alias="IBMPlexMono-Medium.ttf">fonts/IBMPlexMono-Medium.ttf</file>
+        <file alias="IBMPlexMono-SemiBold.ttf">fonts/IBMPlexMono-SemiBold.ttf</file>
+        <file alias="IBMPlexMono-Bold.ttf">fonts/IBMPlexMono-Bold.ttf</file>
+        <file alias="IBMPlexMono-OFL.txt">fonts/IBMPlexMono-OFL.txt</file>
+    </qresource>
+    <qresource prefix="/qt/qml/SAPIE/UI">
+        <file alias="qmldir">../ui/qmldir</file>
+        <file alias="Tokens.qml">../ui/Tokens.qml</file>
     </qresource>
 </RCC>

@@ -137,6 +137,11 @@ QString CoreBridge::lastError() const
     return m_lastError;
 }
 
+void CoreBridge::shutdown()
+{
+    destroyCore();
+}
+
 bool CoreBridge::createCore(quint32 abiVersion, bool fake)
 {
     destroyCore();
