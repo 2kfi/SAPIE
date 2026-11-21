@@ -1,26 +1,38 @@
-/* Single source for SAPIE colour, type, spacing and radius tokens.
-   Copied from web/src/styles.css. Web consumption is a follow-up.
-   No remote font import: the launcher bundles its UI and loads no remote content. */
+/* Single source for SAPIE colour, type, spacing, radius and motion tokens.
+   The web build imports this file. tools/gen-qml-tokens derives launcher/ui/Tokens.qml from it.
+   No remote font import. Do not hardcode these values in a surface. */
 
 :root {
   color-scheme: dark;
 
-  --bg: #0e1420;
-  --surface: #1b2432;
-  --surface-quiet: #16202e;
-  --text: #e9eff7;
-  --muted: #b3c3d6;
-  --accent: #ff9b6a;
-  --on-accent: #16100d;
-  --status: #8fe3b0;
+  /* Backgrounds */
+  --bg-app: #17191D;
+  --bg-sidebar: #14161A;
+  --bg-panel: #1D2025;
+  --bg-panel-hover: #252930;
+  --bg-elevated: #292D34;
 
-  --edge: rgb(233 239 247 / 14%);
-  --edge-strong: rgb(233 239 247 / 26%);
-  --control-edge: rgb(233 239 247 / 50%);
-  --glass: rgb(27 36 50 / 68%);
-  --glass-edge: rgb(233 239 247 / 12%);
-  --shadow: 0 18px 48px rgb(0 0 0 / 34%);
+  /* Borders */
+  --border-subtle: #2A2E35;
+  --border-strong: #383E47;
 
+  /* Text */
+  --text-primary: #E6E8EB;
+  --text-secondary: #A0A5AE;
+  --text-muted: #737984;
+
+  /* Accent */
+  --accent: #C5A4FF;
+  --accent-soft: #342A46;
+  --on-accent: #17191D;
+
+  /* Status */
+  --success: #73C991;
+  --warning: #E6B86C;
+  --danger: #E17B7B;
+  --info: #82B8E8;
+
+  /* Type */
   --font-ui: 'Manrope', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
   --fs-xs: 12px;
@@ -28,8 +40,9 @@
   --fs-md: 14px;
   --fs-lg: 16px;
   --fs-xl: 20px;
-  --fs-2xl: 28px;
+  --fs-2xl: 24px;
 
+  /* Spacing */
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
@@ -38,10 +51,33 @@
   --sp-6: 24px;
   --sp-8: 32px;
 
+  /* Radius. 4 and 6 only, per AGENTS-UI.md section 12. */
   --r-xs: 4px;
   --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 16px;
 
-  --blur-panel: 20px;
+  /* One elevation level, for dialogs and menus only. */
+  --shadow: 0 12px 32px rgb(0 0 0 / 40%);
+
+  /* Motion. Hover 120-180ms, dialogs 140-200ms. */
+  --motion-hover: 140ms;
+  --motion-dialog: 180ms;
+  --ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --ease-leave: cubic-bezier(0.4, 0, 1, 1);
+
+  /* 0.4 names still referenced by web/src/styles.css. M28 removes these aliases.
+     They resolve to 0.5 values, so the web build keeps one palette. */
+  --bg: var(--bg-app);
+  --surface: var(--bg-panel);
+  --surface-quiet: var(--bg-sidebar);
+  --text: var(--text-primary);
+  --muted: var(--text-secondary);
+  --status: var(--success);
+  --edge: var(--border-subtle);
+  --edge-strong: var(--border-strong);
+  --control-edge: var(--border-strong);
+  --glass: var(--bg-panel);
+  --glass-edge: var(--border-subtle);
+  --blur-panel: 0px;
+  --r-md: var(--r-sm);
+  --r-lg: var(--r-sm);
 }

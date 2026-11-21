@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Emit launcher/ui/Tokens.qml from design/tokens.css. Python 3 stdlib only."""
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCE = ROOT / "design" / "tokens.css"
+TARGET = ROOT / "launcher" / "ui" / "Tokens.qml"
+VAR = re.compile(r"var\(\s*(--[a-zA-Z0-9-]+)\s*\)")
+
+
+def read_tokens():
+    css = SOURCE.read_text(encoding="utf-8")
+    match = re.search(r":root\s*\{(.*?)\}", css, re.DOTALL)
+    if match is None:
+        raise SystemExit("tokens.css has no :root block")
+    tokens = {}
+    for line in match.group(1).splitlines():
+        line = line.strip()
+        if not line.startswith("--"):
+            continue
+        name, _, value = line.partition(":")
+        tokens[name.strip()] = value.strip().rstrip(";").strip()
+    return tokens
+
+
+def resolve(name, tokens, seen=None):
+    seen = seen or set()
+    if name in seen:
+        raise SystemExit(f"cyclic token reference at {name}")
+    value = tokens.get(name)
+    if value is None:
+        raise SystemExit(f"unknown token reference {name}")
+    def replace(m):
+        return resolve(m.group(1), tokens, seen | {name})
+    return VAR.sub(replace, value)
+
+
+def qml_name(css_name):
+    parts = css_name.lstrip("-").split("-")
+    return parts[0] + "".join(p[:1].upper() + p[1:] for p in parts[1:])
+
+
+def qml_type(value):
+    if re.fullmatch(r"#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?", value) or re.fullmatch(
+        r"rgba?\([^)]*\)", value
+    ):
+        return "color"
+    if re.fullmatch(r"\d+(?:\.\d+)?ms", value) or re.fullmatch(r"\d+(?:\.\d+)?px", value):
+        return "int"
+    return "string"
+
+
+def qml_value(value, kind):
+    if kind == "int":
+        return re.sub(r"(ms|px)$", "", value)
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def render(tokens):
+    lines = [
+        "pragma Singleton",
+        "import QtQml 2.15",
+        "",
+        "QtObject {",
+    ]
+    for name in tokens:
+        value = resolve(name, tokens)
+        if VAR.search(value):
+            raise SystemExit(f"unresolved token reference in {name}")
+        kind = qml_type(value)
+        lines.append(f"    readonly property {kind} {qml_name(name)}: {qml_value(value, kind)}")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def main():
+    tokens = read_tokens()
+    if not tokens:
+        raise SystemExit("tokens.css produced no tokens")
+    output = render(tokens)
+    assert output.startswith("pragma Singleton\n") and output.endswith("}\n")
+    TARGET.parent.mkdir(parents=True, exist_ok=True)
+    if TARGET.exists() and TARGET.read_text(encoding="utf-8") == output:
+        print(f"unchanged: {TARGET.relative_to(ROOT)}")
+        return 0
+    TARGET.write_text(output, encoding="utf-8")
+    print(f"wrote: {TARGET.relative_to(ROOT)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
