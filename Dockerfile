@@ -27,4 +27,4 @@ VOLUME ["/data"]
 EXPOSE 47584 8081
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s CMD wget -q -O /dev/null http://127.0.0.1:8081/ || exit 1
 ENTRYPOINT ["/usr/local/bin/sapie-server"]
-CMD ["--admin-listen=:8080", "--ui-listen=0.0.0.0:8081", "--ui-dir=/app/web/dist"]
+CMD ["--admin-listen=127.0.0.1:8080", "--ui-listen=0.0.0.0:8081", "--ui-dir=/app/web/dist"]

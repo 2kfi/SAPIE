@@ -243,6 +243,7 @@ jobs:
       - name: Build release bundles
         env:
           TAG: ${{ github.ref_name }}
+          SAPIE_UPDATE_SIGNING_KEY: ${{ secrets.SAPIE_UPDATE_SIGNING_KEY }}
         run: bash tools/release-bundle.sh "$TAG" release-artifacts release-dist
       - name: Create GitHub release
         env:

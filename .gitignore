@@ -18,6 +18,7 @@ steam_interfaces.txt
 # Local secrets
 .env
 .env.local
+*private*.pem
 
 # Server runtime database (default -db sapie.db in the working directory)
 *.db
