@@ -93,3 +93,61 @@ func TestLoginRotatesTokenAndCleansExpired(t *testing.T) {
 		t.Fatalf("session list leaked secrets: %s", list.Body.String())
 	}
 }
+
+func TestTokenLoginRotatesAndRejectsReplay(t *testing.T) {
+	srv, handler, ids, tokens, _ := newSocialAPI(t)
+	old := tokens["alice"]
+	before, err := srv.store.SessionsOf(ids["alice"], auth.HashToken(old))
+	if err != nil || len(before) != 1 {
+		t.Fatalf("sessions before rotation = %+v, %v", before, err)
+	}
+
+	rec := socialRequest(handler, http.MethodPost, "/api/v1/login", "", "", `{"session_token":"`+old+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("token login = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Token string `json:"session_token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Token == "" || body.Token == old {
+		t.Fatalf("rotated token = %s, %v", rec.Body.String(), err)
+	}
+	if replay := socialRequest(handler, http.MethodGet, "/api/v1/sessions", old, "", ""); replay.Code != http.StatusUnauthorized {
+		t.Fatalf("rotated token replay = %d, want 401", replay.Code)
+	}
+	if current := socialRequest(handler, http.MethodGet, "/api/v1/sessions", body.Token, "", ""); current.Code != http.StatusOK {
+		t.Fatalf("new token = %d: %s", current.Code, current.Body.String())
+	}
+	after, err := srv.store.SessionsOf(ids["alice"], auth.HashToken(body.Token))
+	if err != nil || len(after) != len(before) {
+		t.Fatalf("sessions after rotation = %+v, %v", after, err)
+	}
+}
+
+func TestPasswordChangeRevokesOtherSessions(t *testing.T) {
+	srv, handler, ids, tokens, _ := newSocialAPI(t)
+	other, err := auth.NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.store.CreateSession(ids["alice"], auth.HashToken(other), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	rec := socialRequest(handler, http.MethodPost, "/api/v1/password", tokens["alice"], "",
+		`{"old_password":"pw","new_password":"new-pw"}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("password change = %d: %s", rec.Code, rec.Body.String())
+	}
+	if replay := socialRequest(handler, http.MethodGet, "/api/v1/sessions", other, "", ""); replay.Code != http.StatusUnauthorized {
+		t.Fatalf("other session survived password change: %d", replay.Code)
+	}
+	if current := socialRequest(handler, http.MethodGet, "/api/v1/sessions", tokens["alice"], "", ""); current.Code != http.StatusOK {
+		t.Fatalf("current session lost on password change: %d", current.Code)
+	}
+	if old := socialRequest(handler, http.MethodPost, "/api/v1/login", "", "", `{"username":"alice","password":"pw"}`); old.Code != http.StatusUnauthorized {
+		t.Fatalf("old password accepted: %d", old.Code)
+	}
+	if fresh := socialRequest(handler, http.MethodPost, "/api/v1/login", "", "", `{"username":"alice","password":"new-pw"}`); fresh.Code != http.StatusOK {
+		t.Fatalf("new password rejected: %d: %s", fresh.Code, fresh.Body.String())
+	}
+}

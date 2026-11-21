@@ -26,26 +26,35 @@ a zero length is invalid. A truncated header or body closes the connection.
    Any other first payload closes the connection without a response.
 2. Server verifies `LoginRequest.session_token` when present by resolving an
    unexpired session hash and binding the connection to that session's account.
+   The presented token stays valid: game-protocol token login does not rotate it.
    Otherwise it verifies the password against the stored argon2id hash. Failed
-   logins return `LoginResponse{status: BAD_CREDENTIALS}`; five failures per
-   source IP within one minute trigger a temporary block.
+   logins return `LoginResponse{status: BAD_CREDENTIALS}`. Five failures per
+   source IP or per account within one minute return `RATE_LIMITED`; counters
+   persist across restart.
 3. On success the server creates a 32-byte session token (stored hashed, 24 h
    lifetime) and replies `LoginResponse{status: OK, steam_id, persona_name,
-   session_token, friends}`. `friends` lists the account's friends with their
-   stored name, appid, lobby and rich presence (offline friends included), plus
-   the `persona_state` key (`1` online, `0` offline). `connect_str` is stripped
-   from the rich-presence map.
+   session_token, friends}`. The 0.4 game client keeps using the token it
+   presented; rotation is available to HTTP clients that opt in by supplying
+   `session_token`. `friends` lists the account's friends with their stored name,
+   appid, lobby and rich presence (offline friends included), plus the
+   `persona_state` key (`1` online, `0` offline). `connect_str` is stripped from
+   the rich-presence map.
 
-`BANNED`, `SERVER_FULL` and `VERSION_MISMATCH` statuses exist in the contract but
-are never emitted.
+`RATE_LIMITED` is emitted for IP and account lockouts. `BANNED`, `SERVER_FULL` and
+`VERSION_MISMATCH` statuses exist in the contract but are never emitted.
 
 ### Game-side credential handoff
 
 The launcher writes a short-lived token file immediately before spawning the game and passes no
 credential environment variables. The DLL reads that file once at login, removes it, and sends the
 token in `LoginRequest.session_token` (field 5). The server resolves an unexpired session by
-`auth.HashToken(token)` and derives identity from that session. The password path remains for
-compatibility. `source_id` stamping in `router.Route` is unchanged and remains authoritative.
+`auth.HashToken(token)`, derives identity from that session and leaves the presented token valid.
+The password path remains for compatibility. `source_id` stamping in `router.Route` is unchanged
+and remains authoritative.
+
+The shipped DLL does not adopt `LoginResponse.session_token`, so it keeps using its in-memory
+token. The launcher keeps the same token in its keychain for HTTP calls. Game-protocol token
+login does not rotate that token, so both 0.4 flows keep working.
 
 The shipped contract is:
 
@@ -103,7 +112,7 @@ current game client.
 | `ping` | Reply `pong` |
 | `Common_Message{Friend}` | Store own presence, then fan out to unblocked friends |
 | `Common_Message{Friend_Messages}` | Record game-invite connect string, then deliver to `dest_id` or all friends. Blocked or non-friend accounts are rejected; blocked peers are skipped in broadcast. |
-| `Common_Message{Lobby}`, `{Lobby_Messages}` | Fan out to the lobby's members |
+| `Common_Message{Lobby}`, `{Lobby_Messages}` | Fan out to the lobby's members, skipping peers blocked with the sender |
 | `Common_Message{Networking_Sockets}`, `{Networking_Messages}` (signaling) | P2P signaling; allowed only to unblocked friends/lobby mates, delivered to `dest_id`. `source_ip`/`source_port` hint stamped on `Networking_Sockets`. |
 | `Common_Message{Networking_Sockets}`, `{Networking_Messages}` with `DATA` | Relay fallback: forwarded to the explicit `dest_id` peer only (unblocked friend/lobby gate, no broadcast). See P2P traffic. |
 | Other `Common_Message` variants | `source_id` stamped, logged and dropped |
@@ -218,7 +227,7 @@ game and HTTP login. CORS allows only `localhost` and `127.0.0.1` origins over
 The admin API listens on `--admin-listen` (default `127.0.0.1:8080`, loopback).
 The 0.2 web UI listens separately on `--ui-listen` (default `0.0.0.0:8081`) and
 serves the SPA from `--ui-dir` (default `./web/dist`). On 8081 a narrow reverse
-proxy forwards only user routes: `config`, `register`, `login`, friends,
+proxy forwards only user routes: `config`, `register`, `login`, password change, friends,
 requests, remove, block, blocked list, user search, lobbies, join, sessions and
 one's own stats. Admin-only paths such as `/api/v1/users` and account CRUD return
 404 on 8081 and still work on 8080. Because 8081 is plain HTTP on the LAN,
@@ -228,7 +237,7 @@ session tokens cross it in cleartext.
 | --- | --- | --- |
 | `GET /config` | public | `{allow_register}`; drives whether the SPA offers registration |
 | `POST /register` | public when `--allow-register` | Creates an account; 403 when registration is off |
-| `POST /login` | public | `{session_token, steam_id, persona_name}`; 401 on bad credentials |
+| `POST /login` | public | `{session_token, steam_id, persona_name}`; 401 on bad credentials; rotates a presented `session_token` |
 | `GET /friends` | user | `{friends:[{steam_id, persona_name, persona_state, appid, rich_presence, lobby_id, connect_str}]}` |
 | `POST /friends/{steam_id}/invite` | user | 202, pushes `Friend_Messages{GAME_INVITE}` with the body's `connect_str` |
 | `GET /friends/requests` | user | `{incoming:[...], outgoing:[...]}` of pending requests |
@@ -240,6 +249,7 @@ session tokens cross it in cleartext.
 | `GET /friends/blocked` | user | `{blocked:[{steam_id, persona_name, created_at}]}` |
 | `GET /users/search?q=bo` | user | `{users:[{steam_id, persona_name}]}`; 2 to 64 characters, 30/hour |
 | `POST /logout`, `POST /logout-all` | user | 204, revokes one token or every session for the account |
+| `POST /password` | user | 204 for `{old_password,new_password}`; revokes every other session |
 | `GET /sessions` | user | `{sessions:[{id, created_at, expires_at, current}]}`; IDs are hash prefixes |
 | `DELETE /sessions/{id}` | user | 204, or 404 for another account's session |
 | `POST /tickets/verify` | admin | 200 `{valid}` for `{ticket, steam_id, appid, number}`; issuance check only |

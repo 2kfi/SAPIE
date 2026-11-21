@@ -61,7 +61,7 @@ func TestLimiter(t *testing.T) {
 	if !l.Allow("5.6.7.8") {
 		t.Fatal("other IP blocked")
 	}
-	now = now.Add(failureWindow + time.Second)
+	now = now.Add(FailureWindow + time.Second)
 	if !l.Allow("1.2.3.4") {
 		t.Fatal("IP not unblocked after window")
 	}

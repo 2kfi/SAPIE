@@ -322,3 +322,26 @@ func TestRouteNonP2PDestUnaffected(t *testing.T) {
 		t.Fatalf("non-p2p targeted frame delivered = %d, want 1", len(peer.frames))
 	}
 }
+
+func TestRouteLobbyFanoutSkipsBlockedMembers(t *testing.T) {
+	ok, blocked := &fakePeer{}, &fakePeer{}
+	resolver := fakeResolver{
+		lobbies: map[uint64][]uint64{7: {1, 2, 4}},
+		blocked: map[[2]uint64]bool{{4, 1}: true},
+	}
+	r := NewWithResolver(fakeLookup{2: ok, 4: blocked}, resolver)
+	r.Route(1, &protocol.Common_Message{
+		Messages: &protocol.Common_Message_Lobby{Lobby: &protocol.Lobby{RoomId: 7}},
+	})
+	r.Route(1, &protocol.Common_Message{
+		Messages: &protocol.Common_Message_LobbyMessages{LobbyMessages: &protocol.Lobby_Messages{Id: 7}},
+	})
+	if len(ok.frames) != 2 || len(blocked.frames) != 0 {
+		t.Fatalf("lobby fanout allowed=%d blocked=%d, want 2/0", len(ok.frames), len(blocked.frames))
+	}
+	for _, frame := range ok.frames {
+		if delivered(t, frame).GetSourceId() != 1 {
+			t.Fatal("lobby frame lost source_id stamp")
+		}
+	}
+}

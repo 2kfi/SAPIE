@@ -29,6 +29,7 @@ const (
 	LoginResponse_BANNED           LoginResponse_Status = 2
 	LoginResponse_SERVER_FULL      LoginResponse_Status = 3
 	LoginResponse_VERSION_MISMATCH LoginResponse_Status = 4
+	LoginResponse_RATE_LIMITED     LoginResponse_Status = 5
 )
 
 // Enum value maps for LoginResponse_Status.
@@ -39,6 +40,7 @@ var (
 		2: "BANNED",
 		3: "SERVER_FULL",
 		4: "VERSION_MISMATCH",
+		5: "RATE_LIMITED",
 	}
 	LoginResponse_Status_value = map[string]int32{
 		"OK":               0,
@@ -46,6 +48,7 @@ var (
 		"BANNED":           2,
 		"SERVER_FULL":      3,
 		"VERSION_MISMATCH": 4,
+		"RATE_LIMITED":     5,
 	}
 )
 
@@ -1073,20 +1076,21 @@ const file_sapie_proto_rawDesc = "" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x14\n" +
 	"\x05appid\x18\x03 \x01(\rR\x05appid\x12%\n" +
 	"\x0eclient_version\x18\x04 \x01(\tR\rclientVersion\x12#\n" +
-	"\rsession_token\x18\x05 \x01(\tR\fsessionToken\"\xb2\x02\n" +
+	"\rsession_token\x18\x05 \x01(\tR\fsessionToken\"\xc4\x02\n" +
 	"\rLoginResponse\x123\n" +
 	"\x06status\x18\x01 \x01(\x0e2\x1b.sapie.LoginResponse.StatusR\x06status\x12\x19\n" +
 	"\bsteam_id\x18\x02 \x01(\x04R\asteamId\x12!\n" +
 	"\fpersona_name\x18\x03 \x01(\fR\vpersonaName\x12#\n" +
 	"\rsession_token\x18\x04 \x01(\fR\fsessionToken\x12/\n" +
-	"\afriends\x18\x05 \x03(\v2\x15.sapie.FriendSnapshotR\afriends\"X\n" +
+	"\afriends\x18\x05 \x03(\v2\x15.sapie.FriendSnapshotR\afriends\"j\n" +
 	"\x06Status\x12\x06\n" +
 	"\x02OK\x10\x00\x12\x13\n" +
 	"\x0fBAD_CREDENTIALS\x10\x01\x12\n" +
 	"\n" +
 	"\x06BANNED\x10\x02\x12\x0f\n" +
 	"\vSERVER_FULL\x10\x03\x12\x14\n" +
-	"\x10VERSION_MISMATCH\x10\x04\"9\n" +
+	"\x10VERSION_MISMATCH\x10\x04\x12\x10\n" +
+	"\fRATE_LIMITED\x10\x05\"9\n" +
 	"\rTicketRequest\x12\x14\n" +
 	"\x05appid\x18\x01 \x01(\rR\x05appid\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\"@\n" +

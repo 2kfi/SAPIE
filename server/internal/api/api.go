@@ -44,7 +44,6 @@ type Server struct {
 	store         *state.Store
 	token         string
 	limiter       *auth.Limiter
-	social        *socialLimiter
 	notifier      Notifier
 	allowRegister bool
 
@@ -54,7 +53,7 @@ type Server struct {
 
 func New(store *state.Store, token string, limiter *auth.Limiter, notifier Notifier) *Server {
 	return &Server{
-		store: store, token: token, limiter: limiter, social: newSocialLimiter(),
+		store: store, token: token, limiter: limiter,
 		notifier: notifier, idem: make(map[string]*idemCall),
 	}
 }
@@ -137,6 +136,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /api/v1/register", s.register)
 	mux.HandleFunc("POST /api/v1/login", s.login)
+	mux.HandleFunc("POST /api/v1/password", s.changePassword)
 	mux.HandleFunc("GET /api/v1/friends", s.listFriends)
 	mux.HandleFunc("POST /api/v1/friends/{steam_id}/invite", s.inviteFriend)
 	mux.HandleFunc("GET /api/v1/friends/requests", s.listFriendRequests)
@@ -245,32 +245,49 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+		Username     string `json:"username"`
+		Password     string `json:"password"`
+		SessionToken string `json:"session_token"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	account, err := s.store.AccountByUsername(req.Username)
-	if err != nil || !auth.VerifyPassword(account.PasswordHash, req.Password) {
-		s.limiter.RecordFailure(ip)
-		s.unauthorized(w)
-		return
-	}
+	now := time.Now()
 	token, err := auth.NewToken()
 	if err != nil {
 		http.Error(w, "cannot issue token", http.StatusInternalServerError)
 		return
 	}
-	now := time.Now()
-	if err := s.store.DeleteExpiredSessionsFor(account.SteamID, now); err != nil {
-		http.Error(w, "cannot clean sessions", http.StatusInternalServerError)
-		return
-	}
-	if err := s.store.CreateSession(account.SteamID, auth.HashToken(token), now.Add(sessionTokenLifetime)); err != nil {
-		http.Error(w, "cannot store session", http.StatusInternalServerError)
-		return
+	var account *state.AuthAccount
+	if req.SessionToken != "" {
+		steamID, _, err := s.store.RotateSession(auth.HashToken(req.SessionToken), auth.HashToken(token), now.Add(sessionTokenLifetime))
+		if err != nil {
+			s.limiter.RecordFailure(ip)
+			s.unauthorized(w)
+			return
+		}
+		stored, err := s.store.AccountBySteamID(steamID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		account = &state.AuthAccount{Account: stored}
+	} else {
+		account, err = s.store.AccountByUsername(req.Username)
+		if err != nil || !auth.VerifyPassword(account.PasswordHash, req.Password) {
+			s.limiter.RecordFailure(ip)
+			s.unauthorized(w)
+			return
+		}
+		if err := s.store.DeleteExpiredSessionsFor(account.SteamID, now); err != nil {
+			http.Error(w, "cannot clean sessions", http.StatusInternalServerError)
+			return
+		}
+		if err := s.store.CreateSession(account.SteamID, auth.HashToken(token), now.Add(sessionTokenLifetime)); err != nil {
+			http.Error(w, "cannot store session", http.StatusInternalServerError)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session_token": token,
@@ -404,7 +421,7 @@ func (s *Server) createLobby(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.pushLobby(lobbyID)
+	s.pushLobby(lobbyID, steamID)
 	writeJSON(w, http.StatusCreated, map[string]any{"lobby_id": lobbyID})
 }
 
@@ -429,16 +446,18 @@ func (s *Server) joinLobby(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "lobby not found", http.StatusNotFound)
 		case errors.Is(err, state.ErrLobbyUnavailable):
 			http.Error(w, "lobby unavailable", http.StatusConflict)
+		case errors.Is(err, state.ErrPairBlocked):
+			http.Error(w, "cannot join this lobby", http.StatusForbidden)
 		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
 	}
-	s.pushLobby(lobbyID)
+	s.pushLobby(lobbyID, steamID)
 	writeJSON(w, http.StatusOK, map[string]any{"lobby_id": lobbyID})
 }
 
-func (s *Server) pushLobby(lobbyID uint64) {
+func (s *Server) pushLobby(lobbyID, from uint64) {
 	if s.notifier == nil {
 		return
 	}
@@ -462,6 +481,14 @@ func (s *Server) pushLobby(lobbyID uint64) {
 		}},
 	}}}
 	for _, id := range lobby.Members {
+		blocked, err := s.store.IsBlocked(from, id)
+		if err != nil {
+			log.Printf("lobby push block check %d -> %d: %v", from, id, err)
+			continue
+		}
+		if blocked {
+			continue
+		}
 		s.notifier.Deliver(id, frame)
 	}
 }

@@ -5,10 +5,13 @@ import _ "embed"
 
 // Files are applied in order. Every statement is idempotent so old and fresh
 // databases converge on the same schema.
-var Files = []string{schema001, schema002}
+var Files = []string{schema001, schema002, schema003}
 
 //go:embed 001_init.sql
 var schema001 string
 
 //go:embed 002_social.sql
 var schema002 string
+
+//go:embed 003_security.sql
+var schema003 string

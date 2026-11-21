@@ -11,10 +11,17 @@ only the user routes listed in the proxy section.
 | Session token | `Authorization: Bearer <session_token>` | User routes |
 | Admin token | `Authorization: Bearer <admin_token>` | Admin routes and account CRUD |
 
-`POST /login` returns a fresh session token on every call. Old tokens stay valid
-until they expire or are revoked. Session rows store a SHA-256 digest of the
-token, never the token itself. `GET /sessions` shows a 12-character digest
-prefix as the session ID, so the list cannot be used to recover a token.
+`POST /login` returns a fresh session token on every call. Password login creates
+a new session and leaves other sessions valid. Sending `session_token` in the
+body rotates that session: the old token is consumed immediately and fails on the
+next request, while the replacement keeps the original expiry cap. Game-protocol
+`LoginRequest.session_token` does not rotate; the presented token stays valid.
+`POST /password` verifies the old password, replaces the hash and revokes every
+session except the one that made the change.
+
+Session rows store a SHA-256 digest of the token, never the token itself.
+`GET /sessions` shows a 12-character digest prefix as the session ID, so the list
+cannot be used to recover a token.
 
 Missing or invalid credentials return `401` with `WWW-Authenticate: Bearer`.
 Revoked tokens fail immediately on the next request. Admin tokens are compared in constant time;
@@ -26,7 +33,7 @@ session tokens are stored and resolved by SHA-256 digest, so the raw token is ne
 | --- | --- |
 | `400` | Invalid JSON, missing query, bad ID or invalid field length |
 | `401` | Missing, expired or revoked credential |
-| `403` | Public registration is disabled |
+| `403` | Public registration is disabled, or a blocked pair tries to join a lobby |
 | `404` | Missing resource, wrong account, or a lookup that must not disclose existence |
 | `429` | Social rate limit exceeded |
 | `500` | Server-side failure |
@@ -44,16 +51,17 @@ Only successful responses are cached. A failed call can be retried with the same
 key and will run again.
 
 `sendFriendRequest`, `searchUsers` and `blockFriend` share a per-account limit
-of 30 calls per hour. The counter is in memory and resets on server restart.
+of 30 calls per hour. Login, account and social counters live in the
+`rate_events` table, so a restart does not clear a lockout. Rows older than one
+hour are deleted at startup and hourly.
 
 Game-socket logins have two failure limits: five failed attempts per source IP in one minute,
-shared with HTTP `POST /login`, and five failed attempts per account in one minute. Both counters
-are in memory and reset on server restart. A locked game login returns
-`LoginResponse{status: BAD_CREDENTIALS}` because the wire enum has no lockout status. The server
-log records the specific reason `login temporarily locked after repeated failures` with the IP or
-account ID, never credentials. HTTP `POST /login` uses the shared per-IP limit only and returns
-`401` while blocked. Game frames are capped at 1 MiB and JSON request bodies at 64 KiB; oversized
-input is rejected before handling.
+shared with HTTP `POST /login`, and five failed attempts per account in one minute. A locked game
+login returns `LoginResponse{status: RATE_LIMITED}` for either bucket. The server log records the
+specific reason `login temporarily locked after repeated failures` with the IP or account ID,
+never credentials. HTTP `POST /login` uses the shared per-IP limit only and returns `401` while
+blocked. Game frames are capped at 1 MiB and JSON request bodies at 64 KiB; oversized input is
+rejected before handling.
 
 ## Public routes
 
@@ -62,7 +70,7 @@ input is rejected before handling.
 | `GET /healthz` | anonymous | none | `{"status":"ok"}` |
 | `GET /config` | anonymous | none | `{"allow_register":true}` |
 | `POST /register` | `register` | `{"username":"alice","password":"pw","persona_name":"Alice"}` | `201` account object, or `403` when registration is off |
-| `POST /login` | `login` | `{"username":"alice","password":"pw"}` | `200 {"session_token":"...","steam_id":76561197960265729,"persona_name":"Alice"}` |
+| `POST /login` | `login` | `{"username":"alice","password":"pw"}` or `{"session_token":"..."}` | `200 {"session_token":"...","steam_id":76561197960265729,"persona_name":"Alice"}`; a presented token is rotated |
 
 ## User routes
 
@@ -88,6 +96,7 @@ All routes below require a session token.
 | `POST /lobbies/{lobby_id}/join` | `joinLobby` | none | `200` and a `Lobby` push to members |
 | `POST /logout` | `logout` | none | `204`; revokes the presented token |
 | `POST /logout-all` | `logoutAll` | none | `204`; revokes every session for the account |
+| `POST /password` | `changePassword` | `{"old_password":"pw","new_password":"new-pw"}` | `204`; revokes every other session |
 | `GET /sessions` | `listSessions` | none | `{"sessions":[{id,created_at,expires_at,current}]}` |
 | `DELETE /sessions/{id}` | `revokeSession` | none | `204`, or `404` for another account's session |
 
@@ -142,7 +151,7 @@ Port 8081 forwards only these user routes to the admin listener:
 - `POST /friends/{steam_id}/block`, `GET /friends/blocked`
 - `GET /users/search`, `GET /users/{steam_id}/stats`
 - `GET /lobbies`, `POST /lobbies`, `POST /lobbies/{id}/join`
-- `POST /logout`, `POST /logout-all`, `GET /sessions`, `DELETE /sessions/{id}`
+- `POST /logout`, `POST /logout-all`, `POST /password`, `GET /sessions`, `DELETE /sessions/{id}`
 
 Admin-only paths such as `/api/v1/users` and account CRUD return `404` on 8081.
 Because 8081 is plain HTTP on the LAN, session tokens cross it in cleartext.
