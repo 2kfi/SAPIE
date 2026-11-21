@@ -211,6 +211,34 @@ Rollback stays manual. Download the previous signed release and reinstall it.
 loopback inside the container. It declares the same healthcheck as the
 Dockerfile. The admin port is not published.
 
+### 0.5 packaging jobs
+
+Two tag-triggered jobs in `build.yml` build the Qt launchers from `launcher/`:
+
+- `launcher-windows-qt` uses Qt 6.8 MSVC, `windeployqt`, NSIS, MSI and a portable
+  zip through `launcher/windows/packaging/build-package.ps1`. It uploads
+  `launcher-windows-x64` for the release bundle and `installer-windows-qt` for
+  the GitHub Release, with `SHA256SUMS.txt`, SPDX SBOMs and a signed stable
+  update manifest.
+- `launcher-linux-qt` runs on x64 and arm64 runners with Qt 6.8, then calls
+  `launcher/linux/packaging/build-package.sh` for AppImage, deb and Flatpak. It
+  uploads `launcher-linux-x64` and `launcher-linux-arm64` payloads plus
+  `installer-linux-qt-<arch>` with `SHA256SUMS.txt` and SPDX SBOMs.
+
+Repository secrets used by these jobs:
+
+- `SAPIE_SIGNING_THUMBPRINT`: the Authenticode certificate thumbprint for
+  `launcher/windows/signing/sign.ps1`. The certificate itself is not in the repo.
+- `SAPIE_UPDATE_PUBLIC_KEY`: the update manifest public key, as inline PEM or a
+  path. The checked-in `tools/update-signing-public.pem` is the trust root in
+  release bundles.
+- `SAPIE_UPDATE_SIGNING_KEY`: the signing key for the final release manifests,
+  already used by the release job.
+
+No value for these secrets is stored in the tree. Windows runner, MSVC, signing
+secrets, linuxdeploy, appimagetool and the Flatpak SDK were not available
+locally, so both jobs are NOT VERIFIED here.
+
 The 0.1 release is published and frozen at tag `0.1` (`62007f5`) at
 https://github.com/2kfi/SAPIE/releases/tag/0.1 with the assets
 `SAPIE-0.1-linux-x64.tar.gz`, `SAPIE-0.1-linux-arm64.tar.gz` and `SAPIE-0.1-windows-x64.zip`.

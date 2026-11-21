@@ -225,6 +225,187 @@ jobs:
           path: client/src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
 
+  launcher-windows-qt:
+    needs: ci
+    runs-on: windows-latest
+    env:
+      SAPIE_SIGNING_THUMBPRINT: ${{ secrets.SAPIE_SIGNING_THUMBPRINT }}
+      SAPIE_UPDATE_PUBLIC_KEY: ${{ secrets.SAPIE_UPDATE_PUBLIC_KEY }}
+      SAPIE_UPDATE_SIGNING_KEY: ${{ secrets.SAPIE_UPDATE_SIGNING_KEY }}
+      SAPIE_PYTHON: python
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Install Qt 6.8 MSVC
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: windows
+          target: desktop
+          arch: win64_msvc2019_64
+          modules: qtquickcontrols2 qtsvg
+      - name: Install packaging tools
+        run: choco install nsis wixtoolset imagemagick --no-progress -y
+      - name: Stamp version from tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "not a numeric release tag: $TAG" >&2; exit 1; }
+          ver="$TAG"
+          [[ "$ver" == *.*.* ]] || ver="$ver.0"
+          echo "VERSION=$ver" >> "$GITHUB_ENV"
+      - name: Configure and build Qt launcher
+        run: |
+          set -euo pipefail
+          cmake -S launcher -B build/windows-qt -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSAPIE_VERSION="$VERSION" \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+          cmake --build build/windows-qt --parallel
+      - name: Resolve update public key
+        run: |
+          set -euo pipefail
+          : "${SAPIE_UPDATE_PUBLIC_KEY:?SAPIE_UPDATE_PUBLIC_KEY secret is required}"
+          mkdir -p out/windows-package
+          if [[ "$SAPIE_UPDATE_PUBLIC_KEY" == *"BEGIN PUBLIC KEY"* ]]; then
+            printf '%s\n' "$SAPIE_UPDATE_PUBLIC_KEY" > out/windows-package/public.pem
+            echo "PUBLIC_KEY_PATH=$PWD/out/windows-package/public.pem" >> "$GITHUB_ENV"
+          else
+            echo "PUBLIC_KEY_PATH=$SAPIE_UPDATE_PUBLIC_KEY" >> "$GITHUB_ENV"
+          fi
+      - name: Package Windows launcher
+        run: |
+          set -euo pipefail
+          pwsh -NoProfile -ExecutionPolicy Bypass \
+            -File launcher/windows/packaging/build-package.ps1 \
+            -Version "$VERSION" \
+            -QtBin "$QT_ROOT_DIR/bin" \
+            -Exe "$PWD/build/windows-qt/sapie_launcher.exe" \
+            -RepoRoot "$PWD" \
+            -OutputDir "$PWD/out/windows-package" \
+            -Channel stable \
+            -UpdatePublicKey "$PUBLIC_KEY_PATH"
+      - name: Windows SBOM
+        run: python tools/gen-sbom.py --tag "$VERSION" --output-dir out/windows-package --repo "$PWD"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: launcher-windows-x64
+          path: out/windows-package/work/stage
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer-windows-qt
+          path: |
+            out/windows-package/SAPIE-*.exe
+            out/windows-package/SAPIE-*.msi
+            out/windows-package/SAPIE-*.zip
+            out/windows-package/SHA256SUMS.txt
+            out/windows-package/SBOM-*.json
+            out/windows-package/update-*.json
+            out/windows-package/update-*.sig
+            out/windows-package/public.pem
+          if-no-files-found: error
+
+  launcher-linux-qt:
+    needs: ci
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, arch: x64, qt_arch: gcc_64 }
+          - { os: ubuntu-24.04-arm, arch: arm64, qt_arch: gcc_arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Qt 6.8
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: linux
+          target: desktop
+          arch: ${{ matrix.qt_arch }}
+          modules: qtquickcontrols2 qtsvg
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libdbus-1-dev librsvg2-dev librsvg2-bin \
+            libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libxrandr-dev \
+            libgl1-mesa-dev dpkg-dev flatpak flatpak-builder ostree curl
+      - name: Install AppImage tools
+        run: |
+          set -euo pipefail
+          case "${{ matrix.arch }}" in
+            x64) suffix=x86_64 ;;
+            arm64) suffix=aarch64 ;;
+          esac
+          curl -fsSL -o "$RUNNER_TEMP/linuxdeploy" \
+            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${suffix}.AppImage"
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" \
+            "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${suffix}.AppImage"
+          chmod +x "$RUNNER_TEMP/linuxdeploy" "$RUNNER_TEMP/appimagetool"
+          echo "LINUXDEPLOY=$RUNNER_TEMP/linuxdeploy" >> "$GITHUB_ENV"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          echo "QMAKE=$QT_ROOT_DIR/bin/qmake6" >> "$GITHUB_ENV"
+      - name: Stamp version from tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "not a numeric release tag: $TAG" >&2; exit 1; }
+          ver="$TAG"
+          [[ "$ver" == *.*.* ]] || ver="$ver.0"
+          echo "VERSION=$ver" >> "$GITHUB_ENV"
+      - name: Configure and build Qt launcher
+        run: |
+          set -euo pipefail
+          cmake -S launcher -B "build/linux-qt-${{ matrix.arch }}" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSAPIE_VERSION="$VERSION" \
+            -DSAPIE_ARCH="${{ matrix.arch }}" \
+            -DSAPIE_FLATPAK_REPO="$PWD/flatpak-repo" \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+          cmake --build "build/linux-qt-${{ matrix.arch }}" --parallel
+          cmake --build "build/linux-qt-${{ matrix.arch }}" --target sapie-linux-icons
+          mkdir -p flatpak-repo
+          ostree --repo=flatpak-repo init --mode=archive-z2
+      - name: Package Linux launcher
+        run: |
+          set -euo pipefail
+          bash launcher/linux/packaging/build-package.sh \
+            "$PWD/build/linux-qt-${{ matrix.arch }}/sapie_launcher" \
+            "$PWD" \
+            "$PWD/build/linux-qt-${{ matrix.arch }}/linux/resources" \
+            "$PWD/build/linux-qt-${{ matrix.arch }}/linux/hicolor" \
+            "$PWD/out/linux-package-${{ matrix.arch }}" \
+            "${{ matrix.arch }}" "$VERSION" "$PWD/flatpak-repo"
+      - name: Checksums and SBOM
+        run: |
+          set -euo pipefail
+          out="out/linux-package-${{ matrix.arch }}"
+          (cd "$out" && find . -type f -name 'SAPIE-*' -printf '%P\n' | LC_ALL=C sort |
+            while IFS= read -r file; do sha256sum "$file"; done > SHA256SUMS.txt)
+          python3 tools/gen-sbom.py --tag "$VERSION" --output-dir "$out" --repo "$PWD"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: launcher-linux-${{ matrix.arch }}
+          path: out/linux-package-${{ matrix.arch }}/appimage
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer-linux-qt-${{ matrix.arch }}
+          path: |
+            out/linux-package-${{ matrix.arch }}/appimage/*.AppImage
+            out/linux-package-${{ matrix.arch }}/deb/*.deb
+            out/linux-package-${{ matrix.arch }}/flatpak/*.flatpak
+            out/linux-package-${{ matrix.arch }}/SHA256SUMS.txt
+            out/linux-package-${{ matrix.arch }}/SBOM-*.json
+          if-no-files-found: error
+
   release:
     needs: [proto-sync, client, server, launcher, web, launcher-windows, launcher-linux]
     runs-on: ubuntu-latest
