@@ -33,5 +33,6 @@ private slots:
     void init();
     void unknownAbiVersionHasClearError();
     void fakeCoreDrivesLoginDetectConfigureAndLaunch();
+    void fakeCoreDrivesScreenMethods();
     void fakePlatformRecordsNativeCalls();
 };

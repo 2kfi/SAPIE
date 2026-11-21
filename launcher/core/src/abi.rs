@@ -89,6 +89,7 @@ pub struct SapieGameRecord {
     pub launch_arg_count: usize,
     pub ld_preload: *mut c_char,
     pub last_played: u64,
+    pub favorite: i32,
 }
 
 struct Core {
@@ -163,6 +164,28 @@ unsafe fn as_str<'a>(ptr: *const c_char) -> Option<&'a str> {
         return None;
     }
     CStr::from_ptr(ptr).to_str().ok()
+}
+
+unsafe fn str_array(ptr: *const *const c_char, count: usize) -> Option<Vec<String>> {
+    if count == 0 {
+        return Some(Vec::new());
+    }
+    if ptr.is_null() {
+        return None;
+    }
+    let mut values = Vec::with_capacity(count);
+    for index in 0..count {
+        {
+            let value = as_str(*ptr.add(index))?;
+            values.push(value.to_string());
+        }
+    }
+    Some(values)
+}
+
+fn join_lobby_id(url: &str) -> Option<&str> {
+    let id = url.strip_prefix("sapie://join/")?.split(['?', '#', '/']).next()?;
+    (!id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit())).then_some(id)
 }
 
 fn c_string(value: &str) -> *mut c_char {
@@ -339,6 +362,7 @@ impl From<&GameRecord> for SapieGameRecord {
             launch_arg_count,
             ld_preload: opt_string(value.ld_preload.as_deref()),
             last_played: value.last_played.unwrap_or(0),
+            favorite: i32::from(value.favorite),
         }
     }
 }
@@ -883,6 +907,164 @@ pub unsafe extern "C" fn sapie_core_library_remove(
     }
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn sapie_core_set_favorite(
+    core: *mut SapieCore,
+    path: *const c_char,
+    favorite: i32,
+) -> Status {
+    let core = match as_core(core) {
+        Some(core) => core,
+        None => return Status::InvalidArgument,
+    };
+    let path = match as_str(path) {
+        Some(path) => path,
+        None => return Status::InvalidArgument,
+    };
+    match core.inner.update(|state| {
+        let record = state
+            .games
+            .get_mut(path)
+            .ok_or_else(|| CommandError::new(ErrorKind::NotFound, "Game is not in the library."))?;
+        record.favorite = favorite != 0;
+        Ok(())
+    }) {
+        Ok(()) => Status::Ok,
+        Err(error) => status_of(&error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sapie_core_save_game_options(
+    core: *mut SapieCore,
+    path: *const c_char,
+    args: *const *const c_char,
+    arg_count: usize,
+    ld_preload: *const c_char,
+) -> Status {
+    let core = match as_core(core) {
+        Some(core) => core,
+        None => return Status::InvalidArgument,
+    };
+    let (path, args, preload) = match (as_str(path), str_array(args, arg_count)) {
+        (Some(path), Some(args)) => (path, args, as_str(ld_preload)),
+        _ => return Status::InvalidArgument,
+    };
+    let ld_preload = preload.filter(|value| !value.is_empty()).map(str::to_string);
+    match core.inner.update(|state| {
+        let record = state
+            .games
+            .get_mut(path)
+            .ok_or_else(|| CommandError::new(ErrorKind::NotFound, "Game is not in the library."))?;
+        record.launch_args = args;
+        record.ld_preload = ld_preload;
+        Ok(())
+    }) {
+        Ok(()) => Status::Ok,
+        Err(error) => status_of(&error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sapie_core_get_preference(
+    core: *mut SapieCore,
+    key: *const c_char,
+    fallback: *const c_char,
+    out_value: *mut *mut c_char,
+) -> Status {
+    let core = match as_core(core) {
+        Some(core) => core,
+        None => return Status::InvalidArgument,
+    };
+    let (key, fallback) = match (as_str(key), as_str(fallback)) {
+        (Some(key), Some(fallback)) => (key, fallback),
+        _ => return Status::InvalidArgument,
+    };
+    let value = match core.inner.snapshot() {
+        Ok(state) => state
+            .preferences
+            .get(key)
+            .map_or(fallback, String::as_str)
+            .to_string(),
+        Err(error) => return status_of(&error),
+    };
+    write_out(out_value, c_string(&value))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sapie_core_set_preference(
+    core: *mut SapieCore,
+    key: *const c_char,
+    value: *const c_char,
+) -> Status {
+    let core = match as_core(core) {
+        Some(core) => core,
+        None => return Status::InvalidArgument,
+    };
+    let (key, value) = match (as_str(key), as_str(value)) {
+        (Some(key), Some(value)) => (key, value),
+        _ => return Status::InvalidArgument,
+    };
+    match core.inner.update(|state| {
+        state.preferences.insert(key.to_string(), value.to_string());
+        Ok(())
+    }) {
+        Ok(()) => Status::Ok,
+        Err(error) => status_of(&error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sapie_core_data_folder(
+    core: *mut SapieCore,
+    out_path: *mut *mut c_char,
+) -> Status {
+    let core = match as_core(core) {
+        Some(core) => core,
+        None => return Status::InvalidArgument,
+    };
+    match core.inner.platform.paths().data_dir() {
+        Ok(path) => write_out(out_path, c_string(&path.to_string_lossy())),
+        Err(error) => status_of(&error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sapie_core_launcher_version(out_version: *mut *mut c_char) -> Status {
+    write_out(out_version, c_string(env!("CARGO_PKG_VERSION")))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sapie_core_check_updates(
+    core: *mut SapieCore,
+    channel: *const c_char,
+    out_version: *mut *mut c_char,
+) -> Status {
+    let core = match as_core(core) {
+        Some(core) => core,
+        None => return Status::InvalidArgument,
+    };
+    let channel = match as_str(channel) {
+        Some(channel) => channel,
+        None => return Status::InvalidArgument,
+    };
+    match core.inner.platform.updater().latest_version(channel) {
+        Ok(version) => write_out(out_version, c_string(version.as_deref().unwrap_or(""))),
+        Err(error) => status_of(&error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sapie_core_parse_deep_link(
+    url: *const c_char,
+    out_lobby_id: *mut *mut c_char,
+) -> Status {
+    match as_str(url).and_then(join_lobby_id) {
+        Some(id) => write_out(out_lobby_id, c_string(id)),
+        None => Status::InvalidArgument,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -934,5 +1116,130 @@ mod tests {
         assert_eq!(count, 0);
         assert!(records.is_null());
         unsafe { sapie_core_destroy(core) };
+    }
+
+    fn isolated_core(name: &str) -> (*mut SapieCore, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("sapie-abi-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let platform = FakePlatform::with_data_dir(dir.clone());
+        let mut core = ptr::null_mut();
+        assert_eq!(
+            unsafe { create_with(Arc::new(platform), None, ptr::null_mut(), &mut core) },
+            Status::Ok
+        );
+        (core, dir)
+    }
+
+    #[test]
+    fn preference_version_folder_and_deep_link_roundtrip() {
+        let (core, dir) = isolated_core("prefs");
+        let key = CString::new("librarySort").unwrap();
+        let fallback = CString::new("Name").unwrap();
+        let value = CString::new("Last played").unwrap();
+        let mut out = ptr::null_mut();
+        assert_eq!(
+            unsafe { sapie_core_get_preference(core, key.as_ptr(), fallback.as_ptr(), &mut out) },
+            Status::Ok
+        );
+        assert_eq!(unsafe { as_str(out) }, Some("Name"));
+        unsafe { free_string(out) };
+
+        assert_eq!(
+            unsafe { sapie_core_set_preference(core, key.as_ptr(), value.as_ptr()) },
+            Status::Ok
+        );
+        out = ptr::null_mut();
+        assert_eq!(
+            unsafe { sapie_core_get_preference(core, key.as_ptr(), fallback.as_ptr(), &mut out) },
+            Status::Ok
+        );
+        assert_eq!(unsafe { as_str(out) }, Some("Last played"));
+        unsafe { free_string(out) };
+
+        out = ptr::null_mut();
+        assert_eq!(unsafe { sapie_core_data_folder(core, &mut out) }, Status::Ok);
+        assert_eq!(unsafe { as_str(out) }, Some(dir.to_str().unwrap()));
+        unsafe { free_string(out) };
+
+        out = ptr::null_mut();
+        assert_eq!(unsafe { sapie_core_launcher_version(&mut out) }, Status::Ok);
+        assert!(!unsafe { as_str(out) }.unwrap_or_default().is_empty());
+        unsafe { free_string(out) };
+
+        let link = CString::new("sapie://join/123?exp=1&sig=abc").unwrap();
+        out = ptr::null_mut();
+        assert_eq!(
+            unsafe { sapie_core_parse_deep_link(link.as_ptr(), &mut out) },
+            Status::Ok
+        );
+        assert_eq!(unsafe { as_str(out) }, Some("123"));
+        unsafe { free_string(out) };
+
+        let bad = CString::new("sapie://join/not-a-number").unwrap();
+        assert_eq!(
+            unsafe { sapie_core_parse_deep_link(bad.as_ptr(), &mut out) },
+            Status::InvalidArgument
+        );
+        unsafe { sapie_core_destroy(core) };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn favorite_and_launch_options_roundtrip_through_owned_strings() {
+        let (core, dir) = isolated_core("options");
+        assert!(unsafe {
+            (*core).inner.update(|state| {
+                state
+                    .games
+                    .insert("game.exe".into(), GameRecord::new("game.exe"));
+                Ok(())
+            })
+        }
+        .is_ok());
+        let path = CString::new("game.exe").unwrap();
+        assert_eq!(
+            unsafe { sapie_core_set_favorite(core, path.as_ptr(), 1) },
+            Status::Ok
+        );
+
+        let args = [
+            CString::new("-windowed").unwrap(),
+            CString::new("-nopause").unwrap(),
+        ];
+        let ptrs: [*const c_char; 2] = [args[0].as_ptr(), args[1].as_ptr()];
+        let preload = CString::new("/lib/fake.so").unwrap();
+        assert_eq!(
+            unsafe {
+                sapie_core_save_game_options(
+                    core,
+                    path.as_ptr(),
+                    ptrs.as_ptr(),
+                    ptrs.len(),
+                    preload.as_ptr(),
+                )
+            },
+            Status::Ok
+        );
+        let record = unsafe { (*core).inner.snapshot() }
+            .unwrap()
+            .games
+            .get("game.exe")
+            .cloned()
+            .unwrap();
+        assert!(record.favorite);
+        assert_eq!(record.launch_args, ["-windowed", "-nopause"]);
+        assert_eq!(record.ld_preload.as_deref(), Some("/lib/fake.so"));
+
+        let mut out = ptr::null_mut();
+        let channel = CString::new("stable").unwrap();
+        assert_eq!(
+            unsafe { sapie_core_check_updates(core, channel.as_ptr(), &mut out) },
+            Status::Ok
+        );
+        assert_eq!(unsafe { as_str(out) }, Some(""));
+        unsafe { free_string(out) };
+
+        unsafe { sapie_core_destroy(core) };
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

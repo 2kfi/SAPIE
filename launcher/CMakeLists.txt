@@ -63,7 +63,7 @@ add_library(sapie_bridge STATIC
   bridge/CoreBridge.h
 )
 target_include_directories(sapie_bridge PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/bridge")
-target_link_libraries(sapie_bridge PUBLIC Qt6::Core sapie_core)
+target_link_libraries(sapie_bridge PUBLIC Qt6::Core Qt6::Gui sapie_core)
 add_dependencies(sapie_bridge sapie_core_build)
 
 add_library(sapie_app STATIC
@@ -97,7 +97,7 @@ qt_add_executable(core_bridge_test
   tests/FakePlatform.h
 )
 target_include_directories(core_bridge_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/app")
-target_link_libraries(core_bridge_test PRIVATE Qt6::Core Qt6::Network Qt6::Test sapie_bridge)
+target_link_libraries(core_bridge_test PRIVATE Qt6::Core Qt6::Gui Qt6::Network Qt6::Test sapie_bridge)
 add_dependencies(core_bridge_test sapie_core_build)
 add_test(NAME core_bridge_test COMMAND core_bridge_test)
 

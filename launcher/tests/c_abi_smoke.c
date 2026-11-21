@@ -90,6 +90,11 @@ int main(void)
     char *restored = NULL;
     char *unpacked = NULL;
     char *text = NULL;
+    char *preference = NULL;
+    char *folder = NULL;
+    char *version = NULL;
+    char *update = NULL;
+    char *join_id = NULL;
     char **strings = NULL;
     char dir[256];
     char exe[320];
@@ -131,6 +136,28 @@ int main(void)
     CHECK(sapie_core_library_list(core, &records, &count) == SAPIE_OK);
     CHECK(count == 1 && records != NULL);
     CHECK(strcmp(records[0].exe_path, exe) == 0);
+    CHECK(records[0].favorite == 0);
+
+    CHECK(sapie_core_set_favorite(core, exe, 1) == SAPIE_OK);
+    {
+        const char *const args[] = { "-windowed" };
+        CHECK(sapie_core_save_game_options(core, exe, args, 1, NULL) == SAPIE_OK);
+    }
+    CHECK(sapie_core_get_preference(core, "librarySort", "Name", &preference) == SAPIE_OK);
+    CHECK(preference != NULL && strcmp(preference, "Name") == 0);
+    CHECK(sapie_core_set_preference(core, "librarySort", "Last played") == SAPIE_OK);
+    sapie_string_free(preference);
+    preference = NULL;
+    CHECK(sapie_core_get_preference(core, "librarySort", "Name", &preference) == SAPIE_OK);
+    CHECK(preference != NULL && strcmp(preference, "Last played") == 0);
+    CHECK(sapie_core_data_folder(core, &folder) == SAPIE_OK);
+    CHECK(folder != NULL && folder[0] != '\0');
+    CHECK(sapie_core_launcher_version(&version) == SAPIE_OK);
+    CHECK(version != NULL && version[0] != '\0');
+    CHECK(sapie_core_check_updates(core, "stable", &update) == SAPIE_OK);
+    CHECK(update != NULL);
+    CHECK(sapie_core_parse_deep_link("sapie://join/123?exp=1", &join_id) == SAPIE_OK);
+    CHECK(join_id != NULL && strcmp(join_id, "123") == 0);
 
     CHECK(sapie_core_install_library(core, exe, &installed) == SAPIE_ERR_NOT_FOUND);
     CHECK(installed == NULL);
@@ -152,6 +179,11 @@ int main(void)
     detected->interface_count = 0;
     sapie_string_free(restored);
     restored = NULL;
+    sapie_string_free(preference);
+    sapie_string_free(folder);
+    sapie_string_free(version);
+    sapie_string_free(update);
+    sapie_string_free(join_id);
     text = NULL;
     sapie_string_free(text);
     sapie_string_free(NULL);
