@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=SAPIE
+GenericName=Game Launcher
+Comment=Your games. Your server.
+Exec=sapie-launcher %u
+TryExec=sapie-launcher
+Icon=org.sapie.SAPIE
+Terminal=false
+Categories=Game;
+MimeType=x-scheme-handler/sapie;
+StartupWMClass=sapie-launcher
