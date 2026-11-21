@@ -169,7 +169,7 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2" --locked
       - name: Build NSIS and MSI installers
-        run: cd client/src-tauri && cargo tauri build --bundles nsis,msi --config '{"build":{"beforeBuildCommand":"npm --prefix ui run build"}}'
+        run: cd client/src-tauri && cargo tauri build --bundles nsis,msi
       - uses: actions/upload-artifact@v7
         with:
           name: installer-windows
@@ -206,7 +206,7 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2" --locked
       - name: Build AppImage
-        run: cd client/src-tauri && cargo tauri build --bundles appimage --config '{"build":{"beforeBuildCommand":"npm --prefix ui run build"}}'
+        run: cd client/src-tauri && cargo tauri build --bundles appimage
       - uses: actions/upload-artifact@v7
         with:
           name: installer-linux

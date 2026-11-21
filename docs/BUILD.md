@@ -146,9 +146,9 @@ cd client/src-tauri && cargo build --release
 cd client/src-tauri/ui && npm ci && npm run build
 ```
 
-The shell bundle is loaded from `../ui/dist` with a locked CSP and no remote URLs. On Linux the
-release build needs the webkit2gtk and X11/Wayland/GL development packages listed above. No
-cross-compiled Windows launcher has been executed locally.
+The shell bundle is loaded from `ui/dist` with a locked CSP and no remote URLs, relative to
+`client/src-tauri`. On Linux the release build needs the webkit2gtk and X11/Wayland/GL development
+packages listed above. No cross-compiled Windows launcher has been executed locally.
 
 ## Web UI build
 
@@ -170,8 +170,8 @@ and the dependency audits.
 tag version into `Cargo.toml`, `tauri.conf.json` and both `package.json` files, builds the client,
 server and launcher targets, builds `web/dist`, assembles the release archives, creates the GitHub
 Release and pushes the server container. `tools/release-bundle.sh` copies `web/dist` to the archive
-root as `web/dist`, so `--ui-dir ./web/dist` works from an unpacked bundle. No tag-triggered release
-has been observed in this tree; that path is UNVERIFIED.
+root as `web/dist`, so `--ui-dir ./web/dist` works from an unpacked bundle. A tag-triggered `0.4`
+run failed at installer bundling; the release path stays UNVERIFIED until a corrected run succeeds.
 
 The 0.1 release is published and frozen at tag `0.1` (`62007f5`) at
 https://github.com/2kfi/SAPIE/releases/tag/0.1 with the assets
