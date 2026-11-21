@@ -1,5 +1,5 @@
 pragma Singleton
-import QtQml 2.15
+import QtQuick 2.15
 
 QtObject {
     readonly property color bgApp: "#17191D"
@@ -14,7 +14,7 @@ QtObject {
     readonly property color textMuted: "#737984"
     readonly property color accent: "#C5A4FF"
     readonly property color accentSoft: "#342A46"
-    readonly property color onAccent: "#17191D"
+    readonly property color accentInk: "#17191D"
     readonly property color success: "#73C991"
     readonly property color warning: "#E6B86C"
     readonly property color danger: "#E17B7B"

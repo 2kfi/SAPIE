@@ -39,6 +39,9 @@ def resolve(name, tokens, seen=None):
 
 
 def qml_name(css_name):
+    # QML reads an onFoo property on a singleton as a signal handler, so on-accent needs an alias.
+    if css_name == "--on-accent":
+        return "accentInk"
     parts = css_name.lstrip("-").split("-")
     return parts[0] + "".join(p[:1].upper() + p[1:] for p in parts[1:])
 
@@ -63,7 +66,7 @@ def qml_value(value, kind):
 def render(tokens):
     lines = [
         "pragma Singleton",
-        "import QtQml 2.15",
+        "import QtQuick 2.15",
         "",
         "QtObject {",
     ]
