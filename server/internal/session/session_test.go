@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/binary"
-	"errors"
 	"io"
 	"net"
 	"path/filepath"
@@ -920,11 +919,12 @@ func TestAccountLockoutAfterRepeatedBadPasswords(t *testing.T) {
 	}
 	// Clear the IP counter so the next refusal can only come from the account lockout.
 	srv.limiter.Reset("127.0.0.1")
-	if err := srv.checkAccountLockout(id); !errors.Is(err, errLoginLocked) {
-		t.Fatalf("lockout error = %v, want %v", err, errLoginLocked)
+	allowed, err := srv.accountAllowed(id)
+	if err != nil || allowed {
+		t.Fatalf("accountAllowed = %v, %v; want false, nil", allowed, err)
 	}
-	if got := login("pw").GetStatus(); got != protocol.LoginResponse_BAD_CREDENTIALS {
-		t.Fatalf("locked correct-password login status = %v, want BAD_CREDENTIALS", got)
+	if got := login("pw").GetStatus(); got != protocol.LoginResponse_RATE_LIMITED {
+		t.Fatalf("locked correct-password login status = %v, want RATE_LIMITED", got)
 	}
 }
 
@@ -956,7 +956,9 @@ func TestTokenLoginWorksBelowAccountLockout(t *testing.T) {
 	go srv.Serve(ctx, ln)
 
 	for i := 0; i < auth.MaxFailures-1; i++ {
-		srv.accountLocks.record(id)
+		if err := srv.limiter.RecordBucket(auth.AccountBucket(id)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	c, err := net.Dial("tcp", ln.Addr().String())
 	if err != nil {
@@ -1112,6 +1114,106 @@ func TestIdleAuthenticatedConnectionClosed(t *testing.T) {
 	c.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := protocol.ReadFrame(c); err == nil {
 		t.Fatal("idle authenticated connection stayed open")
+	}
+}
+
+func TestIPLockoutUsesRateLimitedStatus(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAccount("alice", hash, "Alice"); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := New(store, auth.NewLimiter(nil))
+	go srv.Serve(ctx, ln)
+
+	login := func(username, password string) *protocol.LoginResponse {
+		t.Helper()
+		c, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		req := &protocol.LoginRequest{Username: username, Password: password}
+		if err := protocol.WriteFrame(c, &protocol.Frame{Payload: &protocol.Frame_Login{Login: req}}); err != nil {
+			t.Fatal(err)
+		}
+		return readLoginResponse(t, c)
+	}
+	for i := 0; i < auth.MaxFailures; i++ {
+		if got := login("nobody", "wrong").GetStatus(); got != protocol.LoginResponse_BAD_CREDENTIALS {
+			t.Fatalf("failure %d = %v, want BAD_CREDENTIALS", i+1, got)
+		}
+	}
+	if got := login("alice", "pw").GetStatus(); got != protocol.LoginResponse_RATE_LIMITED {
+		t.Fatalf("IP-locked login = %v, want RATE_LIMITED", got)
+	}
+}
+
+func TestGameLoginRotatesTokenAndRejectsReplay(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.CreateAccount("alice", hash, "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSession(id, auth.HashToken("old-token"), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := New(store, auth.NewLimiter(nil))
+	go srv.Serve(ctx, ln)
+
+	login := func(token string) *protocol.LoginResponse {
+		t.Helper()
+		c, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		req := &protocol.LoginRequest{SessionToken: token}
+		if err := protocol.WriteFrame(c, &protocol.Frame{Payload: &protocol.Frame_Login{Login: req}}); err != nil {
+			t.Fatal(err)
+		}
+		return readLoginResponse(t, c)
+	}
+
+	first := login("old-token")
+	if first.GetStatus() != protocol.LoginResponse_OK || len(first.GetSessionToken()) == 0 {
+		t.Fatalf("token login = %v, token length %d", first.GetStatus(), len(first.GetSessionToken()))
+	}
+	if replay := login("old-token"); replay.GetStatus() != protocol.LoginResponse_BAD_CREDENTIALS {
+		t.Fatalf("rotated token replay = %v, want BAD_CREDENTIALS", replay.GetStatus())
+	}
+	second := login(string(first.GetSessionToken()))
+	if second.GetStatus() != protocol.LoginResponse_OK || len(second.GetSessionToken()) == 0 ||
+		string(second.GetSessionToken()) == string(first.GetSessionToken()) {
+		t.Fatalf("rotated token login = %v, token %q", second.GetStatus(), second.GetSessionToken())
 	}
 }
 

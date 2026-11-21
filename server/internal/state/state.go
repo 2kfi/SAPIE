@@ -453,6 +453,22 @@ func (s *Store) JoinLobby(lobbyID, steamID uint64, appid uint32) error {
 	if already > 0 {
 		return nil
 	}
+	blocked, err := s.IsBlocked(owner, steamID)
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return ErrPairBlocked
+	}
+	var blockedMembers uint32
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM lobby_members lm JOIN blocks b ON
+		(b.steam_id = lm.steam_id AND b.blocked_id = ?) OR (b.blocked_id = lm.steam_id AND b.steam_id = ?)
+		WHERE lm.lobby_id = ?`, steamID, steamID, lobbyID).Scan(&blockedMembers); err != nil {
+		return err
+	}
+	if blockedMembers > 0 {
+		return ErrPairBlocked
+	}
 	if joinable == 0 {
 		return ErrLobbyUnavailable
 	}

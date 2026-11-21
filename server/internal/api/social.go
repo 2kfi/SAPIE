@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/sapie/sapie/server/internal/auth"
 	"github.com/sapie/sapie/server/internal/state"
 )
 
@@ -19,34 +19,13 @@ const (
 	maxRequestMessage = 280
 )
 
-// socialLimiter bounds request sends and searches per account. It is in-memory
-// on purpose: a restart clears it, while sessions and the graph are persisted.
-type socialLimiter struct {
-	mu    sync.Mutex
-	calls map[uint64][]time.Time
-	now   func() time.Time
-}
-
-func newSocialLimiter() *socialLimiter {
-	return &socialLimiter{calls: make(map[uint64][]time.Time), now: time.Now}
-}
-
-func (l *socialLimiter) allow(steamID uint64) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	cutoff := l.now().Add(-socialWindow)
-	recent := make([]time.Time, 0, len(l.calls[steamID]))
-	for _, at := range l.calls[steamID] {
-		if at.After(cutoff) {
-			recent = append(recent, at)
-		}
+func (s *Server) socialAllowed(steamID uint64) (bool, error) {
+	bucket := auth.SocialBucket(steamID)
+	allowed, err := s.limiter.AllowBucket(bucket, socialLimit, socialWindow)
+	if err != nil || !allowed {
+		return allowed, err
 	}
-	if len(recent) >= socialLimit {
-		l.calls[steamID] = recent
-		return false
-	}
-	l.calls[steamID] = append(recent, l.now())
-	return true
+	return true, s.limiter.RecordBucket(bucket)
 }
 
 func steamIDParam(w http.ResponseWriter, r *http.Request, name string) (uint64, bool) {
@@ -84,7 +63,12 @@ func (s *Server) sendFriendRequest(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.social.allow(steamID) {
+	allowed, err := s.socialAllowed(steamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
 		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}
@@ -261,7 +245,12 @@ func (s *Server) blockFriend(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.social.allow(steamID) {
+	allowed, err := s.socialAllowed(steamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
 		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}
@@ -316,7 +305,12 @@ func (s *Server) searchUsers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.social.allow(steamID) {
+	allowed, err := s.socialAllowed(steamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
 		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}

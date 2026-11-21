@@ -83,19 +83,25 @@ func (r *Router) recipients(from uint64, msg *protocol.Common_Message) []uint64 
 		}
 		return allowed
 	case *protocol.Common_Message_Lobby:
-		return r.lobbyRecipients(msg.GetLobby().GetRoomId())
+		return r.lobbyRecipients(from, msg.GetLobby().GetRoomId())
 	case *protocol.Common_Message_LobbyMessages:
-		return r.lobbyRecipients(msg.GetLobbyMessages().GetId())
+		return r.lobbyRecipients(from, msg.GetLobbyMessages().GetId())
 	}
 	return nil
 }
 
-func (r *Router) lobbyRecipients(lobbyID uint64) []uint64 {
+func (r *Router) lobbyRecipients(from, lobbyID uint64) []uint64 {
 	ids, err := r.resolver.LobbyMembers(lobbyID)
 	if err != nil {
 		log.Printf("route lobby=%d members: %v", lobbyID, err)
 	}
-	return ids
+	allowed := make([]uint64, 0, len(ids))
+	for _, id := range ids {
+		if !r.blocked(from, id) {
+			allowed = append(allowed, id)
+		}
+	}
+	return allowed
 }
 
 // p2pAllowed reports whether to is a friend of from or shares a lobby with them.

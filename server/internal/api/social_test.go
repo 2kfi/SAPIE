@@ -234,7 +234,7 @@ func TestBlockRemoveAndSearchHTTP(t *testing.T) {
 func TestSocialRateLimit(t *testing.T) {
 	srv, handler, ids, tokens, _ := newSocialAPI(t)
 	now := time.Now()
-	srv.social.now = func() time.Time { return now }
+	srv.limiter = auth.NewLimiter(func() time.Time { return now })
 	for i := 0; i < socialLimit; i++ {
 		if rec := socialRequest(handler, http.MethodGet, "/api/v1/users/search?q=bob", tokens["alice"], "", ""); rec.Code != http.StatusOK {
 			t.Fatalf("call %d = %d", i, rec.Code)

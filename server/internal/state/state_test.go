@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sapie/sapie/server/internal/auth"
 )
 
 func TestAdminTokenPersists(t *testing.T) {
@@ -541,5 +543,159 @@ func TestLobbySnapshotAndOwnership(t *testing.T) {
 	}
 	if _, err := store.Lobby(lobbyID); !errors.Is(err, ErrLobbyNotFound) {
 		t.Fatalf("deleted lobby survived: %v", err)
+	}
+}
+
+func TestRotateSessionCapsExpiry(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.CreateAccount("alice", hash, "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldHash := auth.HashToken("old-token")
+	if err := store.CreateSession(id, oldHash, time.Now().Add(72*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	cap := time.Now().Add(time.Hour)
+	_, expiresAt, err := store.RotateSession(oldHash, auth.HashToken("new-token"), cap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expiresAt > cap.Unix() {
+		t.Fatalf("rotated expiry = %d, want <= %d", expiresAt, cap.Unix())
+	}
+	if _, err := store.ResolveSession(oldHash); err == nil {
+		t.Fatal("old token survived rotation")
+	}
+	if got, err := store.ResolveSession(auth.HashToken("new-token")); err != nil || got != id {
+		t.Fatalf("new token resolves to %d, %v", got, err)
+	}
+}
+
+func TestJoinLobbyRejectsBlockedPair(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice, _ := store.CreateAccount("alice", hash, "Alice")
+	bob, _ := store.CreateAccount("bob", hash, "Bob")
+	carol, _ := store.CreateAccount("carol", hash, "Carol")
+	dave, _ := store.CreateAccount("dave", hash, "Dave")
+
+	ownerBlocked, err := store.CreateLobby(alice, 480, LobbyTypePublic, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.BlockUser(alice, bob); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinLobby(ownerBlocked, bob, 480); !errors.Is(err, ErrPairBlocked) {
+		t.Fatalf("join blocked by owner = %v, want ErrPairBlocked", err)
+	}
+	if err := store.JoinLobby(ownerBlocked, carol, 480); err != nil {
+		t.Fatalf("unblocked join = %v", err)
+	}
+
+	memberBlocked, err := store.CreateLobby(alice, 480, LobbyTypePublic, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinLobby(memberBlocked, dave, 480); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.BlockUser(dave, carol); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinLobby(memberBlocked, carol, 480); !errors.Is(err, ErrPairBlocked) {
+		t.Fatalf("join blocked by member = %v, want ErrPairBlocked", err)
+	}
+}
+
+func TestPersistentLimiterSurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sapie.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limiter := auth.NewPersistentLimiter(store, nil)
+	for i := 0; i < auth.MaxFailures; i++ {
+		allowed, err := limiter.AllowBucket(auth.IPBucket("1.2.3.4"), auth.MaxFailures, auth.FailureWindow)
+		if err != nil || !allowed {
+			t.Fatalf("IP blocked after %d failures: %v, %v", i, allowed, err)
+		}
+		limiter.RecordFailure("1.2.3.4")
+	}
+	account := auth.AccountBucket(42)
+	social := auth.SocialBucket(42)
+	for i := 0; i < auth.MaxFailures; i++ {
+		if err := limiter.RecordBucket(account); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 3; i++ {
+		if err := limiter.RecordBucket(social); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	limiter = auth.NewPersistentLimiter(store, nil)
+	if allowed, err := limiter.AllowBucket(auth.IPBucket("1.2.3.4"), auth.MaxFailures, auth.FailureWindow); err != nil || allowed {
+		t.Fatalf("login lockout after restart = %v, %v", allowed, err)
+	}
+	if allowed, err := limiter.AllowBucket(account, auth.MaxFailures, auth.FailureWindow); err != nil || allowed {
+		t.Fatalf("account lockout after restart = %v, %v", allowed, err)
+	}
+	if allowed, err := limiter.AllowBucket(social, 3, time.Hour); err != nil || allowed {
+		t.Fatalf("social limit after restart = %v, %v", allowed, err)
+	}
+	if allowed, err := limiter.AllowBucket(auth.IPBucket("5.6.7.8"), auth.MaxFailures, auth.FailureWindow); err != nil || !allowed {
+		t.Fatalf("unrelated IP after restart = %v, %v", allowed, err)
+	}
+}
+
+func TestDeleteExpiredRates(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now()
+	if err := store.AddRateEvent("old", now.Add(-2*time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddRateEvent("fresh", now.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DeleteExpiredRates(now.Add(-time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
+	old, err := store.RateCount("old", 0)
+	if err != nil || old != 0 {
+		t.Fatalf("old rate count = %d, %v", old, err)
+	}
+	fresh, err := store.RateCount("fresh", 0)
+	if err != nil || fresh != 1 {
+		t.Fatalf("fresh rate count = %d, %v", fresh, err)
 	}
 }

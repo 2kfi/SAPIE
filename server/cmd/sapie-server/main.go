@@ -88,10 +88,21 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	limiter := auth.NewLimiter(nil)
+	limiter := auth.NewPersistentLimiter(store, nil)
 	sessions := session.New(store, limiter)
 	admin := api.New(store, token, limiter, sessions)
 	admin.SetAllowRegister(*allowRegister)
+	cleanup := func() {
+		if _, err := store.DeleteExpiredSessions(); err != nil {
+			log.Printf("session cleanup: %v", err)
+		}
+		// One hour covers the longest limiter window (social requests).
+		before := time.Now().Add(-time.Hour).Unix()
+		if _, err := store.DeleteExpiredRates(before); err != nil {
+			log.Printf("rate cleanup: %v", err)
+		}
+	}
+	cleanup()
 	go func() {
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
@@ -100,9 +111,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if _, err := store.DeleteExpiredSessions(); err != nil {
-					log.Printf("session cleanup: %v", err)
-				}
+				cleanup()
 			}
 		}
 	}()
