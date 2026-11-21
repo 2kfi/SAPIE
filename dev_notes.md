@@ -48,12 +48,13 @@ The current threat model is `docs/SECURITY.md`. Its residual risks are:
   npm UIs report six dev-tooling advisories each. The CI job accepts only the advisory IDs named in
   `.github/workflows/ci.yml` and fails on any new one.
 
-### Build alignment gap
+### Build alignment
 
-`Cargo.lock` pulls `webkit2gtk` through Tauri, and `.github/workflows/build.yml` installs
-`libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev` and `librsvg2-dev` for Linux launcher jobs.
-The pull-request job in `.github/workflows/ci.yml` installs only the X11/Wayland/GL dev packages. A
-clean Linux launcher build under the narrower pull-request dependency set is UNVERIFIED.
+`Cargo.lock` pulls `webkit2gtk` through Tauri. Both `.github/workflows/build.yml` and
+`.github/workflows/ci.yml` now install the same Linux launcher dependency set, including
+`libglib2.0-dev`, `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev` and `librsvg2-dev`. The
+earlier gap where pull requests installed only the X11/Wayland/GL packages is closed. Green CI on a
+head with this dependency set is pending a workflow run.
 
 ## Deferred items after MF1
 
