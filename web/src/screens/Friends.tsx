@@ -19,6 +19,7 @@ import {
   type FriendRequest,
   type Session,
 } from '../api'
+import Avatar from '../components/Avatar'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
 import { gameLabel, personaLabel, personaTone } from '../lib/presence'
@@ -282,6 +283,7 @@ export default function Friends({ session, onNotice, onSelectFriend, onJoinFrien
                   return (
                     <li className="friend" key={id}>
                       <div className="friend__head">
+                        <Avatar name={friend.persona_name} small />
                         <button type="button" className="friend__name" onClick={() => onSelectFriend(friend)}>
                           {friend.persona_name}
                         </button>
@@ -411,6 +413,7 @@ export default function Friends({ session, onNotice, onSelectFriend, onJoinFrien
                     return (
                       <li className="friend" key={key}>
                         <div className="friend__head">
+                          <Avatar name={item.persona_name} small />
                           <span className="friend__label">{item.persona_name}</span>
                         </div>
                         {item.message ? <p>{item.message}</p> : null}
@@ -458,6 +461,7 @@ export default function Friends({ session, onNotice, onSelectFriend, onJoinFrien
                     return (
                       <li className="friend" key={key}>
                         <div className="friend__head">
+                          <Avatar name={item.persona_name} small />
                           <span className="friend__label">{item.persona_name}</span>
                           <span className="badge">Pending</span>
                         </div>
@@ -509,6 +513,7 @@ export default function Friends({ session, onNotice, onSelectFriend, onJoinFrien
                   return (
                     <li className="friend" key={id}>
                       <div className="friend__head">
+                        <Avatar name={user.persona_name} small />
                         <span className="friend__label">{user.persona_name}</span>
                         <span className="mono">ID {user.steam_id}</span>
                       </div>

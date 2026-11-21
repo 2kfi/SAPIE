@@ -12,6 +12,7 @@ import {
   type UserStats,
 } from '../api'
 import AchievementList from './AchievementList'
+import Avatar from './Avatar'
 import { EmptyState, ErrorState, LoadingState } from './States'
 
 type Props = {
@@ -91,11 +92,16 @@ export default function Account({ session, onNotice, onSignedOut }: Props) {
   return (
     <section className="view">
       <header className="view__head">
-        <div>
-          <h1>Your account</h1>
-          <p className="muted">Saved progress and active sessions for this account.</p>
+        <div className="account__identity">
+          <Avatar name={session.personaName || session.username} />
+          <div>
+            <h1>Your account</h1>
+            <p className="muted">{session.personaName || session.username}</p>
+          </div>
         </div>
-        <span className="badge">{session.personaName || session.username}</span>
+        <button type="button" className="btn btn--quiet" onClick={onSignedOut}>
+          Sign out
+        </button>
       </header>
 
       <div className="account-grid">
