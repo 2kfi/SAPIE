@@ -160,11 +160,17 @@ export default function LobbyPanel({ session, onNotice }: Props) {
         <ul className="lobby-list">
           {lobbies.map((lobby) => {
             const id = String(lobby.lobby_id)
+            const full = lobby.members.length >= lobby.member_limit
+            const state = !lobby.joinable ? 'Closed' : full ? 'Full' : 'Joinable'
+            const tone = lobby.joinable && !full ? 'online' : 'offline'
             return (
               <li className="lobby" key={id}>
                 <div className="friend__head">
                   <span className="mono">Lobby {id}</span>
-                  <span className="badge">{lobby.joinable ? 'Joinable' : 'Closed'}</span>
+                  <span className="badge status-pill">
+                    <span className={`dot dot--${tone}`} aria-hidden="true" />
+                    {state}
+                  </span>
                 </div>
                 <div className="lobby__meta">
                   <span>Owner {lobby.owner}</span>
@@ -183,12 +189,14 @@ export default function LobbyPanel({ session, onNotice }: Props) {
                   <button
                     type="button"
                     className="btn btn--quiet"
-                    disabled={!lobby.joinable || joiningId === id}
+                    disabled={!lobby.joinable || full || joiningId === id}
                     onClick={() => void handleJoin(lobby)}
                   >
                     Join
                   </button>
-                  {!lobby.joinable ? <p className="muted">This lobby is closed to new members.</p> : null}
+                  {!lobby.joinable
+                    ? <p className="muted">This lobby is closed to new members.</p>
+                    : full ? <p className="muted">This lobby is full.</p> : null}
                 </div>
               </li>
             )

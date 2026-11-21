@@ -20,21 +20,22 @@ export default function ConfirmDialog({
   onCancel,
 }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
+  const returnFocus = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     const dialog = ref.current
+    if (!open) {
+      if (returnFocus.current?.isConnected) returnFocus.current.focus()
+      returnFocus.current = null
+      return
+    }
+    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     if (!dialog) return
-    if (open && !dialog.open) {
+    if (!dialog.open) {
       try {
         dialog.showModal()
       } catch {
         dialog.setAttribute('open', '')
-      }
-    } else if (!open && dialog.open) {
-      try {
-        dialog.close()
-      } catch {
-        dialog.removeAttribute('open')
       }
     }
   }, [open])

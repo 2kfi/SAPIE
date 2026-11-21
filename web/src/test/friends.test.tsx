@@ -94,13 +94,16 @@ describe('friends screen', () => {
     })
   })
 
-  it('cancels a removal without calling the endpoint', async () => {
+  it('cancels a removal, returns focus and does not call the endpoint', async () => {
     const { fetchMock } = renderFriends(responder({ friends: [aliceFriend] }))
     await screen.findByRole('button', { name: 'Bob' })
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+    const remove = screen.getByRole('button', { name: 'Remove' })
+    remove.focus()
+    fireEvent.click(remove)
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(remove).toHaveFocus())
     expect(fetchMock.mock.calls.some(([url, init]) =>
       String(url) === '/api/v1/friends/42' && init?.method === 'DELETE')).toBe(false)
   })
