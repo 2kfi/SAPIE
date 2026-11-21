@@ -10,8 +10,9 @@ This section is the live known-limits list. The sections below it are historical
 - A headless two-client C++ to Go session is recorded in `docs/verification/0.4-two-client.md`. It
   covers login, server-assigned IDs, DB friendships made through the social API, presence, invite,
   a joined lobby with two members on both sides, a stats response and a persisted achievement.
-- The two-client harness is not deterministic. A client-side local-mirror timing race makes it fail
-  intermittently. Full passes are recorded, but a clean rerun is not guaranteed on every attempt.
+- The two-client harness now waits for the guest to finish before host teardown. Five consecutive
+  real-server runs passed with two-member rosters on both sides. The earlier intermittent failure
+  was teardown order: the host left the lobby before the guest sampled the roster.
 - UNVERIFIED: real MW2 2009 run. The Windows runbook is `docs/verification/0.4-morning-gate.md` and
   was not executed in the headless evidence run.
 - UNVERIFIED: native Tauri window, real IPC, keychain access and webview navigation. No window was

@@ -85,5 +85,6 @@ These have no passing evidence in this tree. They are not release gates that hav
   CI only because the fix is a major Vitest bump. They are reported, not fixed here.
 - UNVERIFIED: the `glib` 0.18.5 unsound warning from `cargo audit`. `cargo audit` exits 0 with the
   warning; the upgrade to 0.20.0 is a transitive change not made in this work.
-- The two-client harness is not deterministic. Full passes are recorded, but a client-side local
-  mirror timing race makes intermittent failures possible.
+- The two-client harness waits for guest completion before teardown. Five consecutive real-server
+  runs passed with two-member rosters on both sides. Earlier intermittent failures came from host
+  teardown emitting `LEAVE` before the guest sampled the roster; no assertion was weakened.

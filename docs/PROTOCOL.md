@@ -205,8 +205,8 @@ Known 0.1 limit, closed in 0.2 code:
 - The C++ client's `friends()` and `lobbies()` returned references to internal
   lists rather than copies. In 0.2 they return locked copies, and local lobby
   mutations write back to the mirror explicitly. The headless two-client run
-  exercised the joined-lobby path; the harness still fails intermittently on a
-  local-mirror timing race.
+  exercised the joined-lobby path. A later harness failure was caused by host teardown ordering,
+  not by the mirror; it was fixed and five consecutive runs pass.
 
 ## HTTP API
 

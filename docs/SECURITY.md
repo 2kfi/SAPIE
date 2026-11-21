@@ -179,8 +179,7 @@ Operator guidance:
 - A live two-client C++ to Go session is recorded in `docs/verification/0.4-two-client.md`. No real
   MW2 run has been performed. P2P, NAT traversal and the relay path are therefore unverified in
   game. Direct UDP is best effort and the relay has no dedicated rate limit. The two-client harness
-  still intermittently fails on a client-side local-mirror timing race; full passes are recorded,
-  but the harness is not deterministic.
+  had a teardown-order race; it now waits for guest completion and five consecutive runs passed.
 - The native Tauri window, real IPC and real keychain access were not exercised headless. Webview
   navigation and keyboard-only paths were not exercised either.
 - The login limiter, social limiter and per-account game-login lockout are in memory and reset on
