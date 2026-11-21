@@ -170,8 +170,8 @@ and the dependency audits.
 tag version into `Cargo.toml`, `tauri.conf.json` and both `package.json` files, builds the client,
 server and launcher targets, builds `web/dist`, assembles the release archives, creates the GitHub
 Release and pushes the server container. `tools/release-bundle.sh` copies `web/dist` to the archive
-root as `web/dist`, so `--ui-dir ./web/dist` works from an unpacked bundle. A tag-triggered `0.4`
-run failed at installer bundling; the release path stays UNVERIFIED until a corrected run succeeds.
+root as `web/dist`, so `--ui-dir ./web/dist` works from an unpacked bundle. Tag `0.4` run
+44882984036 passed and attached NSIS, MSI and AppImage installers. The installers were not executed.
 
 The 0.1 release is published and frozen at tag `0.1` (`62007f5`) at
 https://github.com/2kfi/SAPIE/releases/tag/0.1 with the assets

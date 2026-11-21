@@ -19,8 +19,9 @@ This section is the live known-limits list. The sections below it are historical
   opened in the headless evidence run.
 - UNVERIFIED: keyboard-only and screen-reader pass on the launcher and the web UI.
 - UNVERIFIED: NAT traversal, direct UDP and relay path selection with two real networks.
-- UNVERIFIED: Windows bundles, cross-compiled execution and the tag-triggered release workflow. Only
-  native `linux-x64` modern and legacy DLLs were built and run in the evidence run.
+- UNVERIFIED: installer execution and cross-compiled execution. Tag `0.4` CD run 44882984036
+  produced Windows NSIS/MSI and Linux AppImage installers, but none were executed. Only native
+  `linux-x64` modern and legacy DLLs were built and run in the evidence run.
 
 ### M19 security findings
 
