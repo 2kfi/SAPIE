@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -151,6 +152,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/lobbies", s.listLobbies)
 	mux.HandleFunc("POST /api/v1/lobbies", s.createLobby)
 	mux.HandleFunc("POST /api/v1/lobbies/{lobby_id}/join", s.joinLobby)
+	mux.HandleFunc("POST /api/v1/lobbies/{lobby_id}/invite", s.lobbyInvite)
 	mux.HandleFunc("GET /api/v1/users", s.listUsers)
 	mux.HandleFunc("GET /api/v1/users/search", s.searchUsers)
 	mux.HandleFunc("GET /api/v1/users/{steam_id}/stats", s.userStats)
@@ -434,6 +436,30 @@ func (s *Server) joinLobby(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "invalid lobby id", http.StatusBadRequest)
 		return
+	}
+	var req struct {
+		Invite string `json:"invite"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if req.Invite != "" {
+		invited, err := s.resolveInvite(req.Invite, time.Now())
+		switch {
+		case errors.Is(err, errInviteLink):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		case errors.Is(err, errInviteExpired):
+			http.Error(w, err.Error(), http.StatusGone)
+			return
+		case err != nil:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		case invited != lobbyID:
+			http.Error(w, "invite link is for a different lobby", http.StatusBadRequest)
+			return
+		}
 	}
 	presence, err := s.store.PresenceOf(steamID)
 	if err != nil {

@@ -35,6 +35,7 @@ session tokens are stored and resolved by SHA-256 digest, so the raw token is ne
 | `401` | Missing, expired or revoked credential |
 | `403` | Public registration is disabled, or a blocked pair tries to join a lobby |
 | `404` | Missing resource, wrong account, or a lookup that must not disclose existence |
+| `410` | Lobby invite link has expired |
 | `429` | Social rate limit exceeded |
 | `500` | Server-side failure |
 
@@ -93,7 +94,8 @@ All routes below require a session token.
 | `GET /users/{steam_id}/stats` | `userStats` | none | Own stats, or `401` for another account |
 | `GET /lobbies` | `listLobbies` | none | `{"lobbies":[{lobby_id,owner,appid,member_limit,type,joinable,members}]}` |
 | `POST /lobbies` | `createLobby` | `{"appid":480,"type":0,"member_limit":4}` | `201 {"lobby_id":1}` |
-| `POST /lobbies/{lobby_id}/join` | `joinLobby` | none | `200` and a `Lobby` push to members |
+| `POST /lobbies/{lobby_id}/join` | `joinLobby` | optional `{"invite":"sapie://join/..."}` | `200` and a `Lobby` push to members; `400` bad link, `410` expired link |
+| `POST /lobbies/{lobby_id}/invite` | `lobbyInvite` | none | `200 {"url":"sapie://join/<lobby_id>?exp=...&sig=...","expires_at":1795199695}`; members only |
 | `POST /logout` | `logout` | none | `204`; revokes the presented token |
 | `POST /logout-all` | `logoutAll` | none | `204`; revokes every session for the account |
 | `POST /password` | `changePassword` | `{"old_password":"pw","new_password":"new-pw"}` | `204`; revokes every other session |
@@ -129,6 +131,17 @@ cancels pending invites between that pair, but keeps the friendship rows so
 unblocking restores the graph. Accept, remove, block and unblock push a fresh
 friend snapshot over the game socket.
 
+## Lobby invite links
+
+Only a member of a joinable lobby can issue a link. `url` is a `sapie://join/<lobby_id>` link with
+an `exp` Unix expiry and an HMAC-SHA256 `sig` over the lobby ID and expiry. Links last one hour.
+The signing key is the server's admin token, so changing that token invalidates outstanding links.
+The launcher resolves a link by passing the whole string as `invite` to the existing join route. A
+tampered or malformed link returns `400`, an expired link returns `410`, and a link for another
+lobby returns `400`. The joiner is always the authenticated session owner. Invites do not bypass
+lobby access rules, so private lobbies cannot be joined by link. Joining without `invite` keeps the
+existing behaviour.
+
 ## Admin routes
 
 | Method and path | Handler | Request | Response |
@@ -150,7 +163,7 @@ Port 8081 forwards only these user routes to the admin listener:
 - `DELETE /friends/{a}/{b}`, `DELETE /friends/{steam_id}`
 - `POST /friends/{steam_id}/block`, `GET /friends/blocked`
 - `GET /users/search`, `GET /users/{steam_id}/stats`
-- `GET /lobbies`, `POST /lobbies`, `POST /lobbies/{id}/join`
+- `GET /lobbies`, `POST /lobbies`, `POST /lobbies/{id}/join`, `POST /lobbies/{id}/invite`
 - `POST /logout`, `POST /logout-all`, `POST /password`, `GET /sessions`, `DELETE /sessions/{id}`
 
 Admin-only paths such as `/api/v1/users` and account CRUD return `404` on 8081.

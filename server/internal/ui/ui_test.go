@@ -151,6 +151,10 @@ func TestProxyAllowsUserRoutesOnly(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("join lobby = %d: %s", status, body)
 	}
+	status, body = call(http.MethodPost, "/api/v1/lobbies/1/invite", login.Token, "")
+	if status != http.StatusOK || !strings.Contains(body, "sapie://join/1?") {
+		t.Fatalf("invite link = %d: %s", status, body)
+	}
 	register := `{"username":"newuser","password":"pw"}`
 	status, body = call(http.MethodPost, "/api/v1/register", "", register)
 	if status != http.StatusForbidden {

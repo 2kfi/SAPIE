@@ -42,6 +42,7 @@ func Handler(dir, adminAddr string) http.Handler {
 		"GET /api/v1/lobbies",
 		"POST /api/v1/lobbies",
 		"POST /api/v1/lobbies/{id}/join",
+		"POST /api/v1/lobbies/{id}/invite",
 		"GET /api/v1/users/{steam_id}/stats",
 	} {
 		api.HandleFunc(route, proxy.ServeHTTP)
