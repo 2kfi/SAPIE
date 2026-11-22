@@ -62,13 +62,43 @@ inline bool peer_endpoint_from_hint(uint32 source_ip, uint32 source_port, IP_POR
     return true;
 }
 
-// A direct hint is trusted only while inbound DATA keeps confirming it; stale or absent proof uses the server relay.
+constexpr auto kPunchProbeInterval = std::chrono::milliseconds(250);
+constexpr auto kPunchWindow = std::chrono::seconds(2);
+constexpr auto kDirectConfirmWindow = std::chrono::seconds(2);
+
+// A server hint is only a probe target. Inbound UDP makes it a candidate; inbound
+// UDP DATA is the only proof that promotes it to the direct route.
+struct Direct_Punch {
+    IP_PORT hint{};       // network byte order, from the server-delivered endpoint report
+    IP_PORT endpoint{};   // network byte order, observed on an actual inbound datagram
+    bool has_hint = false;
+    bool has_endpoint = false;
+    bool data_confirmed = false;
+    std::chrono::steady_clock::time_point started{};
+    std::chrono::steady_clock::time_point next_probe{};
+    std::chrono::steady_clock::time_point last_inbound_data{};
+};
+
+inline bool should_use_relay(const Direct_Punch *punch,
+                             std::chrono::steady_clock::time_point now)
+{
+    if (!punch) return true;
+    if (punch->data_confirmed) {
+        return now - punch->last_inbound_data > kDirectConfirmWindow;
+    }
+    return !punch->has_endpoint || now - punch->started > kPunchWindow;
+}
+
+// Kept for the smoke harness: its direct flag already means DATA was confirmed.
 inline bool should_use_relay(bool has_direct_endpoint,
                              std::chrono::steady_clock::time_point last_inbound_data,
                              std::chrono::steady_clock::time_point now)
 {
-    const auto direct_confirm_window = std::chrono::seconds(5);
-    return !has_direct_endpoint || now - last_inbound_data > direct_confirm_window;
+    Direct_Punch punch;
+    punch.has_endpoint = has_direct_endpoint;
+    punch.data_confirmed = has_direct_endpoint;
+    punch.last_inbound_data = last_inbound_data;
+    return should_use_relay(&punch, now);
 }
 
 struct Network_Callback {
@@ -123,8 +153,14 @@ class Networking {
     uint32 own_ip;
     std::vector<struct Connection> connections;
     std::map<uint64_t, sapie::EndpointReport> peer_endpoints;
+    std::map<uint64_t, Direct_Punch> punches;
     struct Connection *find_connection(CSteamID id, uint32 appid = 0);
     struct Connection *new_connection(CSteamID id, uint32 appid);
+
+    void startPunch(uint64_t steam_id, const sapie::EndpointReport &report);
+    void pumpPunching(std::chrono::steady_clock::time_point now);
+    void noteInboundProbe(uint64_t steam_id, IP_PORT endpoint, std::chrono::steady_clock::time_point now);
+    void noteInboundData(uint64_t steam_id, IP_PORT endpoint, std::chrono::steady_clock::time_point now);
 
     bool handle_announce(Common_Message *msg, IP_PORT ip_port);
     bool handle_low_level_udp(Common_Message *msg, IP_PORT ip_port);
@@ -176,6 +212,7 @@ public:
     sapie::EndpointReport buildEndpointReport() const;
     void setPeerEndpoints(uint64_t steam_id, const sapie::EndpointReport &report);
     const sapie::EndpointReport *peerEndpoints(uint64_t steam_id) const;
+    Direct_Punch punchState(uint64_t steam_id) const;
 
     bool setCallback(Callback_Ids id, CSteamID steam_id, void (*message_callback)(void *object, Common_Message *msg), void *object);
     uint16 get_udp_port() const { return udp_port; } // host order, the port this client actually bound
