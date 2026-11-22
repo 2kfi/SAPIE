@@ -101,7 +101,7 @@ Item {
                     height: 44
                     width: 176
                     onClicked: {
-                        root.bridge.getGame("test-1")
+                        root.bridge.getGame(root.detection.path)
                         root.navigateTo("game")
                     }
                 }
