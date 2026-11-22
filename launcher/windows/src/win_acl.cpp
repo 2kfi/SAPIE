@@ -49,6 +49,8 @@ bool currentSid(QByteArray* sid)
     return true;
 }
 
+bool ownerAcl(const QByteArray& sid, QByteArray* owner, PACL* acl);
+
 bool buildOwnerAcl(QByteArray* owner, PACL* acl)
 {
     QByteArray sid;
@@ -217,7 +219,7 @@ bool verifyOwnerOnlyFile(const QString& path, QString* error)
         LPVOID rawAce = nullptr;
         valid = GetAce(acl, 0, &rawAce) && rawAce != nullptr;
         if (valid) {
-            const ACCESS_ALLOWED_ACE* ace = reinterpret_cast<const ACCESS_ALLOWED_ACE*>(rawAce);
+            ACCESS_ALLOWED_ACE* ace = reinterpret_cast<ACCESS_ALLOWED_ACE*>(rawAce);
             const DWORD required = FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE;
             valid = ace->Header.AceType == ACCESS_ALLOWED_ACE_TYPE
                 && ace->Header.AceFlags == 0

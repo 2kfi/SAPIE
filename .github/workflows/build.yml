@@ -124,6 +124,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+      - uses: ilammy/msvc-dev-cmd@v1
       - name: Install Qt 6.8 MSVC
         uses: jurplel/install-qt-action@v4.5.0
         with:
@@ -205,8 +206,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-24.04, arch: x64, qt_arch: linux_gcc_64 }
-          - { os: ubuntu-24.04-arm, arch: arm64, qt_arch: linux_gcc_arm64 }
+          - { os: ubuntu-24.04, arch: x64, qt_host: linux, qt_arch: linux_gcc_64 }
+          - { os: ubuntu-24.04-arm, arch: arm64, qt_host: linux_arm64, qt_arch: linux_gcc_arm64 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -215,7 +216,7 @@ jobs:
         uses: jurplel/install-qt-action@v4.5.0
         with:
           version: '6.8.3'
-          host: linux
+          host: ${{ matrix.qt_host }}
           target: desktop
           arch: ${{ matrix.qt_arch }}
       - name: Install packaging tools
@@ -235,7 +236,9 @@ jobs:
             "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${suffix}.AppImage"
           curl -fsSL -o "$RUNNER_TEMP/appimagetool" \
             "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${suffix}.AppImage"
-          chmod +x "$RUNNER_TEMP/linuxdeploy" "$RUNNER_TEMP/appimagetool"
+          curl -fsSL -o "$RUNNER_TEMP/linuxdeploy-plugin-qt" \
+            "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-${suffix}.AppImage"
+          chmod +x "$RUNNER_TEMP/linuxdeploy" "$RUNNER_TEMP/appimagetool" "$RUNNER_TEMP/linuxdeploy-plugin-qt"
           echo "LINUXDEPLOY=$RUNNER_TEMP/linuxdeploy" >> "$GITHUB_ENV"
           echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
