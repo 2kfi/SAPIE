@@ -133,7 +133,10 @@ jobs:
           target: desktop
           arch: win64_msvc2022_64
       - name: Install packaging tools
-        run: choco install nsis wixtoolset imagemagick --no-progress -y
+        run: |
+          choco install nsis wixtoolset imagemagick --no-progress -y
+          # nsis.install deploys makensis.exe here but does not add it to PATH.
+          echo "C:/Program Files (x86)/NSIS" >> "$GITHUB_PATH"
       - name: Stamp version from tag
         env:
           TAG: ${{ github.ref_name }}
