@@ -155,6 +155,19 @@ Item {
             compare(b.game.id, "test-2", "the detected record opens, not a hard-coded id")
         }
 
+        function test_picker_detects_chosen_path_not_stale_path() {
+            var b = UI.FakeCoreBridge
+            b.addState = "idle"
+            b.detection = { path: "", arch: "", era: "", interfaces: 0, appid: 0, duplicate: false }
+            root.app.currentScreen = "add"
+            var pick = findChild(root.app, "pickExecutableButton")
+            verify(pick !== null, "pick button exists")
+            b.lastAction = ""
+            pick.clicked()
+            compare(b.lastAction, "detectGame", "detection runs after the picker supplies a path")
+            compare(b.addState, "review", "review state reached after detection")
+        }
+
         function test_launch_failed_state_has_message_and_retry() {
             root.app.currentScreen = "game"
             UI.FakeCoreBridge.launchState = "failed"

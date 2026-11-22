@@ -85,45 +85,6 @@ jobs:
           path: out/server-${{ matrix.goos }}-${{ matrix.goarch }}
           if-no-files-found: error
 
-  launcher:
-    needs: ci
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: windows-latest, target: x86_64-pc-windows-msvc }
-          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - name: Native GUI dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libxrandr-dev libgl1-mesa-dev
-      - name: Stamp version from tag
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          [[ "$TAG" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "not a numeric release tag: $TAG" >&2; exit 1; }
-          ver="$TAG"
-          [[ "$ver" == *.*.* ]] || ver="$ver.0"
-          sed -i "s/^version = .*/version = \"$ver\"/" client/src-tauri/Cargo.toml
-          for f in client/src-tauri/tauri.conf.json client/src-tauri/ui/package.json web/package.json; do
-            sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$ver\"/" "$f"
-          done
-          echo "stamped $ver"
-      - name: Native launcher build
-        run: cd client/src-tauri && cargo build --release --target ${{ matrix.target }}
-      - uses: actions/upload-artifact@v7
-        with:
-          name: launcher-${{ matrix.target }}
-          path: client/src-tauri/target/${{ matrix.target }}/release/sapie*
-          if-no-files-found: error
-
   web:
     needs: ci
     runs-on: ubuntu-latest
@@ -140,10 +101,7 @@ jobs:
           [[ "$TAG" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "not a numeric release tag: $TAG" >&2; exit 1; }
           ver="$TAG"
           [[ "$ver" == *.*.* ]] || ver="$ver.0"
-          sed -i "s/^version = .*/version = \"$ver\"/" client/src-tauri/Cargo.toml
-          for f in client/src-tauri/tauri.conf.json client/src-tauri/ui/package.json web/package.json; do
-            sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$ver\"/" "$f"
-          done
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$ver\"/" web/package.json
           echo "stamped $ver"
       - name: Build web UI
         run: cd web && npm ci && npm run build
@@ -151,78 +109,6 @@ jobs:
         with:
           name: web-dist
           path: web/dist
-          if-no-files-found: error
-
-  launcher-windows:
-    needs: ci
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '20'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Stamp version from tag
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          [[ "$TAG" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "not a numeric release tag: $TAG" >&2; exit 1; }
-          ver="$TAG"
-          [[ "$ver" == *.*.* ]] || ver="$ver.0"
-          sed -i "s/^version = .*/version = \"$ver\"/" client/src-tauri/Cargo.toml
-          for f in client/src-tauri/tauri.conf.json client/src-tauri/ui/package.json web/package.json; do
-            sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$ver\"/" "$f"
-          done
-          echo "stamped $ver"
-      - name: Install launcher UI dependencies
-        run: npm --prefix client/src-tauri/ui ci
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2" --locked
-      - name: Build NSIS and MSI installers
-        run: cd client/src-tauri && cargo tauri build --bundles nsis,msi
-      - uses: actions/upload-artifact@v7
-        with:
-          name: installer-windows
-          path: |
-            client/src-tauri/target/release/bundle/nsis/*.exe
-            client/src-tauri/target/release/bundle/msi/*.msi
-          if-no-files-found: error
-
-  launcher-linux:
-    needs: ci
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '20'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Native Tauri dependencies
-        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libxrandr-dev libgl1-mesa-dev
-      - name: Stamp version from tag
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          [[ "$TAG" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "not a numeric release tag: $TAG" >&2; exit 1; }
-          ver="$TAG"
-          [[ "$ver" == *.*.* ]] || ver="$ver.0"
-          sed -i "s/^version = .*/version = \"$ver\"/" client/src-tauri/Cargo.toml
-          for f in client/src-tauri/tauri.conf.json client/src-tauri/ui/package.json web/package.json; do
-            sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$ver\"/" "$f"
-          done
-          echo "stamped $ver"
-      - name: Install launcher UI dependencies
-        run: npm --prefix client/src-tauri/ui ci
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2" --locked
-      - name: Build AppImage
-        run: cd client/src-tauri && cargo tauri build --bundles appimage
-      - uses: actions/upload-artifact@v7
-        with:
-          name: installer-linux
-          path: client/src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
 
   launcher-windows-qt:
@@ -265,6 +151,10 @@ jobs:
             -DSAPIE_VERSION="$VERSION" \
             -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
           cmake --build build/windows-qt --parallel
+      - name: Qt launcher tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build/windows-qt --output-on-failure
       - name: Resolve update public key
         run: |
           set -euo pipefail
@@ -373,6 +263,10 @@ jobs:
           cmake --build "build/linux-qt-${{ matrix.arch }}" --target sapie-linux-icons
           mkdir -p flatpak-repo
           ostree --repo=flatpak-repo init --mode=archive-z2
+      - name: Qt launcher tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir "build/linux-qt-${{ matrix.arch }}" --output-on-failure
       - name: Package Linux launcher
         run: |
           set -euo pipefail
@@ -407,7 +301,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [proto-sync, client, server, launcher, web, launcher-windows, launcher-linux, launcher-windows-qt, launcher-linux-qt]
+    needs: [proto-sync, client, server, web, launcher-windows-qt, launcher-linux-qt]
     runs-on: ubuntu-latest
     permissions:
       contents: write

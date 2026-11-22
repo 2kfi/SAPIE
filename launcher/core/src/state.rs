@@ -134,9 +134,8 @@ pub fn load_from(path: &Path, files: &dyn FileSystem) -> Result<LauncherState> {
     }
 
     let raw = files.read(path)?;
-    let text = String::from_utf8(raw.clone()).map_err(|e| {
-        CommandError::new(ErrorKind::Io, format!("Corrupt launcher state: {e}"))
-    })?;
+    let text = String::from_utf8(raw.clone())
+        .map_err(|e| CommandError::new(ErrorKind::Io, format!("Corrupt launcher state: {e}")))?;
     let mut value: Value = match serde_json::from_str(&text) {
         Ok(value) => value,
         Err(_) => {
@@ -199,7 +198,11 @@ pub fn load(platform: &dyn Platform) -> Result<LauncherState> {
 }
 
 pub fn save(platform: &dyn Platform, state: &LauncherState) -> Result<()> {
-    save_to(&platform.paths().data_dir()?.join(STATE_FILE), state, platform.files())
+    save_to(
+        &platform.paths().data_dir()?.join(STATE_FILE),
+        state,
+        platform.files(),
+    )
 }
 
 #[cfg(test)]
@@ -236,7 +239,10 @@ mod tests {
     #[test]
     fn loading_scrubs_legacy_secrets() {
         let path = temp_state("legacy");
-        fs_write(&path, br#"{"server":{"server":"host:8081","username":"a","password":"plain"},"games":{}}"#);
+        fs_write(
+            &path,
+            br#"{"server":{"server":"host:8081","username":"a","password":"plain"},"games":{}}"#,
+        );
         let loaded = load_at(&path);
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(!text.contains("plain"));
@@ -307,7 +313,10 @@ mod tests {
         assert_eq!(game.ld_preload.as_deref(), Some("/games/mw2/libfix.so"));
         assert_eq!(game.last_played, Some(1_700_000_000));
 
-        assert_eq!(fake.stored_file(&path.with_extension("json.bak")).unwrap(), legacy);
+        assert_eq!(
+            fake.stored_file(&path.with_extension("json.bak")).unwrap(),
+            legacy
+        );
         let stored = fake.stored_file(&path).unwrap();
         let migrated: Value = serde_json::from_slice(&stored).unwrap();
         assert_eq!(migrated["schema_version"], SCHEMA_VERSION);
@@ -324,7 +333,10 @@ mod tests {
         save_to(&path, &state, fake.files()).unwrap();
         let previous = fake.stored_file(&path).unwrap();
 
-        fake.seed_file(&path.with_extension("json.tmp"), b"{\"schema_version\":2,\"server\":");
+        fake.seed_file(
+            &path.with_extension("json.tmp"),
+            b"{\"schema_version\":2,\"server\":",
+        );
 
         let loaded = load_from(&path, fake.files()).unwrap();
         assert_eq!(loaded.server, state.server);
@@ -342,8 +354,15 @@ mod tests {
 
         assert_eq!(loaded.schema_version, SCHEMA_VERSION);
         assert!(loaded.games.is_empty());
-        assert_eq!(fake.stored_file(&path.with_extension("json.corrupt")).unwrap(), corrupt);
-        assert_eq!(load_from(&path, fake.files()).unwrap().schema_version, SCHEMA_VERSION);
+        assert_eq!(
+            fake.stored_file(&path.with_extension("json.corrupt"))
+                .unwrap(),
+            corrupt
+        );
+        assert_eq!(
+            load_from(&path, fake.files()).unwrap().schema_version,
+            SCHEMA_VERSION
+        );
     }
 
     #[test]
@@ -364,7 +383,10 @@ mod tests {
 
         let backup = load_from(&path.with_extension("json.bak"), fake.files()).unwrap();
         assert_eq!(backup.server, first.server);
-        assert_eq!(load_from(&path, fake.files()).unwrap().server, second.server);
+        assert_eq!(
+            load_from(&path, fake.files()).unwrap().server,
+            second.server
+        );
     }
 
     fn fs_write(path: &Path, bytes: &[u8]) {
