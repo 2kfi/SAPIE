@@ -99,6 +99,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Native launcher dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev libglib2.0-dev libxkbcommon-dev \
+            libwayland-dev libx11-dev libxi-dev libxrandr-dev libgl1-mesa-dev
       - name: Cargo check
         run: cd launcher && cargo check
       - name: Cargo test
@@ -113,7 +118,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: jurplel/install-qt-action@v4
+      - uses: jurplel/install-qt-action@v4.5.0
         with:
           version: '6.8.3'
           host: linux
