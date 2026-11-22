@@ -172,15 +172,22 @@ jobs:
       - name: Package Windows launcher
         run: |
           set -euo pipefail
+          args=(
+            -Version "$VERSION"
+            -QtBin "$QT_ROOT_DIR/bin"
+            -Exe "$PWD/build/windows-qt/sapie_launcher.exe"
+            -RepoRoot "$PWD"
+            -OutputDir "$PWD/out/windows-package"
+            -Channel stable
+          )
+          if [[ -n "${SAPIE_SIGNING_THUMBPRINT:-}" && -n "${SAPIE_UPDATE_SIGNING_KEY:-}" ]]; then
+            args+=(-UpdatePublicKey "$PUBLIC_KEY_PATH")
+          else
+            # No secrets in this repository: still produce installers, but no signed update manifest.
+            args+=(-UnsignedDryRun)
+          fi
           pwsh -NoProfile -ExecutionPolicy Bypass \
-            -File launcher/windows/packaging/build-package.ps1 \
-            -Version "$VERSION" \
-            -QtBin "$QT_ROOT_DIR/bin" \
-            -Exe "$PWD/build/windows-qt/sapie_launcher.exe" \
-            -RepoRoot "$PWD" \
-            -OutputDir "$PWD/out/windows-package" \
-            -Channel stable \
-            -UpdatePublicKey "$PUBLIC_KEY_PATH"
+            -File launcher/windows/packaging/build-package.ps1 "${args[@]}"
       - name: Windows SBOM
         run: python tools/gen-sbom.py --tag "$VERSION" --output-dir out/windows-package --repo "$PWD"
       - uses: actions/upload-artifact@v7
