@@ -6,8 +6,8 @@ which is expected. Optional TLS is enabled by passing both `--tls-cert` and `--t
 
 0.1 is published and frozen at `62007f5`. 0.2 adds P2P signaling, direct DATA and relay fallback and
 is tagged `0.2` at https://github.com/2kfi/SAPIE/releases/tag/0.2. Tag `0.3` exists on a docs-only
-commit. The 0.4 work in this tree is a release candidate with no tag or published release. G0 is
-deferred to the user.
+commit. The `0.4` tag and its release assets are published. The 0.5 work in this tree is
+code-complete but unreleased. G0 is deferred to the user.
 
 ## Framing
 
@@ -62,8 +62,9 @@ The shipped contract is:
   game directory. These are the same two locations used for `sapie_server.txt`.
 - Content: one JSON object with a single key, `session_token`, holding the raw 43 character
   base64url token returned by `POST /api/v1/login`. No password, username, appid or other field.
-- Mode: `0600` on Unix. Windows has no explicit ACL change; the file uses the default ACL of the
-  game directory. A Windows-specific private ACL is not implemented.
+- Mode: `0600` on Unix. In 0.4 the file used the default ACL of the Windows game directory. The 0.5
+  Windows platform layer adds an owner-only ACL through `launcher/windows/src/win_acl.cpp`; that
+  path is not verified on a Windows host.
 - Lifetime: one launch only. The DLL reads the file once at startup, keeps the token in process
   memory for reconnects, and removes the file after the read attempt. A file whose modification
   time is more than 10 minutes old is rejected and removed. Server side expiry or revocation still
