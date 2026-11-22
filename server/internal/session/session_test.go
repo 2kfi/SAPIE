@@ -824,6 +824,97 @@ func TestHandleSteamStampsNetworkingSocketsSource(t *testing.T) {
 	}
 }
 
+func waitEndpointSignal(t *testing.T, frames <-chan *protocol.Frame) *protocol.EndpointSignal {
+	t.Helper()
+	timeout := time.NewTimer(2 * time.Second)
+	defer timeout.Stop()
+	for {
+		select {
+		case frame, ok := <-frames:
+			if !ok {
+				t.Fatal("frame channel closed")
+			}
+			if signal := frame.GetEndpointSignal(); signal != nil {
+				return signal
+			}
+		case <-timeout.C:
+			t.Fatal("timed out waiting for endpoint signal")
+		}
+	}
+}
+
+func TestSetEndpointsRejectsForgedAddress(t *testing.T) {
+	s := &Session{}
+	remote := &net.TCPAddr{IP: net.ParseIP("203.0.113.9"), Port: 27015}
+	v6 := net.ParseIP("2001:db8::5").To16()
+	s.setEndpoints(&protocol.EndpointReport{
+		Ipv4: []byte{9, 9, 9, 9}, Ipv4Port: 47584,
+		Ipv6: v6, Ipv6Port: 47585,
+	}, remote)
+
+	got := s.reportedEndpoints()
+	if !bytes.Equal(got.GetIpv4(), net.ParseIP("203.0.113.9").To4()) || got.GetIpv4Port() != 47584 {
+		t.Fatalf("ipv4 endpoint = %v:%d, want authenticated IP with declared port", got.GetIpv4(), got.GetIpv4Port())
+	}
+	if !bytes.Equal(got.GetIpv6(), v6) || got.GetIpv6Port() != 47585 {
+		t.Fatalf("ipv6 endpoint = %v:%d", got.GetIpv6(), got.GetIpv6Port())
+	}
+
+	s.setEndpoints(&protocol.EndpointReport{
+		Ipv4: []byte{1, 2}, Ipv4Port: 47584,
+		Ipv6: v6, Ipv6Port: 70000,
+	}, remote)
+	got = s.reportedEndpoints()
+	if len(got.GetIpv4()) != 0 || len(got.GetIpv6()) != 0 {
+		t.Fatalf("malformed endpoints were stored: %+v", got)
+	}
+}
+
+func TestLobbyJoinExchangesEndpoints(t *testing.T) {
+	store, alice, bob := testStore(t)
+	srv := New(store, nil)
+	lobbyID, err := store.CreateLobby(alice, 480, state.LobbyTypePublic, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinLobby(lobbyID, alice, 480); err != nil {
+		t.Fatal(err)
+	}
+
+	aliceServer, aliceClient := net.Pipe()
+	defer aliceServer.Close()
+	defer aliceClient.Close()
+	aliceRemote := &net.TCPAddr{IP: net.ParseIP("203.0.113.1"), Port: 27015}
+	aliceSession := &Session{steamID: alice, appid: 480, conn: addrConn{Conn: aliceServer, addr: aliceRemote}}
+	aliceSession.setEndpoints(&protocol.EndpointReport{Ipv4: []byte{1, 1, 1, 1}, Ipv4Port: 40000}, aliceRemote)
+	srv.peers[alice] = aliceSession
+	aliceFrames := frameCollector(aliceClient)
+
+	bobServer, bobClient := net.Pipe()
+	defer bobServer.Close()
+	defer bobClient.Close()
+	bobRemote := &net.TCPAddr{IP: net.ParseIP("203.0.113.2"), Port: 27016}
+	bobSession := &Session{steamID: bob, appid: 480, conn: addrConn{Conn: bobServer, addr: bobRemote}}
+	bobSession.setEndpoints(&protocol.EndpointReport{
+		Ipv4: []byte{2, 2, 2, 2}, Ipv4Port: 50000,
+		Ipv6: net.ParseIP("2001:db8::2").To16(), Ipv6Port: 50001,
+	}, bobRemote)
+	srv.peers[bob] = bobSession
+	bobFrames := frameCollector(bobClient)
+
+	srv.handleSteam(bobSession, lobbyMessage(lobbyID, protocol.Lobby_Messages_JOIN, 0))
+
+	toAlice := waitEndpointSignal(t, aliceFrames)
+	if toAlice.GetSteamId() != bob || !bytes.Equal(toAlice.GetEndpoints().GetIpv4(), net.ParseIP("203.0.113.2").To4()) ||
+		toAlice.GetEndpoints().GetIpv4Port() != 50000 {
+		t.Fatalf("alice got %+v", toAlice)
+	}
+	toBob := waitEndpointSignal(t, bobFrames)
+	if toBob.GetSteamId() != alice || !bytes.Equal(toBob.GetEndpoints().GetIpv4(), net.ParseIP("203.0.113.1").To4()) {
+		t.Fatalf("bob got %+v", toBob)
+	}
+}
+
 func TestContentServerRequestGetsNeutralAck(t *testing.T) {
 	store, err := state.Open(":memory:")
 	if err != nil {

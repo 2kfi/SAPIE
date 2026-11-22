@@ -44,6 +44,9 @@ type Session struct {
 	done         chan struct{}
 	closeOnce    sync.Once
 	ticketNumber uint32 // owned by the frame loop
+
+	endpointsMu sync.RWMutex
+	endpoints   *protocol.EndpointReport
 }
 
 func (c *Session) Send(frame *protocol.Frame) error {
@@ -53,6 +56,47 @@ func (c *Session) Send(frame *protocol.Frame) error {
 }
 
 func (c *Session) stop() { c.closeOnce.Do(func() { close(c.done) }) }
+
+// setEndpoints keeps the client's own UDP ports but replaces its reported IP
+// with the authenticated connection's address, so a forged IP is never stored.
+func (c *Session) setEndpoints(report *protocol.EndpointReport, remote net.Addr) {
+	if report == nil {
+		return
+	}
+	tcp, _ := remote.(*net.TCPAddr)
+	clean := &protocol.EndpointReport{}
+	if len(report.GetIpv4()) == net.IPv4len && validPort(report.GetIpv4Port()) {
+		clean.Ipv4 = append([]byte(nil), report.GetIpv4()...)
+		if tcp != nil && tcp.IP.To4() != nil {
+			clean.Ipv4 = append([]byte(nil), tcp.IP.To4()...)
+		}
+		clean.Ipv4Port = report.GetIpv4Port()
+	}
+	if len(report.GetIpv6()) == net.IPv6len && validPort(report.GetIpv6Port()) {
+		clean.Ipv6 = append([]byte(nil), report.GetIpv6()...)
+		if tcp != nil && tcp.IP.To4() == nil && tcp.IP.To16() != nil {
+			clean.Ipv6 = append([]byte(nil), tcp.IP.To16()...)
+		}
+		clean.Ipv6Port = report.GetIpv6Port()
+	}
+	c.endpointsMu.Lock()
+	c.endpoints = clean
+	c.endpointsMu.Unlock()
+}
+
+func validPort(port uint32) bool { return port >= 1 && port <= 65535 }
+
+func (c *Session) reportedEndpoints() *protocol.EndpointReport {
+	c.endpointsMu.RLock()
+	defer c.endpointsMu.RUnlock()
+	if c.endpoints == nil {
+		return &protocol.EndpointReport{}
+	}
+	return &protocol.EndpointReport{
+		Ipv4: append([]byte(nil), c.endpoints.Ipv4...), Ipv4Port: c.endpoints.Ipv4Port,
+		Ipv6: append([]byte(nil), c.endpoints.Ipv6...), Ipv6Port: c.endpoints.Ipv6Port,
+	}
+}
 
 type Server struct {
 	store       *state.Store
@@ -89,6 +133,18 @@ func (s *Server) PeerFor(id uint64) (router.Peer, bool) {
 	defer s.mu.RUnlock()
 	peer, ok := s.peers[id]
 	return peer, ok
+}
+
+func (s *Server) endpointsOf(id uint64) *protocol.EndpointReport {
+	peer, ok := s.PeerFor(id)
+	if !ok {
+		return nil
+	}
+	session, ok := peer.(*Session)
+	if !ok {
+		return nil
+	}
+	return session.reportedEndpoints()
 }
 
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
@@ -202,6 +258,7 @@ func (s *Server) handle(conn net.Conn) {
 	session.steamID = account.SteamID
 	session.personaName = account.PersonaName
 	session.appid = login.Login.GetAppid()
+	session.setEndpoints(login.Login.GetEndpoints(), conn.RemoteAddr())
 	s.register(session)
 	defer s.disconnect(session)
 	go s.heartbeat(session)
@@ -219,6 +276,10 @@ func (s *Server) handle(conn net.Conn) {
 		switch payload := frame.Payload.(type) {
 		case *protocol.Frame_Ping:
 			_ = session.Send(&protocol.Frame{Payload: &protocol.Frame_Pong{Pong: true}})
+		case *protocol.Frame_EndpointReport:
+			session.setEndpoints(payload.EndpointReport, conn.RemoteAddr())
+		case *protocol.Frame_EndpointSignal:
+			continue // signaling is server-authored; a client copy is never accepted
 		case *protocol.Frame_Steam:
 			s.handleSteam(session, payload.Steam)
 		case *protocol.Frame_TicketRequest:
@@ -355,6 +416,8 @@ func (s *Server) handleSteam(session *Session, msg *protocol.Common_Message) {
 				log.Printf("session %d: join lobby %d: %v", session.steamID, event.GetId(), err)
 				return
 			}
+			signal := &protocol.EndpointSignal{SteamId: session.steamID, Endpoints: session.reportedEndpoints()}
+			s.router.RouteEndpoints(session.steamID, event.GetId(), signal, s.endpointsOf)
 		case protocol.Lobby_Messages_LEAVE:
 			if err := s.store.LeaveLobby(event.GetId(), session.steamID); err != nil {
 				log.Printf("session %d: leave lobby %d: %v", session.steamID, event.GetId(), err)

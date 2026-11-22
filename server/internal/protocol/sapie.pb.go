@@ -76,7 +76,7 @@ func (x LoginResponse_Status) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LoginResponse_Status.Descriptor instead.
 func (LoginResponse_Status) EnumDescriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{2, 0}
+	return file_sapie_proto_rawDescGZIP(), []int{4, 0}
 }
 
 type FriendSnapshot struct {
@@ -155,6 +155,128 @@ func (x *FriendSnapshot) GetRichPresence() map[string][]byte {
 	return nil
 }
 
+// Addresses are raw bytes in network byte order (4 for IPv4, 16 for IPv6).
+// Ports are host order. Zero port means the family is unavailable.
+type EndpointReport struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ipv4          []byte                 `protobuf:"bytes,1,opt,name=ipv4,proto3" json:"ipv4,omitempty"`
+	Ipv4Port      uint32                 `protobuf:"varint,2,opt,name=ipv4_port,json=ipv4Port,proto3" json:"ipv4_port,omitempty"`
+	Ipv6          []byte                 `protobuf:"bytes,3,opt,name=ipv6,proto3" json:"ipv6,omitempty"`
+	Ipv6Port      uint32                 `protobuf:"varint,4,opt,name=ipv6_port,json=ipv6Port,proto3" json:"ipv6_port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EndpointReport) Reset() {
+	*x = EndpointReport{}
+	mi := &file_sapie_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EndpointReport) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EndpointReport) ProtoMessage() {}
+
+func (x *EndpointReport) ProtoReflect() protoreflect.Message {
+	mi := &file_sapie_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EndpointReport.ProtoReflect.Descriptor instead.
+func (*EndpointReport) Descriptor() ([]byte, []int) {
+	return file_sapie_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *EndpointReport) GetIpv4() []byte {
+	if x != nil {
+		return x.Ipv4
+	}
+	return nil
+}
+
+func (x *EndpointReport) GetIpv4Port() uint32 {
+	if x != nil {
+		return x.Ipv4Port
+	}
+	return 0
+}
+
+func (x *EndpointReport) GetIpv6() []byte {
+	if x != nil {
+		return x.Ipv6
+	}
+	return nil
+}
+
+func (x *EndpointReport) GetIpv6Port() uint32 {
+	if x != nil {
+		return x.Ipv6Port
+	}
+	return 0
+}
+
+type EndpointSignal struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"` // server-stamped from the authenticated connection
+	Endpoints     *EndpointReport        `protobuf:"bytes,2,opt,name=endpoints,proto3" json:"endpoints,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EndpointSignal) Reset() {
+	*x = EndpointSignal{}
+	mi := &file_sapie_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EndpointSignal) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EndpointSignal) ProtoMessage() {}
+
+func (x *EndpointSignal) ProtoReflect() protoreflect.Message {
+	mi := &file_sapie_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EndpointSignal.ProtoReflect.Descriptor instead.
+func (*EndpointSignal) Descriptor() ([]byte, []int) {
+	return file_sapie_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *EndpointSignal) GetSteamId() uint64 {
+	if x != nil {
+		return x.SteamId
+	}
+	return 0
+}
+
+func (x *EndpointSignal) GetEndpoints() *EndpointReport {
+	if x != nil {
+		return x.Endpoints
+	}
+	return nil
+}
+
 type LoginRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Username      string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
@@ -162,13 +284,14 @@ type LoginRequest struct {
 	Appid         uint32                 `protobuf:"varint,3,opt,name=appid,proto3" json:"appid,omitempty"`
 	ClientVersion string                 `protobuf:"bytes,4,opt,name=client_version,json=clientVersion,proto3" json:"client_version,omitempty"`
 	SessionToken  string                 `protobuf:"bytes,5,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
+	Endpoints     *EndpointReport        `protobuf:"bytes,6,opt,name=endpoints,proto3" json:"endpoints,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *LoginRequest) Reset() {
 	*x = LoginRequest{}
-	mi := &file_sapie_proto_msgTypes[1]
+	mi := &file_sapie_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -180,7 +303,7 @@ func (x *LoginRequest) String() string {
 func (*LoginRequest) ProtoMessage() {}
 
 func (x *LoginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sapie_proto_msgTypes[1]
+	mi := &file_sapie_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -193,7 +316,7 @@ func (x *LoginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginRequest.ProtoReflect.Descriptor instead.
 func (*LoginRequest) Descriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{1}
+	return file_sapie_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *LoginRequest) GetUsername() string {
@@ -231,6 +354,13 @@ func (x *LoginRequest) GetSessionToken() string {
 	return ""
 }
 
+func (x *LoginRequest) GetEndpoints() *EndpointReport {
+	if x != nil {
+		return x.Endpoints
+	}
+	return nil
+}
+
 type LoginResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Status        LoginResponse_Status   `protobuf:"varint,1,opt,name=status,proto3,enum=sapie.LoginResponse_Status" json:"status,omitempty"`
@@ -244,7 +374,7 @@ type LoginResponse struct {
 
 func (x *LoginResponse) Reset() {
 	*x = LoginResponse{}
-	mi := &file_sapie_proto_msgTypes[2]
+	mi := &file_sapie_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -256,7 +386,7 @@ func (x *LoginResponse) String() string {
 func (*LoginResponse) ProtoMessage() {}
 
 func (x *LoginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sapie_proto_msgTypes[2]
+	mi := &file_sapie_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -269,7 +399,7 @@ func (x *LoginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginResponse.ProtoReflect.Descriptor instead.
 func (*LoginResponse) Descriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{2}
+	return file_sapie_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *LoginResponse) GetStatus() LoginResponse_Status {
@@ -317,7 +447,7 @@ type TicketRequest struct {
 
 func (x *TicketRequest) Reset() {
 	*x = TicketRequest{}
-	mi := &file_sapie_proto_msgTypes[3]
+	mi := &file_sapie_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -329,7 +459,7 @@ func (x *TicketRequest) String() string {
 func (*TicketRequest) ProtoMessage() {}
 
 func (x *TicketRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sapie_proto_msgTypes[3]
+	mi := &file_sapie_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -342,7 +472,7 @@ func (x *TicketRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TicketRequest.ProtoReflect.Descriptor instead.
 func (*TicketRequest) Descriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{3}
+	return file_sapie_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TicketRequest) GetAppid() uint32 {
@@ -369,7 +499,7 @@ type TicketResponse struct {
 
 func (x *TicketResponse) Reset() {
 	*x = TicketResponse{}
-	mi := &file_sapie_proto_msgTypes[4]
+	mi := &file_sapie_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -381,7 +511,7 @@ func (x *TicketResponse) String() string {
 func (*TicketResponse) ProtoMessage() {}
 
 func (x *TicketResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sapie_proto_msgTypes[4]
+	mi := &file_sapie_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -394,7 +524,7 @@ func (x *TicketResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TicketResponse.ProtoReflect.Descriptor instead.
 func (*TicketResponse) Descriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{4}
+	return file_sapie_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *TicketResponse) GetTicket() []byte {
@@ -421,7 +551,7 @@ type StatValue struct {
 
 func (x *StatValue) Reset() {
 	*x = StatValue{}
-	mi := &file_sapie_proto_msgTypes[5]
+	mi := &file_sapie_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -433,7 +563,7 @@ func (x *StatValue) String() string {
 func (*StatValue) ProtoMessage() {}
 
 func (x *StatValue) ProtoReflect() protoreflect.Message {
-	mi := &file_sapie_proto_msgTypes[5]
+	mi := &file_sapie_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -446,7 +576,7 @@ func (x *StatValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatValue.ProtoReflect.Descriptor instead.
 func (*StatValue) Descriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{5}
+	return file_sapie_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *StatValue) GetName() string {
@@ -475,7 +605,7 @@ type AchievementState struct {
 
 func (x *AchievementState) Reset() {
 	*x = AchievementState{}
-	mi := &file_sapie_proto_msgTypes[6]
+	mi := &file_sapie_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -487,7 +617,7 @@ func (x *AchievementState) String() string {
 func (*AchievementState) ProtoMessage() {}
 
 func (x *AchievementState) ProtoReflect() protoreflect.Message {
-	mi := &file_sapie_proto_msgTypes[6]
+	mi := &file_sapie_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -500,7 +630,7 @@ func (x *AchievementState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AchievementState.ProtoReflect.Descriptor instead.
 func (*AchievementState) Descriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{6}
+	return file_sapie_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *AchievementState) GetName() string {
@@ -542,7 +672,7 @@ type StatsGet struct {
 
 func (x *StatsGet) Reset() {
 	*x = StatsGet{}
-	mi := &file_sapie_proto_msgTypes[7]
+	mi := &file_sapie_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -554,7 +684,7 @@ func (x *StatsGet) String() string {
 func (*StatsGet) ProtoMessage() {}
 
 func (x *StatsGet) ProtoReflect() protoreflect.Message {
-	mi := &file_sapie_proto_msgTypes[7]
+	mi := &file_sapie_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -567,7 +697,7 @@ func (x *StatsGet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatsGet.ProtoReflect.Descriptor instead.
 func (*StatsGet) Descriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{7}
+	return file_sapie_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *StatsGet) GetAppid() uint32 {
@@ -602,7 +732,7 @@ type StatsSet struct {
 
 func (x *StatsSet) Reset() {
 	*x = StatsSet{}
-	mi := &file_sapie_proto_msgTypes[8]
+	mi := &file_sapie_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -614,7 +744,7 @@ func (x *StatsSet) String() string {
 func (*StatsSet) ProtoMessage() {}
 
 func (x *StatsSet) ProtoReflect() protoreflect.Message {
-	mi := &file_sapie_proto_msgTypes[8]
+	mi := &file_sapie_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -627,7 +757,7 @@ func (x *StatsSet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatsSet.ProtoReflect.Descriptor instead.
 func (*StatsSet) Descriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{8}
+	return file_sapie_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StatsSet) GetAppid() uint32 {
@@ -662,7 +792,7 @@ type StatsResponse struct {
 
 func (x *StatsResponse) Reset() {
 	*x = StatsResponse{}
-	mi := &file_sapie_proto_msgTypes[9]
+	mi := &file_sapie_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -674,7 +804,7 @@ func (x *StatsResponse) String() string {
 func (*StatsResponse) ProtoMessage() {}
 
 func (x *StatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sapie_proto_msgTypes[9]
+	mi := &file_sapie_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -687,7 +817,7 @@ func (x *StatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatsResponse.ProtoReflect.Descriptor instead.
 func (*StatsResponse) Descriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{9}
+	return file_sapie_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *StatsResponse) GetStats() []*StatValue {
@@ -720,7 +850,7 @@ type ContentServerRequest struct {
 
 func (x *ContentServerRequest) Reset() {
 	*x = ContentServerRequest{}
-	mi := &file_sapie_proto_msgTypes[10]
+	mi := &file_sapie_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -732,7 +862,7 @@ func (x *ContentServerRequest) String() string {
 func (*ContentServerRequest) ProtoMessage() {}
 
 func (x *ContentServerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sapie_proto_msgTypes[10]
+	mi := &file_sapie_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -745,7 +875,7 @@ func (x *ContentServerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContentServerRequest.ProtoReflect.Descriptor instead.
 func (*ContentServerRequest) Descriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{10}
+	return file_sapie_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ContentServerRequest) GetAppid() uint32 {
@@ -764,7 +894,7 @@ type ContentServerResponse struct {
 
 func (x *ContentServerResponse) Reset() {
 	*x = ContentServerResponse{}
-	mi := &file_sapie_proto_msgTypes[11]
+	mi := &file_sapie_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -776,7 +906,7 @@ func (x *ContentServerResponse) String() string {
 func (*ContentServerResponse) ProtoMessage() {}
 
 func (x *ContentServerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sapie_proto_msgTypes[11]
+	mi := &file_sapie_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -789,7 +919,7 @@ func (x *ContentServerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContentServerResponse.ProtoReflect.Descriptor instead.
 func (*ContentServerResponse) Descriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{11}
+	return file_sapie_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ContentServerResponse) GetOk() bool {
@@ -816,6 +946,8 @@ type Frame struct {
 	//	*Frame_AchievementUnlock
 	//	*Frame_ContentServerRequest
 	//	*Frame_ContentServerResponse
+	//	*Frame_EndpointReport
+	//	*Frame_EndpointSignal
 	Payload       isFrame_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -823,7 +955,7 @@ type Frame struct {
 
 func (x *Frame) Reset() {
 	*x = Frame{}
-	mi := &file_sapie_proto_msgTypes[12]
+	mi := &file_sapie_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -835,7 +967,7 @@ func (x *Frame) String() string {
 func (*Frame) ProtoMessage() {}
 
 func (x *Frame) ProtoReflect() protoreflect.Message {
-	mi := &file_sapie_proto_msgTypes[12]
+	mi := &file_sapie_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -848,7 +980,7 @@ func (x *Frame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Frame.ProtoReflect.Descriptor instead.
 func (*Frame) Descriptor() ([]byte, []int) {
-	return file_sapie_proto_rawDescGZIP(), []int{12}
+	return file_sapie_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Frame) GetPayload() isFrame_Payload {
@@ -975,6 +1107,24 @@ func (x *Frame) GetContentServerResponse() *ContentServerResponse {
 	return nil
 }
 
+func (x *Frame) GetEndpointReport() *EndpointReport {
+	if x != nil {
+		if x, ok := x.Payload.(*Frame_EndpointReport); ok {
+			return x.EndpointReport
+		}
+	}
+	return nil
+}
+
+func (x *Frame) GetEndpointSignal() *EndpointSignal {
+	if x != nil {
+		if x, ok := x.Payload.(*Frame_EndpointSignal); ok {
+			return x.EndpointSignal
+		}
+	}
+	return nil
+}
+
 type isFrame_Payload interface {
 	isFrame_Payload()
 }
@@ -1031,6 +1181,14 @@ type Frame_ContentServerResponse struct {
 	ContentServerResponse *ContentServerResponse `protobuf:"bytes,13,opt,name=content_server_response,json=contentServerResponse,proto3,oneof"`
 }
 
+type Frame_EndpointReport struct {
+	EndpointReport *EndpointReport `protobuf:"bytes,14,opt,name=endpoint_report,json=endpointReport,proto3,oneof"`
+}
+
+type Frame_EndpointSignal struct {
+	EndpointSignal *EndpointSignal `protobuf:"bytes,15,opt,name=endpoint_signal,json=endpointSignal,proto3,oneof"`
+}
+
 func (*Frame_Login) isFrame_Payload() {}
 
 func (*Frame_LoginResponse) isFrame_Payload() {}
@@ -1057,6 +1215,10 @@ func (*Frame_ContentServerRequest) isFrame_Payload() {}
 
 func (*Frame_ContentServerResponse) isFrame_Payload() {}
 
+func (*Frame_EndpointReport) isFrame_Payload() {}
+
+func (*Frame_EndpointSignal) isFrame_Payload() {}
+
 var File_sapie_proto protoreflect.FileDescriptor
 
 const file_sapie_proto_rawDesc = "" +
@@ -1070,13 +1232,22 @@ const file_sapie_proto_rawDesc = "" +
 	"\rrich_presence\x18\x05 \x03(\v2'.sapie.FriendSnapshot.RichPresenceEntryR\frichPresence\x1a?\n" +
 	"\x11RichPresenceEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"\xa8\x01\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"r\n" +
+	"\x0eEndpointReport\x12\x12\n" +
+	"\x04ipv4\x18\x01 \x01(\fR\x04ipv4\x12\x1b\n" +
+	"\tipv4_port\x18\x02 \x01(\rR\bipv4Port\x12\x12\n" +
+	"\x04ipv6\x18\x03 \x01(\fR\x04ipv6\x12\x1b\n" +
+	"\tipv6_port\x18\x04 \x01(\rR\bipv6Port\"`\n" +
+	"\x0eEndpointSignal\x12\x19\n" +
+	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\x123\n" +
+	"\tendpoints\x18\x02 \x01(\v2\x15.sapie.EndpointReportR\tendpoints\"\xdd\x01\n" +
 	"\fLoginRequest\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x14\n" +
 	"\x05appid\x18\x03 \x01(\rR\x05appid\x12%\n" +
 	"\x0eclient_version\x18\x04 \x01(\tR\rclientVersion\x12#\n" +
-	"\rsession_token\x18\x05 \x01(\tR\fsessionToken\"\xc4\x02\n" +
+	"\rsession_token\x18\x05 \x01(\tR\fsessionToken\x123\n" +
+	"\tendpoints\x18\x06 \x01(\v2\x15.sapie.EndpointReportR\tendpoints\"\xc4\x02\n" +
 	"\rLoginResponse\x123\n" +
 	"\x06status\x18\x01 \x01(\x0e2\x1b.sapie.LoginResponse.StatusR\x06status\x12\x19\n" +
 	"\bsteam_id\x18\x02 \x01(\x04R\asteamId\x12!\n" +
@@ -1121,7 +1292,7 @@ const file_sapie_proto_rawDesc = "" +
 	"\x14ContentServerRequest\x12\x14\n" +
 	"\x05appid\x18\x01 \x01(\rR\x05appid\"'\n" +
 	"\x15ContentServerResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok\"\xe5\x05\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"\xe9\x06\n" +
 	"\x05Frame\x12+\n" +
 	"\x05login\x18\x01 \x01(\v2\x13.sapie.LoginRequestH\x00R\x05login\x12=\n" +
 	"\x0elogin_response\x18\x02 \x01(\v2\x14.sapie.LoginResponseH\x00R\rloginResponse\x12'\n" +
@@ -1136,7 +1307,9 @@ const file_sapie_proto_rawDesc = "" +
 	" \x01(\bH\x00R\x04pong\x12C\n" +
 	"\x12achievement_unlock\x18\v \x01(\v2\x12.AchievementUnlockH\x00R\x11achievementUnlock\x12S\n" +
 	"\x16content_server_request\x18\f \x01(\v2\x1b.sapie.ContentServerRequestH\x00R\x14contentServerRequest\x12V\n" +
-	"\x17content_server_response\x18\r \x01(\v2\x1c.sapie.ContentServerResponseH\x00R\x15contentServerResponseB\t\n" +
+	"\x17content_server_response\x18\r \x01(\v2\x1c.sapie.ContentServerResponseH\x00R\x15contentServerResponse\x12@\n" +
+	"\x0fendpoint_report\x18\x0e \x01(\v2\x15.sapie.EndpointReportH\x00R\x0eendpointReport\x12@\n" +
+	"\x0fendpoint_signal\x18\x0f \x01(\v2\x15.sapie.EndpointSignalH\x00R\x0eendpointSignalB\t\n" +
 	"\apayloadB<H\x03Z8github.com/sapie/sapie/server/internal/protocol;protocolb\x06proto3"
 
 var (
@@ -1152,50 +1325,56 @@ func file_sapie_proto_rawDescGZIP() []byte {
 }
 
 var file_sapie_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_sapie_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_sapie_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_sapie_proto_goTypes = []any{
 	(LoginResponse_Status)(0),     // 0: sapie.LoginResponse.Status
 	(*FriendSnapshot)(nil),        // 1: sapie.FriendSnapshot
-	(*LoginRequest)(nil),          // 2: sapie.LoginRequest
-	(*LoginResponse)(nil),         // 3: sapie.LoginResponse
-	(*TicketRequest)(nil),         // 4: sapie.TicketRequest
-	(*TicketResponse)(nil),        // 5: sapie.TicketResponse
-	(*StatValue)(nil),             // 6: sapie.StatValue
-	(*AchievementState)(nil),      // 7: sapie.AchievementState
-	(*StatsGet)(nil),              // 8: sapie.StatsGet
-	(*StatsSet)(nil),              // 9: sapie.StatsSet
-	(*StatsResponse)(nil),         // 10: sapie.StatsResponse
-	(*ContentServerRequest)(nil),  // 11: sapie.ContentServerRequest
-	(*ContentServerResponse)(nil), // 12: sapie.ContentServerResponse
-	(*Frame)(nil),                 // 13: sapie.Frame
-	nil,                           // 14: sapie.FriendSnapshot.RichPresenceEntry
-	(*Common_Message)(nil),        // 15: Common_Message
-	(*AchievementUnlock)(nil),     // 16: AchievementUnlock
+	(*EndpointReport)(nil),        // 2: sapie.EndpointReport
+	(*EndpointSignal)(nil),        // 3: sapie.EndpointSignal
+	(*LoginRequest)(nil),          // 4: sapie.LoginRequest
+	(*LoginResponse)(nil),         // 5: sapie.LoginResponse
+	(*TicketRequest)(nil),         // 6: sapie.TicketRequest
+	(*TicketResponse)(nil),        // 7: sapie.TicketResponse
+	(*StatValue)(nil),             // 8: sapie.StatValue
+	(*AchievementState)(nil),      // 9: sapie.AchievementState
+	(*StatsGet)(nil),              // 10: sapie.StatsGet
+	(*StatsSet)(nil),              // 11: sapie.StatsSet
+	(*StatsResponse)(nil),         // 12: sapie.StatsResponse
+	(*ContentServerRequest)(nil),  // 13: sapie.ContentServerRequest
+	(*ContentServerResponse)(nil), // 14: sapie.ContentServerResponse
+	(*Frame)(nil),                 // 15: sapie.Frame
+	nil,                           // 16: sapie.FriendSnapshot.RichPresenceEntry
+	(*Common_Message)(nil),        // 17: Common_Message
+	(*AchievementUnlock)(nil),     // 18: AchievementUnlock
 }
 var file_sapie_proto_depIdxs = []int32{
-	14, // 0: sapie.FriendSnapshot.rich_presence:type_name -> sapie.FriendSnapshot.RichPresenceEntry
-	0,  // 1: sapie.LoginResponse.status:type_name -> sapie.LoginResponse.Status
-	1,  // 2: sapie.LoginResponse.friends:type_name -> sapie.FriendSnapshot
-	6,  // 3: sapie.StatsSet.stats:type_name -> sapie.StatValue
-	7,  // 4: sapie.StatsSet.achievements:type_name -> sapie.AchievementState
-	6,  // 5: sapie.StatsResponse.stats:type_name -> sapie.StatValue
-	7,  // 6: sapie.StatsResponse.achievements:type_name -> sapie.AchievementState
-	2,  // 7: sapie.Frame.login:type_name -> sapie.LoginRequest
-	3,  // 8: sapie.Frame.login_response:type_name -> sapie.LoginResponse
-	15, // 9: sapie.Frame.steam:type_name -> Common_Message
-	4,  // 10: sapie.Frame.ticket_request:type_name -> sapie.TicketRequest
-	5,  // 11: sapie.Frame.ticket_response:type_name -> sapie.TicketResponse
-	8,  // 12: sapie.Frame.stats_get:type_name -> sapie.StatsGet
-	9,  // 13: sapie.Frame.stats_set:type_name -> sapie.StatsSet
-	10, // 14: sapie.Frame.stats_response:type_name -> sapie.StatsResponse
-	16, // 15: sapie.Frame.achievement_unlock:type_name -> AchievementUnlock
-	11, // 16: sapie.Frame.content_server_request:type_name -> sapie.ContentServerRequest
-	12, // 17: sapie.Frame.content_server_response:type_name -> sapie.ContentServerResponse
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	16, // 0: sapie.FriendSnapshot.rich_presence:type_name -> sapie.FriendSnapshot.RichPresenceEntry
+	2,  // 1: sapie.EndpointSignal.endpoints:type_name -> sapie.EndpointReport
+	2,  // 2: sapie.LoginRequest.endpoints:type_name -> sapie.EndpointReport
+	0,  // 3: sapie.LoginResponse.status:type_name -> sapie.LoginResponse.Status
+	1,  // 4: sapie.LoginResponse.friends:type_name -> sapie.FriendSnapshot
+	8,  // 5: sapie.StatsSet.stats:type_name -> sapie.StatValue
+	9,  // 6: sapie.StatsSet.achievements:type_name -> sapie.AchievementState
+	8,  // 7: sapie.StatsResponse.stats:type_name -> sapie.StatValue
+	9,  // 8: sapie.StatsResponse.achievements:type_name -> sapie.AchievementState
+	4,  // 9: sapie.Frame.login:type_name -> sapie.LoginRequest
+	5,  // 10: sapie.Frame.login_response:type_name -> sapie.LoginResponse
+	17, // 11: sapie.Frame.steam:type_name -> Common_Message
+	6,  // 12: sapie.Frame.ticket_request:type_name -> sapie.TicketRequest
+	7,  // 13: sapie.Frame.ticket_response:type_name -> sapie.TicketResponse
+	10, // 14: sapie.Frame.stats_get:type_name -> sapie.StatsGet
+	11, // 15: sapie.Frame.stats_set:type_name -> sapie.StatsSet
+	12, // 16: sapie.Frame.stats_response:type_name -> sapie.StatsResponse
+	18, // 17: sapie.Frame.achievement_unlock:type_name -> AchievementUnlock
+	13, // 18: sapie.Frame.content_server_request:type_name -> sapie.ContentServerRequest
+	14, // 19: sapie.Frame.content_server_response:type_name -> sapie.ContentServerResponse
+	2,  // 20: sapie.Frame.endpoint_report:type_name -> sapie.EndpointReport
+	3,  // 21: sapie.Frame.endpoint_signal:type_name -> sapie.EndpointSignal
+	22, // [22:22] is the sub-list for method output_type
+	22, // [22:22] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_sapie_proto_init() }
@@ -1204,7 +1383,7 @@ func file_sapie_proto_init() {
 		return
 	}
 	file_net_proto_init()
-	file_sapie_proto_msgTypes[12].OneofWrappers = []any{
+	file_sapie_proto_msgTypes[14].OneofWrappers = []any{
 		(*Frame_Login)(nil),
 		(*Frame_LoginResponse)(nil),
 		(*Frame_Steam)(nil),
@@ -1218,6 +1397,8 @@ func file_sapie_proto_init() {
 		(*Frame_AchievementUnlock)(nil),
 		(*Frame_ContentServerRequest)(nil),
 		(*Frame_ContentServerResponse)(nil),
+		(*Frame_EndpointReport)(nil),
+		(*Frame_EndpointSignal)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1225,7 +1406,7 @@ func file_sapie_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sapie_proto_rawDesc), len(file_sapie_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   14,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
