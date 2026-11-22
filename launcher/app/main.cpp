@@ -1,6 +1,7 @@
 #include "CoreBridge.h"
 #include "LauncherShell.h"
 
+#include <QApplication>
 #include <QCoreApplication>
 #include <QGuiApplication>
 #include <QPointer>
@@ -13,12 +14,13 @@ int main(int argc, char *argv[])
 {
     installLauncherLogging();
 
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("SAPIE"));
     app.setApplicationName(QStringLiteral("SAPIE Launcher"));
 
     LauncherShell shell;
-    if (!shell.acquireSingleInstance()) {
+    const QString invite = LauncherShell::inviteFromArguments(QCoreApplication::arguments());
+    if (!shell.acquireSingleInstance(invite)) {
         return 0;
     }
 
@@ -26,6 +28,11 @@ int main(int argc, char *argv[])
     if (!core.createCore(core.abiVersion(), false)) {
         qWarning() << core.lastError();
     }
+    if (!invite.isEmpty()) {
+        core.handleDeepLink(invite);
+    }
+    QObject::connect(&shell, &LauncherShell::inviteReceived, &app,
+                     [&core](const QString &url) { core.handleDeepLink(url); });
 
     QQmlApplicationEngine engine;
     engine.addImportPath(QStringLiteral("qrc:/qt/qml"));
@@ -39,6 +46,12 @@ int main(int argc, char *argv[])
 
     QPointer<QQuickWindow> window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
     shell.restoreWindow(window);
+    QObject::connect(&core, &CoreBridge::pickExecutableRequested, &app, [&core]() {
+        const QString path = LauncherShell::pickExecutable();
+        if (!path.isEmpty()) {
+            core.setChosenExecutable(path);
+        }
+    });
     QObject::connect(&app, &QGuiApplication::aboutToQuit, &app, [&shell, &core, window]() {
         shell.saveWindow(window);
         core.shutdown();
