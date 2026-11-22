@@ -9,6 +9,8 @@
 
 #include <cstdio>
 
+using namespace sapie::win;
+
 namespace {
 
 int check(bool condition, const char* message)
