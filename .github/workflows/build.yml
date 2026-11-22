@@ -407,7 +407,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [proto-sync, client, server, launcher, web, launcher-windows, launcher-linux]
+    needs: [proto-sync, client, server, launcher, web, launcher-windows, launcher-linux, launcher-windows-qt, launcher-linux-qt]
     runs-on: ubuntu-latest
     permissions:
       contents: write

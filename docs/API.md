@@ -136,7 +136,7 @@ friend snapshot over the game socket.
 Only a member of a joinable lobby can issue a link. `url` is a `sapie://join/<lobby_id>` link with
 an `exp` Unix expiry and an HMAC-SHA256 `sig` over the lobby ID and expiry. Links last one hour.
 The signing key is the server's admin token, so changing that token invalidates outstanding links.
-The launcher resolves a link by passing the whole string as `invite` to the existing join route. A
+The web UI resolves a link by passing the whole string as `invite` to the existing join route. A
 tampered or malformed link returns `400`, an expired link returns `410`, and a link for another
 lobby returns `400`. The joiner is always the authenticated session owner. Invites do not bypass
 lobby access rules, so private lobbies cannot be joined by link. Joining without `invite` keeps the
