@@ -5,6 +5,7 @@ mod fixtures;
 pub mod detection;
 pub mod error;
 pub mod game;
+pub mod migration;
 pub mod platform;
 pub mod state;
 
