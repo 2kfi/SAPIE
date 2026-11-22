@@ -97,12 +97,12 @@ bool LauncherShell::acquireSingleInstance(const QString &inviteUrl)
     const QString name = QStringLiteral("sapie-launcher");
     QLocalSocket probe(this);
     probe.connectToServer(name);
-    if (probe.waitForConnected(200)) {
+    if (probe.waitForConnected(2000)) {
         const QByteArray payload = inviteUrl.isEmpty()
                 ? QByteArray("raise")
                 : QByteArray("join ") + inviteUrl.toUtf8() + '\n';
         probe.write(payload);
-        probe.waitForBytesWritten(200);
+        probe.waitForBytesWritten(1000);
         return false;
     }
 

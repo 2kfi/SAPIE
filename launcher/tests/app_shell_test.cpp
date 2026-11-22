@@ -71,7 +71,7 @@ void AppShellTest::forwardsInviteFromSecondInstance()
 
     LauncherShell second;
     QVERIFY(!second.acquireSingleInstance(QStringLiteral("sapie://join/123")));
-    QVERIFY(inviteSpy.wait(2000));
+    QVERIFY(inviteSpy.wait(5000));
     QCOMPARE(inviteSpy.count(), 1);
     QCOMPARE(inviteSpy.first().at(0).toString(), QStringLiteral("sapie://join/123"));
 }

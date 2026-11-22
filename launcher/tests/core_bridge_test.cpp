@@ -13,8 +13,6 @@
 #include <QTest>
 #include <QThread>
 
-#include <filesystem>
-
 namespace {
 void clearFakeState()
 {
@@ -31,13 +29,6 @@ bool writeBytes(const QString &path, const QByteArray &bytes)
         return false;
     }
     return file.write(bytes) == bytes.size();
-}
-
-// The core keys the library by canonical path; Windows adds a \\?\ prefix.
-QString canonicalExe(const QString &path)
-{
-    return QString::fromWCharArray(
-        std::filesystem::canonical(path.toStdWString()).wstring().c_str());
 }
 
 struct FakeDllSource {
@@ -212,7 +203,7 @@ void CoreBridgeTest::fakeCoreDrivesLoginDetectConfigureAndLaunch()
     image[0x84] = static_cast<char>(0x64);
     image[0x85] = static_cast<char>(0x86);
     QVERIFY(writeBytes(rawExe, image));
-    const QString exe = canonicalExe(rawExe);
+    QString exe = rawExe;
 
     QByteArray dll("SteamUser019", 12);
     dll.append('\0');
@@ -238,11 +229,12 @@ void CoreBridgeTest::fakeCoreDrivesLoginDetectConfigureAndLaunch()
     QCOMPARE(detected.value(QStringLiteral("era")).toString(), QStringLiteral("modern"));
     QVERIFY(!progressSpy.isEmpty());
 
-    const QVariantMap record = bridge.libraryAdd(exe);
-    QVERIFY(!record.isEmpty());
+    QVariantMap record = bridge.libraryAdd(exe);
+    QVERIFY2(!record.isEmpty(), qPrintable(bridge.lastError()));
+    exe = record.value(QStringLiteral("exePath")).toString();
 
     const QVariantMap configured = bridge.configureGame(exe, 480);
-    QVERIFY(!configured.isEmpty());
+    QVERIFY2(!configured.isEmpty(), qPrintable(bridge.lastError()));
     QCOMPARE(configured.value(QStringLiteral("gameServer")).toString(),
              QStringLiteral("127.0.0.1:47584"));
 
@@ -289,7 +281,7 @@ void CoreBridgeTest::fakeCoreDrivesScreenMethods()
     image[0x84] = static_cast<char>(0x64);
     image[0x85] = static_cast<char>(0x86);
     QVERIFY(writeBytes(rawExe, image));
-    const QString exe = canonicalExe(rawExe);
+    QString exe = rawExe;
     const QString backup = gameDir.filePath(QStringLiteral("steam_api64.dll.sapie-original.bak"));
     QByteArray dll("SteamUser019", 12);
     dll.append('\0');
@@ -317,7 +309,9 @@ void CoreBridgeTest::fakeCoreDrivesScreenMethods()
     QCOMPARE(bridge.property("rememberSession").toBool(), true);
     QCOMPARE(bridge.property("firstRun").toBool(), false);
 
-    QVERIFY(!bridge.libraryAdd(exe).isEmpty());
+    const QVariantMap added = bridge.libraryAdd(exe);
+    QVERIFY2(!added.isEmpty(), qPrintable(bridge.lastError()));
+    exe = added.value(QStringLiteral("exePath")).toString();
     bridge.cancelInstall();
     QCOMPARE(bridge.property("addState").toString(), QStringLiteral("idle"));
     QVERIFY(bridge.rollbackInstall());
