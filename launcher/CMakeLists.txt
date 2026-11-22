@@ -55,7 +55,7 @@ if(UNIX AND NOT APPLE)
   find_library(SAPIE_DBUS_LIBRARY NAMES dbus-1 REQUIRED)
   target_link_libraries(sapie_core INTERFACE "${CMAKE_DL_LIBS}" m "${SAPIE_DBUS_LIBRARY}")
 elseif(WIN32)
-  target_link_libraries(sapie_core INTERFACE advapi32 crypt32 user32)
+  target_link_libraries(sapie_core INTERFACE advapi32 crypt32 user32 ws2_32 bcrypt ntdll synchronization)
 endif()
 
 add_library(sapie_bridge STATIC
