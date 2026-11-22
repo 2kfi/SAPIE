@@ -28,7 +28,7 @@
       </Directory>
     </Directory>
 
-    <Component Id="SapieProtocol" Guid="9a5c7b2e-0b43-4d1f-a2c8-70d8d6a24f11" Win64="yes">
+    <Component Id="SapieProtocol" Guid="9a5c7b2e-0b43-4d1f-a2c8-70d8d6a24f11" Directory="INSTALLFOLDER" Win64="yes">
       <RegistryKey Root="HKLM" Key="Software\Classes\sapie">
         <RegistryValue Value="URL:SAPIE protocol" Type="string"/>
         <RegistryValue Name="URL Protocol" Value="" Type="string"/>
@@ -41,7 +41,7 @@
       </RegistryKey>
     </Component>
 
-    <Component Id="SapieShortcut" Guid="c1b9f8e5-8b77-4c1e-9f2f-02f5b79d9481" Win64="yes">
+    <Component Id="SapieShortcut" Guid="c1b9f8e5-8b77-4c1e-9f2f-02f5b79d9481" Directory="INSTALLFOLDER" Win64="yes">
       <Shortcut Id="LauncherShortcut"
                 Directory="SAPIEProgramMenuFolder"
                 Name="SAPIE for Windows"
