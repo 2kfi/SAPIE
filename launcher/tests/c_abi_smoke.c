@@ -178,7 +178,11 @@ int main(void)
     CHECK(configured == NULL);
     CHECK(sapie_core_launch_game(core, exe, &pid) == SAPIE_ERR_TOKEN_EXPIRED);
     CHECK(pid == 99);
-    CHECK(sapie_core_unpack_steamstub(core, exe, &unpacked) == SAPIE_ERR_PROCESS);
+    /* No Steamless CLI ships: Linux reports PROCESS, Windows reports NOT_FOUND. */
+    {
+        const SapieStatus unpack_status = sapie_core_unpack_steamstub(core, exe, &unpacked);
+        CHECK(unpack_status == SAPIE_ERR_PROCESS || unpack_status == SAPIE_ERR_NOT_FOUND);
+    }
     CHECK(unpacked == NULL);
     CHECK(sapie_core_library_remove(core, exe) == SAPIE_OK);
 

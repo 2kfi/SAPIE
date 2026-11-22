@@ -156,7 +156,19 @@ jobs:
       - name: Qt launcher tests
         env:
           QT_QPA_PLATFORM: offscreen
-        run: ctest --test-dir build/windows-qt --output-on-failure -V
+        run: |
+          set -euo pipefail
+          # Qt Test writes to stdout, which the runner drops for these exes.
+          # Run them once with -o so their failure reason reaches the log.
+          set +e
+          ./build/windows-qt/core_bridge_test.exe -o core_bridge_test.log
+          echo "core_bridge_test exit=$?"
+          cat core_bridge_test.log 2>/dev/null || true
+          ./build/windows-qt/app_shell_test.exe -o app_shell_test.log
+          echo "app_shell_test exit=$?"
+          cat app_shell_test.log 2>/dev/null || true
+          set -e
+          ctest --test-dir build/windows-qt --output-on-failure -V
       - name: Resolve update public key
         run: |
           set -euo pipefail
