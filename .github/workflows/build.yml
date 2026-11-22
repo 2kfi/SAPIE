@@ -156,7 +156,7 @@ jobs:
       - name: Qt launcher tests
         env:
           QT_QPA_PLATFORM: offscreen
-        run: ctest --test-dir build/windows-qt --output-on-failure
+        run: ctest --test-dir build/windows-qt --output-on-failure -V
       - name: Resolve update public key
         run: |
           set -euo pipefail

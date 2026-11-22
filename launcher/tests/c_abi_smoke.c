@@ -58,11 +58,14 @@ static void make_game(char *dir, size_t dir_cap, char *exe, size_t exe_cap)
     unsigned char image[0x100];
     char path[512];
 
-    snprintf(dir, dir_cap, "/tmp/sapie-c-smoke-%ld", (long)getpid());
-#ifndef _WIN32
-    mkdir(dir, 0700);
-#else
+#ifdef _WIN32
+    char temp_root[MAX_PATH];
+    GetTempPathA(sizeof(temp_root), temp_root);
+    snprintf(dir, dir_cap, "%ssapie-c-smoke-%ld", temp_root, (long)getpid());
     CreateDirectoryA(dir, NULL);
+#else
+    snprintf(dir, dir_cap, "/tmp/sapie-c-smoke-%ld", (long)getpid());
+    mkdir(dir, 0700);
 #endif
     memset(image, 0, sizeof(image));
     memcpy(image, pe, sizeof(pe));
