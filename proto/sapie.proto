@@ -15,12 +15,27 @@ message FriendSnapshot {
   map<string, bytes> rich_presence = 5;
 }
 
+// Addresses are raw bytes in network byte order (4 for IPv4, 16 for IPv6).
+// Ports are host order. Zero port means the family is unavailable.
+message EndpointReport {
+  bytes ipv4 = 1;
+  uint32 ipv4_port = 2;
+  bytes ipv6 = 3;
+  uint32 ipv6_port = 4;
+}
+
+message EndpointSignal {
+  uint64 steam_id = 1; // server-stamped from the authenticated connection
+  EndpointReport endpoints = 2;
+}
+
 message LoginRequest {
   string username = 1;
   string password = 2;
   uint32 appid = 3;
   string client_version = 4;
   string session_token = 5;
+  EndpointReport endpoints = 6;
 }
 
 message LoginResponse {
@@ -102,5 +117,7 @@ message Frame {
     AchievementUnlock achievement_unlock = 11;
     ContentServerRequest content_server_request = 12;
     ContentServerResponse content_server_response = 13;
+    EndpointReport endpoint_report = 14;
+    EndpointSignal endpoint_signal = 15;
   }
 }

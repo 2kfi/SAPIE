@@ -97,7 +97,7 @@ SteamAPICall_t generate_steam_api_call_id();
 CSteamID generate_steam_id_user();
 CSteamID generate_steam_id_server();
 CSteamID generate_steam_id_anonserver();
-CSteamID generate_steam_id_lobby();
+CSteamID make_steam_id_lobby(uint32 account_id);
 std::string get_full_lib_path();
 std::string get_full_program_path();
 std::string get_current_path();

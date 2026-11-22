@@ -447,3 +447,64 @@ func TestUserEndpoints(t *testing.T) {
 		t.Fatalf("CORS allowed hostile origin: %q", rec.Header().Get("Access-Control-Allow-Origin"))
 	}
 }
+
+func TestLobbyRESTReturnsServerLobbySteamID(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.CreateAccount("owner", hash, "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	notifier := &fakeNotifier{
+		delivered: map[uint64][]*protocol.Frame{},
+		online:    map[uint64]bool{owner: true},
+	}
+	handler := New(store, "admin-token", auth.NewLimiter(nil), notifier).Handler()
+	login := request(handler, http.MethodPost, "/api/v1/login", "", `{"username":"owner","password":"pw"}`)
+	if login.Code != http.StatusOK {
+		t.Fatalf("login = %d: %s", login.Code, login.Body.String())
+	}
+	var session struct {
+		Token string `json:"session_token"`
+	}
+	if err := json.Unmarshal(login.Body.Bytes(), &session); err != nil || session.Token == "" {
+		t.Fatalf("login body = %s, %v", login.Body.String(), err)
+	}
+
+	rec := request(handler, http.MethodPost, "/api/v1/lobbies", session.Token, `{"appid":480,"type":2,"member_limit":4}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d: %s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		LobbyID uint64 `json:"lobby_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if !state.IsLobbySteamID(created.LobbyID) {
+		t.Fatalf("create lobby_id = %#x, want a server lobby SteamID", created.LobbyID)
+	}
+
+	join := request(handler, http.MethodPost,
+		"/api/v1/lobbies/"+strconv.FormatUint(created.LobbyID, 10)+"/join", session.Token, "")
+	if join.Code != http.StatusOK {
+		t.Fatalf("join = %d: %s", join.Code, join.Body.String())
+	}
+	var joined struct {
+		LobbyID uint64 `json:"lobby_id"`
+	}
+	if err := json.Unmarshal(join.Body.Bytes(), &joined); err != nil || joined.LobbyID != created.LobbyID {
+		t.Fatalf("join body = %s, want %d (%v)", join.Body.String(), created.LobbyID, err)
+	}
+	lobby, err := store.Lobby(created.LobbyID)
+	if err != nil || lobby.LobbyID != created.LobbyID {
+		t.Fatalf("stored lobby = %+v, %v", lobby, err)
+	}
+}

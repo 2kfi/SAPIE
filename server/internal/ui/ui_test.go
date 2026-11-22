@@ -147,12 +147,19 @@ func TestProxyAllowsUserRoutesOnly(t *testing.T) {
 	if status != http.StatusCreated {
 		t.Fatalf("create lobby = %d: %s", status, body)
 	}
-	status, body = call(http.MethodPost, "/api/v1/lobbies/1/join", login.Token, "")
+	var created struct {
+		LobbyID uint64 `json:"lobby_id"`
+	}
+	if err := json.Unmarshal([]byte(body), &created); err != nil || created.LobbyID == 0 {
+		t.Fatalf("create lobby body = %s, %v", body, err)
+	}
+	lobbyPath := "/api/v1/lobbies/" + strconv.FormatUint(created.LobbyID, 10)
+	status, body = call(http.MethodPost, lobbyPath+"/join", login.Token, "")
 	if status != http.StatusOK {
 		t.Fatalf("join lobby = %d: %s", status, body)
 	}
-	status, body = call(http.MethodPost, "/api/v1/lobbies/1/invite", login.Token, "")
-	if status != http.StatusOK || !strings.Contains(body, "sapie://join/1?") {
+	status, body = call(http.MethodPost, lobbyPath+"/invite", login.Token, "")
+	if status != http.StatusOK || !strings.Contains(body, "sapie://join/"+strconv.FormatUint(created.LobbyID, 10)+"?") {
 		t.Fatalf("invite link = %d: %s", status, body)
 	}
 	register := `{"username":"newuser","password":"pw"}`
