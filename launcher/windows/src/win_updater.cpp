@@ -104,7 +104,7 @@ bool verifyManifestSignature(const QByteArray& body,
                              const QString& publicKeyPemPath,
                              QString* error)
 {
-    const QByteArray signature = QByteArray::fromBase64(signatureBase64.trimmed());
+    QByteArray signature = QByteArray::fromBase64(signatureBase64.trimmed());
     if (signature.isEmpty()) {
         if (error) {
             *error = QStringLiteral("The update manifest signature is not valid base64.");
@@ -187,7 +187,7 @@ bool verifyManifestSignature(const QByteArray& body,
         return false;
     }
 
-    const QByteArray digest = QCryptographicHash::hash(body, QCryptographicHash::Sha256);
+    QByteArray digest = QCryptographicHash::hash(body, QCryptographicHash::Sha256);
     BCRYPT_PKCS1_PADDING_INFO padding{};
     padding.pszAlgId = BCRYPT_SHA256_ALGORITHM;
     const NTSTATUS status = BCryptVerifySignature(
@@ -443,7 +443,7 @@ UpdateManifest WindowsUpdater::parseManifest(const QByteArray& body, QString* er
     }
 
     static const QRegularExpression shaPattern(QStringLiteral("^[0-9a-f]{64}$"));
-    const QJsonArray artifacts = object.value(QStringLiteral("artifacts")).array();
+    const QJsonArray artifacts = object.value(QStringLiteral("artifacts")).toArray();
     for (const QJsonValue& value : artifacts) {
         const QJsonObject item = value.toObject();
         UpdateArtifact artifact;

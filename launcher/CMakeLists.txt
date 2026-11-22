@@ -111,7 +111,12 @@ target_compile_definitions(app_shell_test PRIVATE
 add_test(NAME app_shell_test COMMAND app_shell_test)
 set_tests_properties(app_shell_test PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
-foreach(sapie_platform_dir windows linux)
+if(WIN32)
+  set(sapie_platform_dirs windows)
+elseif(UNIX AND NOT APPLE)
+  set(sapie_platform_dirs linux)
+endif()
+foreach(sapie_platform_dir ${sapie_platform_dirs})
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${sapie_platform_dir}/CMakeLists.txt")
     add_subdirectory(${sapie_platform_dir})
   endif()

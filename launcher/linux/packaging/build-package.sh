@@ -32,9 +32,11 @@ else
   echo "deb NOT VERIFIED: dpkg-deb is not installed"
 fi
 
-if command -v flatpak-builder >/dev/null 2>&1 && command -v flatpak >/dev/null 2>&1; then
+if command -v flatpak-builder >/dev/null 2>&1 && command -v flatpak >/dev/null 2>&1 \
+  && flatpak info --user "org.kde.Platform//6.8" >/dev/null 2>&1 \
+  && flatpak info --user "org.kde.Sdk//6.8" >/dev/null 2>&1; then
   "${scripts}/build-flatpak.sh" "${repo_root}" "${output_dir}/flatpak" \
     "${arch}" "${version}" "${flatpak_repo}"
 else
-  echo "Flatpak NOT VERIFIED: flatpak-builder or flatpak is not installed"
+  echo "Flatpak NOT VERIFIED: flatpak-builder, flatpak or the org.kde 6.8 runtime and SDK are not installed"
 fi
