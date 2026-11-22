@@ -1,7 +1,8 @@
 # SAPIE UI
 
-One React 18 + TypeScript + Vite SPA in `web/`, plus a separate React UI bundled into the Tauri v2
-launcher at `client/src-tauri/ui/`. The launcher does not use `web/dist`. The Go server hosts the
+One React 18 + TypeScript + Vite SPA in `web/`, plus the 0.5 native launcher in `launcher/`: a Qt 6
+Quick UI with a Rust core behind a C ABI and no webview. The launcher does not use `web/dist`. The Go
+server hosts the
 web SPA on the LAN with `--ui-listen 0.0.0.0:8081` (default) from `--ui-dir ./web/dist`. Port 8081
 proxies only user API routes; admin paths return 404 there and still work on the loopback admin
 listener at 8080. The views are wired to that API: login, friends, lobbies, live sessions and
@@ -88,18 +89,20 @@ in [identity surface copy](SURFACES.md).
 
 ## Native launcher
 
-`client/src-tauri/` is a Tauri v2 app built as `sapie-launcher` (`sapie-launcher.exe` on Windows,
-with `windows_subsystem`). Its React UI lives in `ui/` and is bundled into the binary. The shell is
-a local game library: sign in, add an executable, review detected arch, era and appid, then press
-Play. It uses native file dialogs, backs up the original library, copies the matching `steam_api`
-file, writes the connection files and starts the game. Game details offer repair library, restore
-original, remove from library, and display per-game arguments and a Linux preload override. Activity
-and settings are reachable from the rail. There are no friends, chat or store screens in the launcher
-in 0.4.
+`launcher/` holds the 0.5 launcher. `launcher/core` is a Rust core behind a versioned C ABI,
+`launcher/ui` is the shared Qt Quick UI, and `launcher/windows` and `launcher/linux` hold platform
+integration and packaging. The 0.4 Tauri app stays in `client/src-tauri` as the prior artifact; no
+Tauri code is used by the 0.5 launcher. The shell is a local game library: sign in, add an
+executable, review detected arch, era and appid, then press Play. It uses native file dialogs, backs
+up the original library, copies the matching `steam_api` file, writes the connection files and starts
+the game. Game details offer repair library, restore original, remove from library, and per-game
+arguments and a Linux preload override. Friends, activity and settings are reachable from the rail;
+there is no chat or store.
 
-The launcher calls `POST /api/v1/login` and keeps only the session token in the OS keychain. It
-passes the token to the game through a short-lived 0600 token file with environment fallback; it
-does not persist the account password. The web SPA makes no native calls and has no Tauri bridge.
+The core calls `POST /api/v1/login` and keeps only the session token in the OS keychain. It passes
+the token to the game through a short-lived 0600 token file, with an owner-only ACL on Windows in the
+0.5 path. It does not persist the account password. The web SPA makes no native calls and has no
+Tauri bridge.
 
 Four Windows DLL variants (windows-x86/x64 × legacy/modern) were cross-built and inspected; all
 export the five new `SteamContentServer*` symbols and import no `libwinpthread-1.dll`. Native GUI
@@ -110,10 +113,13 @@ click-through was not exercised headless.
 ```sh
 cd web && npm install && npm run build        # tsc --noEmit + vite build -> web/dist
 cd web && npx tsc --noEmit
-cd client/src-tauri && cargo check             # Tauri shell
-cd client/src-tauri/ui && npm ci && npm run build
-cd client/src-tauri/ui && npm test             # Vitest
+cd launcher && cargo test                     # Rust core
+cmake -S launcher -B launcher/build && cmake --build launcher/build
+QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input launcher/ui/screens/tst_screens.qml
 ```
+
+The CMake target requires Qt 6.8. Local Qt is 6.12.0, so a local configure is a compatibility check
+only. No packaged 0.5 launcher build was verified for this record.
 
 The launcher is dark only. `design/DESIGN.md` records the decision; there is no light theme or
 theme toggle on either surface.

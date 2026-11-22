@@ -17,8 +17,8 @@ This file is the entry point for coding agents. Read it before changing code. Fo
 | `server/` | Go server, SQLite via `modernc.org/sqlite`, no cgo. Entry: `cmd/sapie-server`. |
 | `client/dll/` | Goldberg fork, minimal edits. Game-side Steam API emulation. |
 | `client/sapie/` | New client transport, mirror and stats code. |
-| `client/src-tauri/` | Current launcher: Tauri v2 shell in `src/`, React UI in `ui/`. Migrates to `launcher/` in 0.5 (M23). No egui source remains. |
-| `launcher/` | 0.5 target: Qt 6 + Qt Quick UI, Rust core behind a C ABI, `windows/` and `linux/` platform code. Not created yet. |
+| `client/src-tauri/` | 0.4 Tauri v2 shell in `src/`, React UI in `ui/`, kept as the prior artifact. The 0.5 launcher does not use it. |
+| `launcher/` | 0.5 launcher: Qt 6 + Qt Quick UI, Rust core behind a C ABI in `core/`, platform code in `windows/` and `linux/`. |
 | `web/` | React 18 + TypeScript + Vite SPA served by the Go server on the LAN. |
 | `design/` | `tokens.css` (single token source), `DESIGN.md` (launcher direction), `identity.md` (0.5, M22), fonts and icons. |
 | `AGENTS-UI.md` | 0.5 visual direction for the launchers and the web UI. Reference, not code. |
@@ -37,11 +37,13 @@ Branches: `dev-client` is the default and integration trunk. Release PRs go `dev
 cd server && go test ./... && go vet ./...
 cd server && go run ./cmd/sapie-server
 
-# launcher Rust shell
-cd client/src-tauri && cargo test && cargo check && cargo clippy --all-targets -- -D warnings
+# launcher Rust core
+cd launcher && cargo test
+cd launcher && cargo clippy --all-targets -- -D warnings
 
-# launcher React UI
-cd client/src-tauri/ui && npm ci && npm run build && npm test
+# launcher Qt configure and QML tests
+cmake -S launcher -B launcher/build
+QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input launcher/ui/screens/tst_screens.qml
 
 # web
 cd web && npm install && npm run build && npm test
@@ -53,10 +55,9 @@ bash tools/check-proto-sync.sh
 docker compose up --build
 ```
 
-The release workflow installs `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`,
-`librsvg2-dev`, `libxkbcommon-dev`, `libwayland-dev`, `libx11-dev`, `libxi-dev`, `libxrandr-dev` and
-`libgl1-mesa-dev` on Linux. The pull-request workflow installs a narrower X11 set; see
-`dev_notes.md` for the unverified gap. Python tooling always runs inside a virtual environment
+The 0.5 launcher needs Qt 6.8 with CMake and the Rust toolchain. It uses no webview, so
+`libwebkit2gtk-4.1-dev` and `libayatana-appindicator3-dev` are not launcher dependencies. See
+`docs/BUILD.md` for the build matrix. Python tooling always runs inside a virtual environment
 (`note.md`). Never commit build products; CI rejects them.
 
 ## Non-negotiable rules
@@ -75,13 +76,12 @@ The release workflow installs `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3
 
 # Launcher specification (0.4)
 
-Status at the 0.4 documentation refresh: the Tauri v2 shell and React UI in `client/src-tauri` are
-what this tree builds. The old egui source is gone. The launcher is dark only; that decision is
-recorded in `design/DESIGN.md` and supersedes the two-theme lines in the spec below. Game
-authentication uses a 0600 session-token file with environment fallback, described in
-`docs/PROTOCOL.md` and `docs/SECURITY.md`. The `0.4` tag exists and installer builds were recorded;
+Status: this section describes the published 0.4 artifact, not the 0.5 tree. The 0.4 launcher was a
+Tauri v2 shell in `client/src-tauri` with a React UI and no egui source. It was dark only, with the
+reason in `design/DESIGN.md`, and used a 0600 session-token file with environment fallback described
+in `docs/PROTOCOL.md` and `docs/SECURITY.md`. The `0.4` tag exists and installer builds were recorded;
 execution on clean machines is UNVERIFIED. The verification status is tracked in
-`docs/verification/0.4-rc-checklist.md` (draft).
+`docs/verification/0.4-rc-checklist.md` (draft). The 0.5 direction is in the section below.
 
 ## Diagnosis
 
@@ -294,10 +294,9 @@ inventory and the release definition. This section is the summary, not the sourc
 - **Gates.** G1 identity, G2 platform, G3 core, G4 release. A gate needs recorded evidence and the
   user's sign-off. Do not start production UI before G1.
 
-The current `client/src-tauri` launcher is the 0.4 artifact. It is the source for the Rust core, not
-for the UI. It moves to `launcher/` in M23 and the Tauri shell is deleted. Until then, the launcher
-commands above still target `client/src-tauri`; the 0.5 commands will be CMake plus
-`cargo test` in `launcher/core`.
+`client/src-tauri` is the 0.4 artifact. The 0.5 Rust core and Qt Quick UI are in `launcher/`, and the
+launcher commands above target that tree. The Tauri shell is not used by 0.5. No 0.5 tag, release or
+artifact exists yet; the documented upgrade path is `docs/UPGRADE.md`.
 
 # Definition of done
 

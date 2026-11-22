@@ -1,9 +1,36 @@
 # Changelog
 
-This is a draft for 0.4. No `0.4` tag, GitHub Release or container publish has happened. Items below
-are changes in this tree since the `0.3` tag. "Shipped in code" means the change is present and
-covered by the checks that ran locally or in CI; it does not mean a release artifact or a real game
-run was verified. The status of each gate is in `docs/verification/0.4-rc-checklist.md`.
+The `0.4` tag and its release assets are published. This tree holds the 0.5 work, which is
+code-complete but unreleased. "Shipped in code" means the change is present and covered by checks
+that ran locally or in CI; it does not mean a release artifact or a real game run was verified. The
+status of the 0.5 gates is in `docs/verification/`.
+
+## Unreleased 0.5
+
+Code-complete in this tree, with local evidence only. No 0.5 tag, release or publish is recorded.
+
+- Two launchers from one core: SAPIE for Windows and SAPIE for Linux. Shared Rust core behind a C ABI
+  in `launcher/core`, shared Qt Quick UI in `launcher/ui`, platform code in `launcher/windows` and
+  `launcher/linux`. No webview, HTML or JS in the launcher.
+- Qt 6.8 is the pinned build target. Local checks used Qt 6.12.0.
+- Packaging scripts for per-user NSIS, per-machine MSI, portable zip, AppImage, deb and Flatpak, with
+  signed update manifests and rollback helpers. The upgrade path is in `docs/UPGRADE.md`.
+- 0.5 identity applied to the QML prototype: violet `#C5A4FF`, Manrope and IBM Plex Mono, no ember
+  brand accent and no glass. Final mark art is still a G1 decision.
+- Local checks: 29 Rust core tests, server `go test ./...`, 34 Qt Quick Test cases across five suites,
+  proto sync, secret scan, update manifest self-check, dependency policy check and
+  `docker compose config`, all passing.
+
+### NOT VERIFIED for 0.5
+
+- G1, G2, G3 and G4 are not signed off. No gate has a PASSED result in this tree.
+- No Windows runner, signed artifact, clean VM or real game run was recorded. The packaging scripts
+  were not run into shippable artifacts.
+- No screen-reader pass, no 0.4 to 0.5 upgrade run and no downgrade run was recorded.
+- Web UI Node checks were not run in this worktree.
+
+Status is recorded in `docs/verification/0.5-rc-checklist.md`, `0.5-platform-gate.md` and
+`0.5-core-gate.md`.
 
 ## Launcher
 

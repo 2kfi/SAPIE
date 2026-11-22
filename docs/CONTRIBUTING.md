@@ -26,12 +26,13 @@ Run these from the repository root unless a line says otherwise.
 cd server && go test ./... && go vet ./...
 cd server && go run ./cmd/sapie-server
 
-# Launcher Rust shell (Tauri v2)
-cd client/src-tauri && cargo test && cargo check
-cd client/src-tauri && cargo clippy --all-targets -- -D warnings
+# Launcher Rust core
+cd launcher && cargo test
+cd launcher && cargo clippy --all-targets -- -D warnings
 
-# Launcher React UI
-cd client/src-tauri/ui && npm ci && npm run build && npm test
+# Launcher Qt configure and QML tests
+cmake -S launcher -B launcher/build
+QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input launcher/ui/screens/tst_screens.qml
 
 # LAN web UI
 cd web && npm install && npm run build && npm test
@@ -43,11 +44,10 @@ bash tools/check-proto-sync.sh
 docker compose up --build
 ```
 
-`npm run build` runs `tsc --noEmit` then `vite build`. The launcher shell loads its bundled UI from
-`client/src-tauri/ui/dist`. On Linux the release workflow installs `libwebkit2gtk-4.1-dev`,
-`libayatana-appindicator3-dev`, `librsvg2-dev`, `libxkbcommon-dev`, `libwayland-dev`, `libx11-dev`,
-`libxi-dev`, `libxrandr-dev` and `libgl1-mesa-dev`. See `docs/BUILD.md` for the full client build
-matrix and `dev_notes.md` for the pull-request dependency gap.
+`npm run build` runs `tsc --noEmit` then `vite build` for the web SPA. The 0.5 launcher loads its Qt
+Quick UI from `launcher/ui` and needs Qt 6.8, CMake, MSVC or GCC and the Rust toolchain. The 0.4
+Tauri webview dependencies (`libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`) are not used by
+the 0.5 launcher. See `docs/BUILD.md` for the build matrix.
 
 ## What CI runs
 
@@ -79,6 +79,7 @@ A change is done when the code builds, tests pass, the affected UI state was exe
 compiled, the docs that mention the change are updated, and no known security or data-loss issue is
 left unstated. State what was not verified. "Code-complete" and "verified" are different words.
 
-Evidence for 0.4 lives in `docs/verification/`. The headless two-client record is
-`0.4-two-client.md`; the unexecuted Windows gate is `0.4-morning-gate.md`. The release-candidate
-checklist is `0.4-rc-checklist.md` and is a draft.
+Evidence for 0.4 and 0.5 lives in `docs/verification/`. The headless two-client record is
+`0.4-two-client.md`. The 0.5 records are `0.5-identity-gate.md`, `0.5-platform-gate.md`,
+`0.5-core-gate.md` and `0.5-rc-checklist.md`. None of the 0.5 gates is signed off. The upgrade path
+is in `docs/UPGRADE.md`.

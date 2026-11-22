@@ -1,7 +1,8 @@
-# SAPIE 0.4 LAN security
+# SAPIE LAN security
 
 This file describes the shipping code paths in this tree. It is documentation only. A requirement
-that is not yet implemented is labeled as such.
+that is not yet implemented is labeled as such. Launcher paths named as 0.4 belong to the published
+artifact; the 0.5 paths are code-complete and verified only by local unit checks.
 
 ## Listeners and what can reach them
 
@@ -130,40 +131,38 @@ assert that `localStorage` stays empty (`web/src/test/login.test.tsx`). Sign out
 local state and returns to sign in. `POST /logout-all` and `DELETE /sessions/{id}` revoke other
 sessions.
 
-Launcher status: the launcher has a real `login` command that calls `POST /api/v1/login`.
-`KeychainTokenStore` stores the session token in the OS keychain through the `keyring` crate, and a
-mockable `TokenStore` trait keeps the storage boundary testable (`client/src-tauri/src/auth.rs`).
-The password is never persisted. `LauncherState` holds only non-secret metadata and scrubs legacy
-`password`, `token`, `session_token` and `secret` keys when it loads a state file
-(`client/src-tauri/src/state.rs`). `sign_out` clears the keychain entry
-(`client/src-tauri/src/commands.rs`). Real keychain access is still UNVERIFIED headless. The `login`
-command returns the token over Tauri IPC to the UI by the command contract (`SessionInfo.token`,
-`client/src-tauri/ui/src/api.ts`). That crossing into UI memory is an accepted 0.4 boundary, not a
-disk write.
+Launcher status: the 0.5 core has a real login path that calls `POST /api/v1/login`.
+`SystemPlatform` stores the session token in the OS keychain through the `keyring` crate, and a
+mockable `Keychain` trait keeps the storage boundary testable (`launcher/core/src/platform.rs`,
+`launcher/core/src/auth.rs`). The password is never persisted. `LauncherState` holds only non-secret
+metadata and scrubs legacy `password`, `token`, `session_token` and `secret` keys when it loads a
+state file (`launcher/core/src/state.rs`). Removal clears the keychain entry. Real keychain access is
+still UNVERIFIED headless. The token crosses the C ABI into the Qt UI as a command result
+(`session_token` in `launcher/core/include/sapie_core.h`). That crossing is an accepted in-memory
+boundary, not a disk write.
 
-Game handoff status (M16, shipped): `launch_game` writes `steam_settings/sapie_client.json` mode
-`0600` on Unix immediately before spawn and passes no credential env vars
-(`client/src-tauri/src/game.rs`). The
-file holds only `session_token`; the launcher removes it if spawn fails. Windows has no explicit
-ACL change, so the file inherits the game directory's default ACL. The DLL reads the file once,
+Game handoff status: the core writes `steam_settings/sapie_client.json` mode `0600` on Unix
+immediately before spawn and passes no credential env vars (`launcher/core/src/game.rs`). The file
+holds only `session_token`; the launcher removes it if spawn fails. The DLL reads the file once,
 removes it after the read attempt, rejects files older than 10 minutes, and sends the token in
-`LoginRequest.session_token` (`client/dll/settings_parser.cpp`, `client/dll/network.cpp`). The
-server resolves the token hash against unexpired sessions and leaves it valid
-(`server/internal/session/session.go`). The shipped DLL keeps its in-memory token and the launcher
-keeps the same token in its keychain, so both 0.4 flows keep working. When no token file exists, the DLL falls back to `SAPIE_SESSION_TOKEN`, then to
-`SAPIE_USERNAME`/`SAPIE_PASSWORD` for compatibility. The launcher does not set those variables; the
-fallback serves older setups that still do. Env values remain visible under the same OS account and
-in `/proc` on Linux; no password is read from the token file, and neither credential is logged.
+`LoginRequest.session_token` (`client/dll/settings_parser.cpp`, `client/dll/network.cpp`). The server
+resolves the token hash against unexpired sessions and leaves it valid
+(`server/internal/session/session.go`). In 0.4 the Windows file used the game directory's default
+ACL. The 0.5 Windows path adds an owner-only ACL (`launcher/windows/src/win_acl.cpp`) and the Linux
+path uses mode 0600 (`launcher/linux/src/linux_token.cpp`); neither was verified on a host. The
+shipped DLL keeps its in-memory token and the launcher keeps the same token in its keychain, so both
+0.4 flows keep working. When no token file exists, the DLL falls back to `SAPIE_SESSION_TOKEN`, then
+to `SAPIE_USERNAME`/`SAPIE_PASSWORD` for compatibility. The launcher does not set those variables;
+the fallback serves older setups that still do. Env values remain visible under the same OS account
+and in `/proc` on Linux; no password is read from the token file, and neither credential is logged.
 
 ## Webview boundary
 
-`client/src-tauri/tauri.conf.json` bundles the UI from `../ui/dist` and sets a strict CSP with
-`default-src 'self'`, no `object-src`, no `frame-src`, no `base-uri` and no `form-action`. The asset
-protocol is disabled. The `devUrl` of `http://127.0.0.1:1420` is for development only. The updater
-has no endpoints. The `main` capability grants only `core:event:allow-listen` and
-`core:event:allow-unlisten` so the UI can receive the M15 `sapie-progress` events
-(`client/src-tauri/capabilities/default.json`, `client/src-tauri/ui/src/api.ts`). It declares no other
-native permission. There is no remote URL in the production bundle.
+The 0.5 launcher has no webview, HTML or JS. It is a Qt 6 Quick app rendered by the Qt scene graph;
+the only browser surface is the LAN web UI. The 0.4 Tauri shell bundled its React UI from
+`../ui/dist` with a strict CSP, no remote URLs and a capability limited to progress events
+(`client/src-tauri/tauri.conf.json`). That boundary belongs to the 0.4 artifact. The 0.5 launcher
+sources declare no WebView2 or WebKitGTK dependency; a clean-machine check is still NOT VERIFIED.
 
 The launcher is dark only. `design/DESIGN.md` records a user decision with no theme toggle and no
 system-theme following. Do not claim a light theme or a second contrast pass.
@@ -191,8 +190,9 @@ Operator guidance:
   MW2 run has been performed. P2P, NAT traversal and the relay path are therefore unverified in
   game. Direct UDP is best effort and the relay has no dedicated rate limit. The two-client harness
   had a teardown-order race; it now waits for guest completion and five consecutive runs passed.
-- The native Tauri window, real IPC and real keychain access were not exercised headless. Webview
-  navigation and keyboard-only paths were not exercised either.
+- No native launcher window, real IPC or real keychain access was exercised headless in 0.5. The Qt
+  tests use offscreen rendering and a fake bridge. Keyboard-only and screen-reader paths were not
+  exercised.
 - HTTP rotation is opt-in. The shipped 0.4 web UI and launcher sign in with username and password
   only, so their tokens remain replayable until expiry or revocation.
 - Lobby membership rows are not rewritten when a block is added. Delivery and join checks filter
@@ -203,7 +203,7 @@ Operator guidance:
 ## Dependency audits
 
 CI runs all three audits in the `dependency-audits` job of `.github/workflows/ci.yml`. Dependabot
-opens weekly updates for the Go module, npm in both UIs, Cargo and GitHub Actions
+opens weekly updates for the Go module, the web UI npm tree, Cargo and GitHub Actions
 (`.github/dependabot.yml`). The same job runs `tools/scan-secrets.py` and
 `tools/check-dependency-policy.py`. The accepted-advisory list and the release
 evidence rules are in `docs/DEPENDENCY_POLICY.md`.
