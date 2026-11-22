@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 6 ]]; then
-  echo "usage: $0 <exe> <resources-dir> <hicolor-dir> <output-dir> <arch> <version>" >&2
+if [[ $# -ne 7 ]]; then
+  echo "usage: $0 <exe> <repo-root> <resources-dir> <hicolor-dir> <output-dir> <arch> <version>" >&2
   exit 2
 fi
 
 exe="$1"
-resources_dir="$2"
-hicolor_dir="$3"
-output_dir="$4"
-arch="$5"
-version="$6"
+repo_root="$2"
+resources_dir="$3"
+hicolor_dir="$4"
+output_dir="$5"
+arch="$6"
+version="$7"
 
 linuxdeploy="${LINUXDEPLOY:-$(command -v linuxdeploy || true)}"
 appimagetool="${APPIMAGETOOL:-$(command -v appimagetool || true)}"
@@ -49,15 +50,34 @@ if [[ -z "${qmake_bin}" ]]; then
   echo "error: qmake6 is required by the linuxdeploy Qt plugin" >&2
   exit 1
 fi
+for qml_dir in "${repo_root}/launcher/app" "${repo_root}/launcher/ui"; do
+  [[ -d "${qml_dir}" ]] || { echo "error: QML source directory not found: ${qml_dir}" >&2; exit 1; }
+done
+qt_plugin_dir="$("${qmake_bin}" -query QT_INSTALL_PLUGINS)"
+wayland_plugins="$(find "${qt_plugin_dir}/platforms" -maxdepth 1 -type f -name 'libqwayland*.so' \
+  -printf '%f\n' | LC_ALL=C sort | paste -sd ';' -)"
+[[ -n "${wayland_plugins}" ]] || { echo "error: no Wayland platform plugin found in ${qt_plugin_dir}" >&2; exit 1; }
 
-QMAKE="${qmake_bin}" "${linuxdeploy}" \
+QMAKE="${qmake_bin}" \
+QML_SOURCES_PATHS="${repo_root}/launcher/app:${repo_root}/launcher/ui" \
+EXTRA_PLATFORM_PLUGINS="${wayland_plugins}" \
+"${linuxdeploy}" \
   --appdir "${app_dir}" \
   --executable "${app_dir}/usr/bin/sapie-launcher" \
   --desktop-file "${app_dir}/usr/share/applications/org.sapie.SAPIE.desktop" \
   --icon-file "${hicolor_dir}/256x256/apps/org.sapie.SAPIE.png" \
   --plugin qt
 
+[[ -n "$(find "${app_dir}" -path '*/QtQuick/Window/qmldir' -print -quit)" ]] || {
+  echo "error: QtQuick.Window was not bundled into the AppImage" >&2
+  exit 1
+}
+[[ -n "$(find "${app_dir}/usr/plugins/platforms" -maxdepth 1 -type f -name 'libqwayland*.so' -print -quit)" ]] || {
+  echo "error: the Wayland platform plugin was not bundled into the AppImage" >&2
+  exit 1
+}
+
 mkdir -p "${output_dir}"
-appimage="${output_dir}/SAPIE-${version}-linux-${arch}.AppImage"
+appimage="${output_dir}/sapie-launcher-${version}-linux-${arch}.AppImage"
 "${appimagetool}" "${app_dir}" "${appimage}"
 echo "wrote ${appimage}"

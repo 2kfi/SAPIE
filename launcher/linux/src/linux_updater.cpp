@@ -68,7 +68,7 @@ bool parseUpdateManifest(const QByteArray& body, const QString& channel,
     }
 
     static const QRegularExpression namePattern(
-        QStringLiteral("^SAPIE-.+-linux-(x64|arm64)\\.(AppImage|flatpak)$"));
+        QStringLiteral("^sapie-(?:launcher|server)-.+-linux-(x64|arm64)\\.(AppImage|flatpak)$"));
     const QJsonArray artifacts = object.value(QStringLiteral("artifacts")).toArray();
     if (artifacts.isEmpty()) {
         return reject(error, QStringLiteral("The update manifest has no artifacts.")), false;

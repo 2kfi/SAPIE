@@ -187,9 +187,10 @@ these artifact directories from the packaging jobs:
 - `server-windows-amd64`, `server-windows-arm64`, `server-linux-amd64`,
   `server-linux-arm64`: plain files or same-named artifact directories.
 
-It writes one archive per OS and arch, a `container/` bundle with the Dockerfile,
-compose file, all four server binaries and `web/dist`, six SPDX SBOMs in
-`SBOM-<tag>-<family>.spdx.json`, `THIRD_PARTY_NOTICES.md`, `SHA256SUMS`,
+It writes one `sapie-server-<tag>-<os>-<arch>.<ext>` archive per OS and arch, a
+`sapie-server-<tag>-container.tar.gz` with the Dockerfile, compose file, all four
+server binaries and `web/dist`, six SPDX SBOMs in `SBOM-<tag>-<family>.spdx.json`,
+`THIRD_PARTY_NOTICES.md`, `SHA256SUMS`,
 `update-signing-public.pem`, and signed `update-stable.json` and
 `update-beta.json` with `.sig` files. The manifests pin the exact tag, version,
 per-artifact SHA-256, checksum-file SHA-256 and optional previous version. Verify

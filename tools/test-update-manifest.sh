@@ -9,7 +9,7 @@ trap 'rm -rf "$tmp"' EXIT
 openssl genpkey -algorithm ED25519 -out "$tmp/private.pem" 2>/dev/null
 openssl pkey -in "$tmp/private.pem" -pubout -out "$tmp/public.pem" 2>/dev/null
 mkdir -p "$tmp/artifacts"
-printf 'archive' > "$tmp/artifacts/SAPIE-0.5.0-linux-x64.tar.gz"
+printf 'archive' > "$tmp/artifacts/sapie-launcher-0.5.0-linux-x64.tar.gz"
 printf 'checksums' > "$tmp/SHA256SUMS"
 
 python3 "$script_dir/update-manifest.py" generate \

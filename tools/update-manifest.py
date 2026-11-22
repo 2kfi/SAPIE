@@ -87,7 +87,9 @@ def generate(args):
         files = []
         for path in sorted(artifacts.iterdir()):
             name = path.name
-            if path.is_file() and re.fullmatch(rf"SAPIE-{re.escape(args.tag)}-.+", name):
+            if path.is_file() and re.fullmatch(
+                rf"(?:sapie-launcher|sapie-server)-{re.escape(args.tag)}-.+", name
+            ):
                 files.append({
                     "name": name,
                     "os": "windows" if "-windows-" in name else "linux",
@@ -97,7 +99,7 @@ def generate(args):
                     "url": f"{RELEASE_BASE}/{args.tag}/{name}",
                 })
         if not files:
-            die(f"no SAPIE-{args.tag}-* artifacts in {artifacts}")
+            die(f"no sapie-launcher-{args.tag}-* or sapie-server-{args.tag}-* artifacts in {artifacts}")
 
         payload = {
             "schema": SCHEMA,

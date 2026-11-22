@@ -23,8 +23,8 @@ account password on disk.
 A shipped 0.5 artifact needs Qt 6.8 with `windeployqt`, MSVC, `makensis`, WiX (`heat`, `candle`,
 `light`) and an Authenticode thumbprint in `SAPIE_SIGNING_THUMBPRINT`. The orchestrator is
 [build-package.ps1](../launcher/windows/packaging/build-package.ps1). It emits
-`SAPIE-<version>-windows-x64-setup.exe`, `SAPIE-<version>-windows-x64.msi`, the portable zip and
-`SHA256SUMS.txt`. `-UnsignedDryRun` is for local checks only; its artifacts are not shippable.
+`sapie-launcher-<version>-windows-x64-setup.exe`, `sapie-launcher-<version>-windows-x64.msi`, the
+portable zip and `SHA256SUMS.txt`. `-UnsignedDryRun` is for local checks only; its artifacts are not shippable.
 
 1. Sign out in 0.4 so the old session is revoked server side. Copy the state file and each game
    folder before changing the install.

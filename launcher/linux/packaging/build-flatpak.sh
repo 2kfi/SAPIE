@@ -28,6 +28,6 @@ fi
 
 mkdir -p "${output_dir}"
 flatpak-builder --force-clean --user --install "${output_dir}/build" "${manifest}"
-bundle="${output_dir}/SAPIE-${version}-linux-${arch}.flatpak"
+bundle="${output_dir}/sapie-launcher-${version}-linux-${arch}.flatpak"
 flatpak build-bundle "${flatpak_repo}" "${bundle}" org.sapie.SAPIE stable
 echo "wrote ${bundle}"

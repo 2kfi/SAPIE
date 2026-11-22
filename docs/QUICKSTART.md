@@ -13,12 +13,12 @@ are UNVERIFIED.
 
 ## Download
 
-Get the newest release archive from the
-[SAPIE releases page](https://github.com/2kfi/SAPIE/releases). The `0.4` archive is published. The
-0.5 work in this tree is code-complete but unreleased; see [Upgrade](UPGRADE.md) for the documented
-0.4 to 0.5 path.
+Get a release asset from the
+[SAPIE releases page](https://github.com/2kfi/SAPIE/releases). Standalone launcher installers are
+named `sapie-launcher-*`; the full server bundles and container are named `sapie-server-*`. The `0.4`
+archive and tag `0.5` are published. See [Upgrade](UPGRADE.md) for the documented 0.4 to 0.5 path.
 
-Unpack the archive for your operating system. It contains the launcher `sapie-launcher`
+Unpack the server bundle for your operating system. It contains the launcher `sapie-launcher`
 (`sapie-launcher.exe` on Windows), the server `sapie-server` (`sapie-server.exe` on Windows),
 `steam_api/<target>-<era>/` libraries, `web/dist/`, and this file at the archive root. Older `0.1`
 and `0.2` assets stay on their tags.

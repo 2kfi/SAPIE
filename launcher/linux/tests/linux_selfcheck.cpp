@@ -27,10 +27,10 @@ int check(bool condition, const char* message)
 QByteArray manifestBody(const QString& channel, const QString& hash)
 {
     return ("{\"schema\":\"sapie-update/v1\",\"channel\":\"" + channel
-            + "\",\"version\":\"0.5.1\",\"artifacts\":[{\"name\":\"SAPIE-0.5.1-linux-x64.AppImage\","
+            + "\",\"version\":\"0.5.1\",\"artifacts\":[{\"name\":\"sapie-launcher-0.5.1-linux-x64.AppImage\","
               "\"os\":\"linux\",\"arch\":\"x64\",\"sha256\":\""
             + hash
-            + "\",\"size\":1234,\"url\":\"https://example.invalid/SAPIE-0.5.1-linux-x64.AppImage\"}]}")
+            + "\",\"size\":1234,\"url\":\"https://example.invalid/sapie-launcher-0.5.1-linux-x64.AppImage\"}]}")
                .toUtf8();
 }
 

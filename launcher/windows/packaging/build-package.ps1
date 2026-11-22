@@ -32,9 +32,9 @@ if (-not $thumbprint) {
   if ($LASTEXITCODE -ne 0) { throw 'Signing SAPIE.exe failed.' }
 }
 
-$setup = Join-Path $OutputDir "SAPIE-$Version-windows-x64-setup.exe"
-$msi = Join-Path $OutputDir "SAPIE-$Version-windows-x64.msi"
-$zip = Join-Path $OutputDir "SAPIE-$Version-windows-x64-portable.zip"
+$setup = Join-Path $OutputDir "sapie-launcher-$Version-windows-x64-setup.exe"
+$msi = Join-Path $OutputDir "sapie-launcher-$Version-windows-x64.msi"
+$zip = Join-Path $OutputDir "sapie-launcher-$Version-windows-x64-portable.zip"
 
 & (Join-Path $packageRoot 'packaging/build-nsis.ps1') -Version $Version -Stage $stage -Icons $icons -Out $setup
 if ($LASTEXITCODE -ne 0) { throw 'NSIS build failed.' }
@@ -49,7 +49,7 @@ if ($thumbprint) {
   }
 }
 
-Get-ChildItem -Path $OutputDir -File | Where-Object { $_.Name -like "SAPIE-$Version-*" } |
+Get-ChildItem -Path $OutputDir -File | Where-Object { $_.Name -like "sapie-launcher-$Version-*" } |
   ForEach-Object { (Get-FileHash -Algorithm SHA256 $_.FullName).Hash + '  ' + $_.Name } |
   Set-Content -Path (Join-Path $OutputDir 'SHA256SUMS.txt')
 

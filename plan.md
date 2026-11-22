@@ -1452,10 +1452,10 @@ two palettes or two font sets.
 
 Artifacts:
 
-- `SAPIE-0.5.0-windows-x64-setup.exe` (NSIS, per-user, no admin).
-- `SAPIE-0.5.0-windows-x64.msi` (per-machine, enterprise).
-- `SAPIE-0.5.0-windows-x64-portable.zip`.
-- `SAPIE-0.5.0-windows-x64.msix` only if 13.5.2 lands.
+- `sapie-launcher-0.5.0-windows-x64-setup.exe` (NSIS, per-user, no admin).
+- `sapie-launcher-0.5.0-windows-x64.msi` (per-machine, enterprise).
+- `sapie-launcher-0.5.0-windows-x64-portable.zip`.
+- `sapie-launcher-0.5.0-windows-x64.msix` only if 13.5.2 lands.
 
 Rules:
 
@@ -1481,11 +1481,11 @@ Rules:
 
 Artifacts:
 
-- `SAPIE-0.5.0-linux-x64.AppImage`.
-- `SAPIE-0.5.0-linux-amd64.deb`.
-- `SAPIE-0.5.0-linux-x64.flatpak` and a Flathub manifest.
-- `SAPIE-0.5.0-linux-arm64.AppImage` and deb if the runner holds.
-- `SAPIE-0.5.0-linux-x64.rpm` only if a maintainer signs up for it.
+- `sapie-launcher-0.5.0-linux-x64.AppImage`.
+- `sapie-launcher-0.5.0-linux-amd64.deb`.
+- `sapie-launcher-0.5.0-linux-x64.flatpak` and a Flathub manifest.
+- `sapie-launcher-0.5.0-linux-arm64.AppImage` and deb if the runner holds.
+- `sapie-launcher-0.5.0-linux-x64.rpm` only if a maintainer signs up for it.
 
 Rules:
 
@@ -1526,9 +1526,9 @@ Rules:
 
 #### 13.6.5 Artifact naming
 
-`SAPIE-<version>-<os>-<arch>-<kind>.<ext>`, for example
-`SAPIE-0.5.0-windows-x64-setup.exe` and `SAPIE-0.5.0-linux-x64.AppImage`. No spaces, no dates in the
-name, no `latest` in a file name.
+Launcher installers use `sapie-launcher-<version>-<os>-<arch>-<kind>.<ext>`. Server bundles use
+`sapie-server-<tag>-<os>-<arch>.<ext>` and the container uses
+`sapie-server-<tag>-container.tar.gz`. No spaces, no dates in the name, no `latest` in a file name.
 
 ### 13.7 M stages and phases
 

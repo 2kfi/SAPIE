@@ -216,9 +216,9 @@ jobs:
         with:
           name: installer-windows-qt
           path: |
-            out/windows-package/SAPIE-*.exe
-            out/windows-package/SAPIE-*.msi
-            out/windows-package/SAPIE-*.zip
+            out/windows-package/sapie-launcher-*.exe
+            out/windows-package/sapie-launcher-*.msi
+            out/windows-package/sapie-launcher-*.zip
             out/windows-package/SHA256SUMS.txt
             out/windows-package/SBOM-*.json
             out/windows-package/update-*.json
@@ -309,7 +309,7 @@ jobs:
         run: |
           set -euo pipefail
           out="out/linux-package-${{ matrix.arch }}"
-          (cd "$out" && find . -type f -name 'SAPIE-*' -printf '%P\n' | LC_ALL=C sort |
+          (cd "$out" && find . -type f -name 'sapie-launcher-*' -printf '%P\n' | LC_ALL=C sort |
             while IFS= read -r file; do sha256sum "$file"; done > SHA256SUMS.txt)
           python3 tools/gen-sbom.py --tag "$VERSION" --output-dir "$out" --repo "$PWD"
       - uses: actions/upload-artifact@v7

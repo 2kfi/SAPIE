@@ -19,7 +19,7 @@ scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "${output_dir}"
 
 if command -v linuxdeploy >/dev/null 2>&1 && command -v appimagetool >/dev/null 2>&1; then
-  "${scripts}/build-appimage.sh" "${exe}" "${resources_dir}" "${hicolor_dir}" \
+  "${scripts}/build-appimage.sh" "${exe}" "${repo_root}" "${resources_dir}" "${hicolor_dir}" \
     "${output_dir}/appimage" "${arch}" "${version}"
 else
   echo "AppImage NOT VERIFIED: linuxdeploy or appimagetool is not installed"

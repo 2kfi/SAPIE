@@ -287,8 +287,9 @@ inventory and the release definition. This section is the summary, not the sourc
   AppStream, desktop entry, `x-scheme-handler/sapie`, `0600` token file, LD_PRELOAD.
 - **Licensing:** Qt is LGPLv3 with dynamic linking. Ship the libraries, notices and the relink
   instructions. No static Qt and no non-LGPL Qt module without review.
-- **Bundling:** `SAPIE-<version>-<os>-<arch>-<kind>.<ext>`, signed update manifests, stable and beta
-  channels, one `SHA256SUMS`, one SBOM per family.
+- **Bundling:** launcher `sapie-launcher-<version>-<os>-<arch>-<kind>.<ext>`, server bundle and
+  container `sapie-server-<tag>-<os>-<arch>.<ext>` / `sapie-server-<tag>-container.tar.gz`, signed
+  update manifests, stable and beta channels, one `SHA256SUMS`, one SBOM per family.
 - **Security debts from 0.4 are must-fix,** not features: token rotation and revoke, persistent
   limiters, block list enforced in lobby routing, Windows token ACL, TLS guidance.
 - **Gates.** G1 identity, G2 platform, G3 core, G4 release. A gate needs recorded evidence and the

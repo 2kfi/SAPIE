@@ -118,9 +118,9 @@ PY
   fi
 }
 
-bundle "$output/SAPIE-$tag-windows-x64.zip" "$artifacts/launcher-windows-x64" "$server_win" yes
-bundle "$output/SAPIE-$tag-linux-x64.tar.gz" "$artifacts/launcher-linux-x64" "$server_x64" no
-bundle "$output/SAPIE-$tag-linux-arm64.tar.gz" "$artifacts/launcher-linux-arm64" "$server_arm64" no
+bundle "$output/sapie-server-$tag-windows-x64.zip" "$artifacts/launcher-windows-x64" "$server_win" yes
+bundle "$output/sapie-server-$tag-linux-x64.tar.gz" "$artifacts/launcher-linux-x64" "$server_x64" no
+bundle "$output/sapie-server-$tag-linux-arm64.tar.gz" "$artifacts/launcher-linux-arm64" "$server_arm64" no
 
 python3 "$SCRIPT_DIR/gen-sbom.py" --tag "$tag" --output-dir "$output" --repo "$REPO_ROOT"
 container="$output/container"
@@ -133,7 +133,7 @@ cp "$server_arm64" "$container/server/sapie-server-linux-arm64"
 cp "$server_win" "$container/server/sapie-server-windows-amd64.exe"
 cp "$server_win_arm" "$container/server/sapie-server-windows-arm64.exe"
 cp -R "$web_dist/." "$container/web/dist/"
-tar -czf "$output/container.tar.gz" -C "$output" container
+tar -czf "$output/sapie-server-$tag-container.tar.gz" -C "$output" container
 rm -rf "$container"
 
 cp "$SCRIPT_DIR/update-signing-public.pem" "$output/update-signing-public.pem"

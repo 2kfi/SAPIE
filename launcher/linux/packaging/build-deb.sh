@@ -108,6 +108,6 @@ fi
 EOF
 chmod 755 "${stage}/DEBIAN/postinst"
 
-deb="${output_dir}/SAPIE-${version}-linux-${deb_arch}.deb"
+deb="${output_dir}/sapie-launcher-${version}-linux-${deb_arch}.deb"
 dpkg-deb --build --root-owner-group "${stage}" "${deb}"
 echo "wrote ${deb}"
