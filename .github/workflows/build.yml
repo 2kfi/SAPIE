@@ -125,13 +125,12 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
       - name: Install Qt 6.8 MSVC
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@v4.5.0
         with:
           version: '6.8.3'
           host: windows
           target: desktop
-          arch: win64_msvc2019_64
-          modules: qtquickcontrols2 qtsvg
+          arch: win64_msvc2022_64
       - name: Install packaging tools
         run: choco install nsis wixtoolset imagemagick --no-progress -y
       - name: Stamp version from tag
@@ -158,14 +157,15 @@ jobs:
       - name: Resolve update public key
         run: |
           set -euo pipefail
-          : "${SAPIE_UPDATE_PUBLIC_KEY:?SAPIE_UPDATE_PUBLIC_KEY secret is required}"
           mkdir -p out/windows-package
-          if [[ "$SAPIE_UPDATE_PUBLIC_KEY" == *"BEGIN PUBLIC KEY"* ]]; then
+          if [[ -z "${SAPIE_UPDATE_PUBLIC_KEY:-}" ]]; then
+            cp tools/update-signing-public.pem out/windows-package/public.pem
+          elif [[ "$SAPIE_UPDATE_PUBLIC_KEY" == *"BEGIN PUBLIC KEY"* ]]; then
             printf '%s\n' "$SAPIE_UPDATE_PUBLIC_KEY" > out/windows-package/public.pem
-            echo "PUBLIC_KEY_PATH=$PWD/out/windows-package/public.pem" >> "$GITHUB_ENV"
           else
-            echo "PUBLIC_KEY_PATH=$SAPIE_UPDATE_PUBLIC_KEY" >> "$GITHUB_ENV"
+            cp "$SAPIE_UPDATE_PUBLIC_KEY" out/windows-package/public.pem
           fi
+          echo "PUBLIC_KEY_PATH=$PWD/out/windows-package/public.pem" >> "$GITHUB_ENV"
       - name: Package Windows launcher
         run: |
           set -euo pipefail
@@ -205,20 +205,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-24.04, arch: x64, qt_arch: gcc_64 }
-          - { os: ubuntu-24.04-arm, arch: arm64, qt_arch: gcc_arm64 }
+          - { os: ubuntu-24.04, arch: x64, qt_arch: linux_gcc_64 }
+          - { os: ubuntu-24.04-arm, arch: arm64, qt_arch: linux_gcc_arm64 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Qt 6.8
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@v4.5.0
         with:
           version: '6.8.3'
           host: linux
           target: desktop
           arch: ${{ matrix.qt_arch }}
-          modules: qtquickcontrols2 qtsvg
       - name: Install packaging tools
         run: |
           sudo apt-get update

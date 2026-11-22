@@ -1548,6 +1548,11 @@ Stage map:
 | M28 | Web UI identity | G1 and G3 |
 | M29 | Bundling, updates and CI | G4 |
 | M30 | Migration, release candidate and tag | G4 |
+| M31 | Server-owned Steam-shaped lobby IDs | G2 and G3 |
+| M32 | Server-backed lobby discovery | G2 and G3 |
+| M33 | Endpoint rendezvous | G2 |
+| M34 | Simultaneous-open punching with relay fallback | G2 |
+| M35 | NAT documentation and verification | G2 and G4 |
 
 #### M22: Identity foundation
 
@@ -1908,6 +1913,57 @@ Stage map:
 - **Acceptance:** artifacts exist, checksums verify, container pulls, notes state what was and was
   not verified.
 
+#### M31: Server-owned Steam-shaped lobby IDs
+
+The server becomes the single source of the 64-bit lobby SteamID. Universe public, account type
+Chat, instance flags Lobby plus MMSLobby, account ID from a random or counter value. The DLL uses
+the exact ID from the server in both the game protocol and REST, and stops generating its own then
+syncing only the low 32 bits. Keep the low 32 bits equal to the account ID so existing
+`CSteamID.GetAccountID()` lookups keep working.
+- **Agent:** one worker. **Risk:** red. **Priority:** must. **Depends:** none.
+- **Acceptance:** two clients see the same 64-bit ID; `CSteamID(id).IsLobby()` is true; proto and
+  Go tests cover create, join and REST round-trip.
+
+#### M32: Server-backed lobby discovery
+
+Add a lobby list request and response to the protocol. Filters: appid, string and numeric metadata
+comparisons, member count, distance. The server searches its lobby store and returns matches.
+Persist lobby key and value metadata on the server so `SetLobbyData` and `GetLobbyData` survive a
+member leaving and can be filtered on. Keep the friend and lobby join gates unchanged.
+- **Agent:** one worker. **Risk:** red. **Priority:** must. **Depends:** M31.
+- **Acceptance:** create three lobbies with different metadata, filter by appid and one key, receive
+  only matches; the empty state is honest; blocked peers cannot discover or join.
+
+#### M33: Endpoint rendezvous
+
+Each client reports its observed IPv4 and IPv6 `IP:port` to the server on login and on lobby join.
+The server stores endpoints per authenticated session and includes both families in signaling
+frames. The client never supplies another peer ID; the server stamps the authenticated connection.
+- **Agent:** one worker. **Risk:** red. **Priority:** must. **Depends:** none.
+- **Acceptance:** two clients behind different NATs see each other's endpoints in the signaling
+  frame; IPv6 is present where available; a forged endpoint in a client frame is ignored.
+
+#### M34: Simultaneous-open punching with relay fallback
+
+On lobby join both peers send short UDP probes to each other's reported endpoints at the same time
+for a bounded window. Whichever path works becomes the direct route. Replace the current
+five-second-from-connection relay timer with a relay promotion that fires when direct probes fail
+or time out. The authenticated server relay remains the fallback for symmetric NAT and carrier-grade
+NAT, where direct punching is not reliable. Add a dedicated relay rate limit and keep the rule that
+a packet is never sent twice.
+- **Agent:** one worker. **Risk:** red. **Priority:** must. **Depends:** M31, M33.
+- **Acceptance:** direct path on full-cone and restricted-cone NAT; relay path on symmetric NAT and
+  CGNAT; no duplicate packets; no direct path claimed on CGNAT. Proven by two real peers at G2, not
+  by a headless test.
+
+#### M35: NAT documentation and verification
+
+Remove the no-punching caveat from `PROTOCOL.md`, document the CGNAT limit and the relay guarantee,
+extend the user test sheet with the NAT steps, and record evidence in the G2 verification file.
+- **Agent:** one worker. **Risk:** green. **Priority:** must. **Depends:** M32, M34.
+- **Acceptance:** docs match behavior; no invented claims; G2 evidence names the exact networks and
+  builds used.
+
 ### 13.8 G gates
 
 G stages are acceptance gates, not merge stages. A gate is signed off by the user or the chief with
@@ -1928,6 +1984,10 @@ recorded evidence. A failed gate blocks the next stage.
   Ubuntu 24.04, Fedora and Arch. File picker, tray, protocol handler, token storage and update check
   work. Per-user Windows install needs no admin. Linux install needs no root. Neither OS has
   WebView2 or WebKitGTK installed during the test.
+  P2P path selection is also verified here. Two real peers behind separate NATs join one lobby and
+  reach each other. A full-cone or restricted-cone NAT must reach a direct UDP path. A symmetric NAT
+  or carrier-grade NAT must fall back to the server relay when punching fails. IPv6 must work where
+  the network provides it. Direct is never assumed on CGNAT; the relay is the guaranteed path.
 - **Evidence:** `docs/verification/0.5-platform-gate.md` with VM logs and screenshots.
 
 #### G3: Core gate
@@ -2126,7 +2186,7 @@ M26-c can start after M23. M26-d waits on M27-a to M27-c.
 ### 13.13 Out of scope for 0.5
 
 Store, purchasing, downloads, DRM, chat, voice, streaming, cloud saves, workshop, inventory, overlay,
-controller, macOS, Windows ARM64, 32-bit ARM, hole punching, app ownership enforcement, importing a
+controller, macOS, Windows ARM64, 32-bit ARM, app ownership enforcement, importing a
 Steam library, fully native WinUI 3 or GTK4 shells, user-uploaded avatars, and server-side game
 metadata beyond what the API already returns. These are 0.6 candidates and are listed here so a
 phase cannot quietly grow into them.

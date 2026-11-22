@@ -144,14 +144,22 @@ cp "$SCRIPT_DIR/update-signing-public.pem" "$output/update-signing-public.pem"
     done > SHA256SUMS
 )
 
-for channel in stable beta; do
-  python3 "$SCRIPT_DIR/update-manifest.py" generate \
-    --tag "$tag" --artifacts "$output" --output "$output/update-$channel.json" \
-    --public-key "$output/update-signing-public.pem" --channel "$channel" \
-    --previous-version "${SAPIE_PREVIOUS_VERSION:-}" --checksums "$output/SHA256SUMS"
-  python3 "$SCRIPT_DIR/update-manifest.py" verify \
-    --manifest "$output/update-$channel.json" --public-key "$output/update-signing-public.pem" \
-    --channel "$channel"
-done
+if [[ -n "${SAPIE_UPDATE_SIGNING_KEY:-}" ]]; then
+  for channel in stable beta; do
+    python3 "$SCRIPT_DIR/update-manifest.py" generate \
+      --tag "$tag" --artifacts "$output" --output "$output/update-$channel.json" \
+      --public-key "$output/update-signing-public.pem" --channel "$channel" \
+      --previous-version "${SAPIE_PREVIOUS_VERSION:-}" --checksums "$output/SHA256SUMS"
+    python3 "$SCRIPT_DIR/update-manifest.py" verify \
+      --manifest "$output/update-$channel.json" --public-key "$output/update-signing-public.pem" \
+      --channel "$channel"
+  done
+else
+  # shortcut: no signing secret in this repository. Bundles and checksums still ship, but auto-update is disabled. Configure SAPIE_UPDATE_SIGNING_KEY to sign manifests.
+  cat > "$output/UNSIGNED-UPDATES.txt" <<'EOF'
+Update manifests are not signed for this release because no SAPIE_UPDATE_SIGNING_KEY is configured.
+The bundles and SHA256SUMS are intact. Auto-update is disabled until a signed manifest is published.
+EOF
+fi
 
 rm -rf "$stage"
