@@ -1,3 +1,4 @@
-# Tokens singleton for tooling. CMake QML module registration belongs to M23-f.
+# Tooling-only mirror of app/SAPIE.UI.qmldir (the shipped module in app.qrc).
+# Keep these two declarations in sync with the shipped qmldir.
 singleton Tokens 1.0 Tokens.qml
 singleton FakeCoreBridge 1.0 screens/FakeCoreBridge.qml

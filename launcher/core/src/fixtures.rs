@@ -49,7 +49,8 @@ pub fn steam_api_bytes() -> Vec<u8> {
 }
 
 pub fn steam_api_bytes_with(user_version: u16, client_version: u16) -> Vec<u8> {
-    let mut bytes = format!("SteamUser{user_version:03}\0SteamClient{client_version:03}\0").into_bytes();
+    let mut bytes =
+        format!("SteamUser{user_version:03}\0SteamClient{client_version:03}\0").into_bytes();
     bytes.extend_from_slice(&[0u8; 0x20]);
     bytes
 }
@@ -63,10 +64,7 @@ mod tests {
     fn game_fixture_builds_a_real_x64_modern_layout() {
         let fixture = GameFixture::new("x64-modern");
         let exe = fixture.write("game.exe", &pe_bytes(0x8664));
-        let library = fixture.write(
-            "steam_api64.dll.sapie-original.bak",
-            &steam_api_bytes(),
-        );
+        let library = fixture.write("steam_api64.dll.sapie-original.bak", &steam_api_bytes());
 
         assert_eq!(detect_arch(&fs::read(exe).unwrap()), "x64");
         let interfaces = scan_interfaces(&fs::read(library).unwrap());

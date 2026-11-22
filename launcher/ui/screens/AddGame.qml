@@ -15,6 +15,17 @@ Item {
     property bool unpackStub: false
     readonly property var detection: bridge.detection || ({})
 
+    // The native picker fills bridge.detection.path, then the bridge enters "detecting".
+    Connections {
+        target: root.bridge
+        function onAddStateChanged() {
+            const path = root.detection.path || ""
+            if (root.bridge.addState === "detecting" && path) {
+                root.bridge.detectGame(path)
+            }
+        }
+    }
+
     signal navigateTo(string name)
     signal showMessage(string message)
 
@@ -59,10 +70,7 @@ Item {
                     text: "Choose executable"
                     height: 44
                     width: 164
-                    onClicked: {
-                        root.bridge.chooseExecutable()
-                        root.bridge.detectGame(root.detection.path || "")
-                    }
+                    onClicked: root.bridge.chooseExecutable()
                 }
             }
 

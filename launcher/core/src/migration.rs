@@ -1,6 +1,6 @@
 use crate::error::{CommandError, ErrorKind, Result};
 use crate::platform::{FileSystem, Platform};
-use crate::state::{self, drop_secret_keys, LauncherState, STATE_FILE, SCHEMA_VERSION};
+use crate::state::{self, drop_secret_keys, LauncherState, SCHEMA_VERSION, STATE_FILE};
 use serde_json::Value;
 use std::path::Path;
 
@@ -21,7 +21,12 @@ fn migrate_at(path: &Path, platform: &dyn Platform) -> Result<LauncherState> {
     }
     let raw = files.read(path)?;
     let mut value: Value = serde_json::from_slice(&raw).map_err(|error| {
-        fail(path, &raw, files, &format!("Could not read the 0.4 state: {error}"))
+        fail(
+            path,
+            &raw,
+            files,
+            &format!("Could not read the 0.4 state: {error}"),
+        )
     })?;
 
     let version = value.get("schema_version").and_then(Value::as_u64);
@@ -109,7 +114,9 @@ fn fail(path: &Path, raw: &[u8], files: &dyn FileSystem, reason: &str) -> Comman
         ),
         Err(error) => CommandError::new(
             ErrorKind::Io,
-            format!("Migration failed: {reason}. The original state could not be backed up: {error}"),
+            format!(
+                "Migration failed: {reason}. The original state could not be backed up: {error}"
+            ),
         ),
     }
 }
@@ -120,8 +127,13 @@ fn restore_token(state: &LauncherState, platform: &dyn Platform) -> Result<()> {
     }
     let files = platform.files();
     for record in state.games.values() {
-        let dir = Path::new(&record.exe_path).parent().unwrap_or_else(|| Path::new(""));
-        for candidate in [dir.join(SETTINGS_DIR).join(TOKEN_FILE), dir.join(TOKEN_FILE)] {
+        let dir = Path::new(&record.exe_path)
+            .parent()
+            .unwrap_or_else(|| Path::new(""));
+        for candidate in [
+            dir.join(SETTINGS_DIR).join(TOKEN_FILE),
+            dir.join(TOKEN_FILE),
+        ] {
             if !files.exists(&candidate) {
                 continue;
             }
@@ -132,12 +144,18 @@ fn restore_token(state: &LauncherState, platform: &dyn Platform) -> Result<()> {
                     format!("{}: invalid 0.4 token file: {error}", candidate.display()),
                 )
             })?;
-            let token = value.get("session_token").and_then(Value::as_str).ok_or_else(|| {
-                CommandError::new(
-                    ErrorKind::Io,
-                    format!("{}: no session_token in the 0.4 token file", candidate.display()),
-                )
-            })?;
+            let token = value
+                .get("session_token")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    CommandError::new(
+                        ErrorKind::Io,
+                        format!(
+                            "{}: no session_token in the 0.4 token file",
+                            candidate.display()
+                        ),
+                    )
+                })?;
             if token.is_empty() {
                 return Err(CommandError::new(
                     ErrorKind::Io,
@@ -222,7 +240,10 @@ mod tests {
 
     const TOKEN_PATH: &str = "/games/mw2/steam_settings/sapie_client.json";
     const GAME_FILES: &[(&str, &[u8])] = &[
-        ("/games/mw2/steam_api.dll.sapie-original.bak", b"ORIGINAL-DLL"),
+        (
+            "/games/mw2/steam_api.dll.sapie-original.bak",
+            b"ORIGINAL-DLL",
+        ),
         ("/games/mw2/sapie_server.txt", b"127.0.0.1:47584\n"),
         ("/games/mw2/steam_appid.txt", b"10190\n"),
     ];
@@ -327,14 +348,18 @@ mod tests {
             let result = migrate_at(&path, &fake);
             match case.expect {
                 Expect::Migrated => {
-                    assert_profile(&result.unwrap_or_else(|error| panic!("{}: {error}", case.name)));
+                    assert_profile(
+                        &result.unwrap_or_else(|error| panic!("{}: {error}", case.name)),
+                    );
                     let stored = fake.stored_file(&path).unwrap();
                     let stored: Value = serde_json::from_slice(&stored).unwrap();
                     assert_eq!(stored["schema_version"], SCHEMA_VERSION);
                     assert!(stored.get("token").is_none());
                     assert!(stored.get("password").is_none());
                     assert_eq!(
-                        fake.stored_file(&path.with_extension(MIGRATED_BACKUP)).unwrap().as_slice(),
+                        fake.stored_file(&path.with_extension(MIGRATED_BACKUP))
+                            .unwrap()
+                            .as_slice(),
                         case.state
                     );
                     let expected = if case.keychain.is_some() {
@@ -346,20 +371,30 @@ mod tests {
                 }
                 Expect::Failed => {
                     let error = result.unwrap_err();
-                    assert!(error.message.contains("Migration failed"), "{}", error.message);
+                    assert!(
+                        error.message.contains("Migration failed"),
+                        "{}",
+                        error.message
+                    );
                     assert!(error.message.contains(FAILED_BACKUP), "{}", error.message);
                     assert_eq!(fake.stored_file(&path).unwrap().as_slice(), case.state);
                     assert_eq!(
-                        fake.stored_file(&path.with_extension(FAILED_BACKUP)).unwrap().as_slice(),
+                        fake.stored_file(&path.with_extension(FAILED_BACKUP))
+                            .unwrap()
+                            .as_slice(),
                         case.state
                     );
                     assert_eq!(fake.keychain().get().unwrap(), None);
                 }
                 Expect::Unchanged => {
-                    assert_profile(&result.unwrap_or_else(|error| panic!("{}: {error}", case.name)));
+                    assert_profile(
+                        &result.unwrap_or_else(|error| panic!("{}: {error}", case.name)),
+                    );
                     assert_eq!(fake.stored_file(&path).unwrap().as_slice(), case.state);
                     assert_eq!(
-                        fake.stored_file(&path.with_extension(MIGRATED_BACKUP)).unwrap().as_slice(),
+                        fake.stored_file(&path.with_extension(MIGRATED_BACKUP))
+                            .unwrap()
+                            .as_slice(),
                         case.existing_backup.unwrap()
                     );
                     assert_eq!(fake.keychain().get().unwrap().as_deref(), case.keychain);
@@ -374,7 +409,10 @@ mod tests {
                 );
             }
             if let Some(bytes) = case.token_file {
-                assert_eq!(fake.stored_file(Path::new(TOKEN_PATH)).unwrap().as_slice(), bytes);
+                assert_eq!(
+                    fake.stored_file(Path::new(TOKEN_PATH)).unwrap().as_slice(),
+                    bytes
+                );
             }
         }
     }
@@ -389,7 +427,9 @@ mod tests {
         let result = migrate_at(&path, &fake);
 
         assert!(result.is_ok());
-        let backup = fake.stored_file(&path.with_extension(MIGRATED_BACKUP)).unwrap();
+        let backup = fake
+            .stored_file(&path.with_extension(MIGRATED_BACKUP))
+            .unwrap();
         assert!(!String::from_utf8_lossy(&backup).contains("plain"));
         let stored = fake.stored_file(&path).unwrap();
         assert!(!String::from_utf8_lossy(&stored).contains("plain"));

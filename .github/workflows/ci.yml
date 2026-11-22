@@ -93,54 +93,49 @@ jobs:
         run: cd server && go build -o ../out/server-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/sapie-server
 
   launcher:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: windows-latest, target: x86_64-pc-windows-msvc }
-          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - name: Native GUI dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libxrandr-dev libgl1-mesa-dev
-      - name: Native launcher build
-        run: cd client/src-tauri && cargo build --release --target ${{ matrix.target }}
-
-  rust-checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Native GUI dependencies
-        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libxrandr-dev libgl1-mesa-dev
       - name: Cargo check
-        run: cd client/src-tauri && cargo check
+        run: cd launcher && cargo check
       - name: Cargo test
-        run: cd client/src-tauri && cargo test
+        run: cd launcher && cargo test
       - name: Rust formatting
-        run: cd client/src-tauri && cargo fmt --check
+        run: cd launcher && cargo fmt --check
       - name: Cargo clippy
-        run: cd client/src-tauri && cargo clippy --all-targets -- -D warnings
+        run: cd launcher && cargo clippy --all-targets -- -D warnings
 
-  launcher-ui:
-    runs-on: ubuntu-latest
+  launcher-qt:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: jurplel/install-qt-action@v4
         with:
-          node-version: '20'
-      - name: Build launcher UI
-        run: cd client/src-tauri/ui && npm ci && npm run build
-      - name: Launcher UI tests
-        run: cd client/src-tauri/ui && npm test
+          version: '6.8.3'
+          host: linux
+          target: desktop
+          arch: gcc_64
+          modules: qtquickcontrols2 qtsvg
+      - name: Install Qt build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libdbus-1-dev librsvg2-dev \
+            libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libxrandr-dev \
+            libgl1-mesa-dev
+      - name: Configure and build Qt launcher
+        run: |
+          cmake -S launcher -B build/qt-ci -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+          cmake --build build/qt-ci --parallel
+      - name: Qt launcher tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build/qt-ci --output-on-failure
 
   web:
     runs-on: ubuntu-latest
@@ -186,11 +181,11 @@ jobs:
       - name: Go vulnerabilities
         run: cd server && govulncheck ./...
       - name: Cargo vulnerabilities
-        run: cd client/src-tauri && cargo audit
+        run: cd launcher && cargo audit
       - name: npm vulnerabilities
         run: |
           set -euo pipefail
-          for dir in web client/src-tauri/ui; do
+          for dir in web; do
             echo "== npm audit: $dir =="
             (
               cd "$dir"

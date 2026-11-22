@@ -251,7 +251,11 @@ impl FakeFileSystem {
 impl FileSystem for FakeFileSystem {
     fn read(&self, path: &Path) -> Result<Vec<u8>> {
         self.stored(path).ok_or_else(|| {
-            CommandError::path(ErrorKind::NotFound, path, "File not found in fake filesystem")
+            CommandError::path(
+                ErrorKind::NotFound,
+                path,
+                "File not found in fake filesystem",
+            )
         })
     }
 
