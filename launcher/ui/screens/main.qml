@@ -10,10 +10,11 @@ Window {
     minimumWidth: 860
     minimumHeight: 560
     color: UI.Tokens.bgApp
-    title: "SAPIE launcher, test bridge data"
+    title: "SAPIE launcher QML test harness, test data"
 
     LauncherApp {
         anchors.fill: parent
+        bridge: UI.FakeCoreBridge
         Component.onCompleted: {
             UI.FakeCoreBridge.connectionState = "signedIn"
             UI.FakeCoreBridge.firstRun = false

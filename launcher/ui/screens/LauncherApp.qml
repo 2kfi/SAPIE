@@ -5,7 +5,10 @@ import "../components" as C
 
 Item {
     id: app
-    property var bridge: UI.FakeCoreBridge
+    // SapieCore is injected by the shipped launcher; the fake is for QML harnesses only.
+    // qmllint disable unqualified
+    property var bridge: typeof SapieCore !== "undefined" ? SapieCore : UI.FakeCoreBridge
+    // qmllint enable unqualified
     property string currentScreen: "library"
     property bool reducedMotion: app.bridge.reducedMotion
 
