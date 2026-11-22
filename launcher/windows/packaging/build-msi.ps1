@@ -25,5 +25,6 @@ $template.Replace('$(var.Version)', $Version).Replace('$(var.IconFile)', $icon) 
 if ($LASTEXITCODE -ne 0) { throw 'WiX candle failed.' }
 
 $objects = Get-ChildItem -Path $work -Filter '*.wixobj' | ForEach-Object FullName
-& $light.Source -nologo -out $Out $objects
+$bindPath = "SourceDir=$Stage"
+& $light.Source -nologo -b $bindPath -out $Out $objects
 if ($LASTEXITCODE -ne 0) { throw 'WiX light failed.' }
