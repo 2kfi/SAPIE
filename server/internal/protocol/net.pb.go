@@ -585,20 +585,24 @@ func (x *Announce) GetAppid() uint32 {
 }
 
 type Lobby struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RoomId        uint64                 `protobuf:"varint,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
-	Owner         uint64                 `protobuf:"varint,2,opt,name=owner,proto3" json:"owner,omitempty"`
-	Values        map[string][]byte      `protobuf:"bytes,3,rep,name=values,proto3" json:"values,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Members       []*Lobby_Member        `protobuf:"bytes,4,rep,name=members,proto3" json:"members,omitempty"`
-	Gameserver    *Lobby_Gameserver      `protobuf:"bytes,5,opt,name=gameserver,proto3" json:"gameserver,omitempty"`
-	MemberLimit   uint32                 `protobuf:"varint,6,opt,name=member_limit,json=memberLimit,proto3" json:"member_limit,omitempty"`
-	Type          uint32                 `protobuf:"varint,7,opt,name=type,proto3" json:"type,omitempty"` //ELobbyType
-	Joinable      bool                   `protobuf:"varint,8,opt,name=joinable,proto3" json:"joinable,omitempty"`
-	Appid         uint32                 `protobuf:"varint,9,opt,name=appid,proto3" json:"appid,omitempty"`
-	Deleted       bool                   `protobuf:"varint,32,opt,name=deleted,proto3" json:"deleted,omitempty"`
-	TimeDeleted   uint64                 `protobuf:"varint,33,opt,name=time_deleted,json=timeDeleted,proto3" json:"time_deleted,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	RoomId      uint64                 `protobuf:"varint,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	Owner       uint64                 `protobuf:"varint,2,opt,name=owner,proto3" json:"owner,omitempty"`
+	Values      map[string][]byte      `protobuf:"bytes,3,rep,name=values,proto3" json:"values,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Members     []*Lobby_Member        `protobuf:"bytes,4,rep,name=members,proto3" json:"members,omitempty"`
+	Gameserver  *Lobby_Gameserver      `protobuf:"bytes,5,opt,name=gameserver,proto3" json:"gameserver,omitempty"`
+	MemberLimit uint32                 `protobuf:"varint,6,opt,name=member_limit,json=memberLimit,proto3" json:"member_limit,omitempty"`
+	Type        uint32                 `protobuf:"varint,7,opt,name=type,proto3" json:"type,omitempty"` //ELobbyType
+	Joinable    bool                   `protobuf:"varint,8,opt,name=joinable,proto3" json:"joinable,omitempty"`
+	Appid       uint32                 `protobuf:"varint,9,opt,name=appid,proto3" json:"appid,omitempty"`
+	Deleted     bool                   `protobuf:"varint,32,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	TimeDeleted uint64                 `protobuf:"varint,33,opt,name=time_deleted,json=timeDeleted,proto3" json:"time_deleted,omitempty"`
+	// Client-local correlation IDs. The server echoes assign_request_id on the
+	// assigned room_id and search_request_id on discovery snapshots.
+	SearchRequestId uint64 `protobuf:"varint,34,opt,name=search_request_id,json=searchRequestId,proto3" json:"search_request_id,omitempty"`
+	AssignRequestId uint64 `protobuf:"varint,35,opt,name=assign_request_id,json=assignRequestId,proto3" json:"assign_request_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Lobby) Reset() {
@@ -704,6 +708,20 @@ func (x *Lobby) GetDeleted() bool {
 func (x *Lobby) GetTimeDeleted() uint64 {
 	if x != nil {
 		return x.TimeDeleted
+	}
+	return 0
+}
+
+func (x *Lobby) GetSearchRequestId() uint64 {
+	if x != nil {
+		return x.SearchRequestId
+	}
+	return 0
+}
+
+func (x *Lobby) GetAssignRequestId() uint64 {
+	if x != nil {
+		return x.AssignRequestId
 	}
 	return 0
 }
@@ -2392,7 +2410,7 @@ const file_net_proto_rawDesc = "" +
 	"\x05appid\x18\x04 \x01(\rR\x05appid\"\x1b\n" +
 	"\x05Types\x12\b\n" +
 	"\x04PING\x10\x00\x12\b\n" +
-	"\x04PONG\x10\x01\"\x89\x05\n" +
+	"\x04PONG\x10\x01\"\xe1\x05\n" +
 	"\x05Lobby\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\x04R\x06roomId\x12\x14\n" +
 	"\x05owner\x18\x02 \x01(\x04R\x05owner\x12*\n" +
@@ -2406,7 +2424,9 @@ const file_net_proto_rawDesc = "" +
 	"\bjoinable\x18\b \x01(\bR\bjoinable\x12\x14\n" +
 	"\x05appid\x18\t \x01(\rR\x05appid\x12\x18\n" +
 	"\adeleted\x18  \x01(\bR\adeleted\x12!\n" +
-	"\ftime_deleted\x18! \x01(\x04R\vtimeDeleted\x1a9\n" +
+	"\ftime_deleted\x18! \x01(\x04R\vtimeDeleted\x12*\n" +
+	"\x11search_request_id\x18\" \x01(\x04R\x0fsearchRequestId\x12*\n" +
+	"\x11assign_request_id\x18# \x01(\x04R\x0fassignRequestId\x1a9\n" +
 	"\vValuesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\x1a\x86\x01\n" +

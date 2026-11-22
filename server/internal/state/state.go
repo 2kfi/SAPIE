@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"sync"
 	"time"
 
@@ -63,6 +64,7 @@ type Store struct {
 	mu                 sync.Mutex
 	nextID             uint64
 	nextLobbyAccountID uint32
+	lobbyRequests      map[[2]uint64]uint64 // (owner, client request ID) -> assigned lobby ID
 }
 
 func Open(path string) (*Store, error) {
@@ -81,6 +83,14 @@ func Open(path string) (*Store, error) {
 			db.Close()
 			return nil, err
 		}
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS lobby_metadata (
+		lobby_id INTEGER NOT NULL REFERENCES lobbies(lobby_id) ON DELETE CASCADE,
+		key TEXT NOT NULL,
+		value TEXT NOT NULL,
+		PRIMARY KEY (lobby_id, key))`); err != nil {
+		db.Close()
+		return nil, err
 	}
 	// Databases created before M3 lack the lobby member limit column.
 	var columns int
@@ -132,7 +142,8 @@ func Open(path string) (*Store, error) {
 			nextLobby = 1
 		}
 	}
-	return &Store{db: db, nextID: next, nextLobbyAccountID: nextLobby}, nil
+	return &Store{db: db, nextID: next, nextLobbyAccountID: nextLobby,
+		lobbyRequests: make(map[[2]uint64]uint64)}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -300,7 +311,39 @@ type Lobby struct {
 	Type        uint32   `json:"type"`
 	Joinable    bool     `json:"joinable"`
 	Members     []uint64 `json:"members"`
+
+	// Values and AssignRequestID are game-socket inputs, never API output.
+	Values          map[string]string `json:"-"`
+	AssignRequestID uint64            `json:"-"`
 }
+
+// LobbySearch is a discovery query. A zero field means no constraint.
+type LobbySearch struct {
+	Requester  uint64
+	Appid      uint32
+	Joinable   bool
+	MinMembers uint32
+	MaxMembers uint32
+	Filters    []LobbyFilter
+}
+
+type LobbyFilter struct {
+	Key     string
+	String  *string
+	Numeric *int64
+	Compare LobbyComparison
+}
+
+type LobbyComparison uint8
+
+const (
+	CompareEqual LobbyComparison = iota
+	CompareNotEqual
+	CompareGreater
+	CompareGreaterEqual
+	CompareLess
+	CompareLessEqual
+)
 
 const (
 	LobbyTypePrivate     uint32 = 0
@@ -310,9 +353,10 @@ const (
 )
 
 var (
-	ErrLobbyNotFound    = errors.New("lobby not found")
-	ErrLobbyUnavailable = errors.New("lobby full or not joinable")
-	ErrLobbyNotOwner    = errors.New("only the lobby owner may change it")
+	ErrLobbyNotFound         = errors.New("lobby not found")
+	ErrLobbyUnavailable      = errors.New("lobby full or not joinable")
+	ErrLobbyNotOwner         = errors.New("only the lobby owner may change it")
+	ErrLobbyNotAuthoritative = errors.New("lobby ID was not issued by this server")
 )
 
 // AddFriend records both directions so either side can resolve the other.
@@ -457,6 +501,11 @@ func decodeRichPresence(blob []byte) map[string][]byte {
 func (s *Store) CreateLobby(owner uint64, appid, lobbyType, memberLimit uint32) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.createLobbyLocked(owner, appid, lobbyType, memberLimit)
+}
+
+// createLobbyLocked issues a LobbySteamID from the server's own sequence.
+func (s *Store) createLobbyLocked(owner uint64, appid, lobbyType, memberLimit uint32) (uint64, error) {
 	id := LobbySteamID(s.nextLobbyAccountID)
 	if _, err := s.db.Exec(`INSERT INTO lobbies (lobby_id, owner_id, appid, type, member_limit) VALUES (?, ?, ?, ?, ?)`,
 		id, owner, appid, lobbyType, memberLimit); err != nil {
@@ -575,6 +624,207 @@ func (s *Store) UpsertLobby(sender uint64, l Lobby) error {
 	return nil
 }
 
+// SyncLobby applies an owner's game-socket snapshot. A nonzero AssignRequestID
+// claims a new lobby and always gets a server-issued ID; later snapshots must
+// carry an ID this server already issued to that owner.
+func (s *Store) SyncLobby(sender uint64, l Lobby) (uint64, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	created := false
+	key := [2]uint64{sender, l.AssignRequestID}
+	if l.AssignRequestID != 0 {
+		id, ok := s.lobbyRequests[key]
+		if !ok {
+			var err error
+			id, err = s.createLobbyLocked(sender, l.Appid, l.Type, l.MemberLimit)
+			if err != nil {
+				return 0, false, err
+			}
+			if s.lobbyRequests == nil {
+				s.lobbyRequests = make(map[[2]uint64]uint64)
+			}
+			s.lobbyRequests[key] = id
+			created = true
+		}
+		l.LobbyID = id
+	} else {
+		if !IsLobbySteamID(l.LobbyID) {
+			return 0, false, ErrLobbyNotAuthoritative
+		}
+		var owner uint64
+		if err := s.db.QueryRow(`SELECT owner_id FROM lobbies WHERE lobby_id = ?`, l.LobbyID).Scan(&owner); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return 0, false, ErrLobbyNotAuthoritative
+			}
+			return 0, false, err
+		}
+		if owner != sender {
+			return 0, false, ErrLobbyNotOwner
+		}
+	}
+
+	joinable := 0
+	if l.Joinable {
+		joinable = 1
+	}
+	if _, err := s.db.Exec(`UPDATE lobbies SET appid = ?, type = ?, member_limit = ?, joinable = ? WHERE lobby_id = ?`,
+		l.Appid, l.Type, l.MemberLimit, joinable, l.LobbyID); err != nil {
+		return 0, created, err
+	}
+	for _, id := range l.Members {
+		if _, err := s.db.Exec(`INSERT OR IGNORE INTO lobby_members (lobby_id, steam_id) VALUES (?, ?)`, l.LobbyID, id); err != nil {
+			return 0, created, err
+		}
+	}
+	if _, err := s.db.Exec(`DELETE FROM lobby_metadata WHERE lobby_id = ?`, l.LobbyID); err != nil {
+		return 0, created, err
+	}
+	for k, v := range l.Values {
+		if _, err := s.db.Exec(`INSERT INTO lobby_metadata (lobby_id, key, value) VALUES (?, ?, ?)`, l.LobbyID, k, v); err != nil {
+			return 0, created, err
+		}
+	}
+	return l.LobbyID, created, nil
+}
+
+// LobbyMetadata returns the persisted key/value data for a lobby.
+func (s *Store) LobbyMetadata(lobbyID uint64) (map[string][]byte, error) {
+	rows, err := s.db.Query(`SELECT key, value FROM lobby_metadata WHERE lobby_id = ?`, lobbyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := make(map[string][]byte)
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return nil, err
+		}
+		values[key] = []byte(value)
+	}
+	return values, rows.Err()
+}
+
+// SearchLobbies returns matching lobbies. Blocked peers are excluded both as
+// owner and as members, so a block hides a lobby from discovery and join alike.
+func (s *Store) SearchLobbies(q LobbySearch) ([]uint64, error) {
+	lobbies, err := s.Lobbies()
+	if err != nil {
+		return nil, err
+	}
+	matched := make([]uint64, 0, len(lobbies))
+	for _, l := range lobbies {
+		if l.Type == LobbyTypePrivate {
+			continue
+		}
+		if q.Appid != 0 && l.Appid != q.Appid {
+			continue
+		}
+		if q.Joinable && !l.Joinable {
+			continue
+		}
+		members := uint32(len(l.Members))
+		if q.MinMembers != 0 && members < q.MinMembers {
+			continue
+		}
+		if q.MaxMembers != 0 && members > q.MaxMembers {
+			continue
+		}
+		blocked, err := s.IsBlocked(q.Requester, l.Owner)
+		if err != nil {
+			return nil, err
+		}
+		if blocked {
+			continue
+		}
+		hidden := false
+		for _, member := range l.Members {
+			blocked, err := s.IsBlocked(q.Requester, member)
+			if err != nil {
+				return nil, err
+			}
+			if blocked {
+				hidden = true
+				break
+			}
+		}
+		if hidden {
+			continue
+		}
+		if len(q.Filters) != 0 {
+			values, err := s.LobbyMetadata(l.LobbyID)
+			if err != nil {
+				return nil, err
+			}
+			if !metadataMatches(values, q.Filters) {
+				continue
+			}
+		}
+		matched = append(matched, l.LobbyID)
+	}
+	return matched, nil
+}
+
+func metadataMatches(values map[string][]byte, filters []LobbyFilter) bool {
+	for _, f := range filters {
+		raw, ok := values[f.Key]
+		if !ok {
+			return false
+		}
+		if f.Numeric != nil {
+			n, err := strconv.ParseInt(string(raw), 10, 64)
+			if err != nil {
+				return false
+			}
+			if !compareInt64(n, *f.Numeric, f.Compare) {
+				return false
+			}
+			continue
+		}
+		if f.String == nil || !compareString(string(raw), *f.String, f.Compare) {
+			return false
+		}
+	}
+	return true
+}
+
+func compareString(a, b string, op LobbyComparison) bool {
+	switch op {
+	case CompareEqual:
+		return a == b
+	case CompareNotEqual:
+		return a != b
+	case CompareGreater:
+		return a > b
+	case CompareGreaterEqual:
+		return a >= b
+	case CompareLess:
+		return a < b
+	case CompareLessEqual:
+		return a <= b
+	}
+	return false
+}
+
+func compareInt64(a, b int64, op LobbyComparison) bool {
+	switch op {
+	case CompareEqual:
+		return a == b
+	case CompareNotEqual:
+		return a != b
+	case CompareGreater:
+		return a > b
+	case CompareGreaterEqual:
+		return a >= b
+	case CompareLess:
+		return a < b
+	case CompareLessEqual:
+		return a <= b
+	}
+	return false
+}
+
 func (s *Store) DeleteLobby(lobbyID, sender uint64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -589,7 +839,16 @@ func (s *Store) DeleteLobby(lobbyID, sender uint64) error {
 	if n == 0 {
 		return ErrLobbyNotOwner
 	}
+	s.dropLobbyRequests(lobbyID)
 	return nil
+}
+
+func (s *Store) dropLobbyRequests(lobbyID uint64) {
+	for key, id := range s.lobbyRequests {
+		if id == lobbyID {
+			delete(s.lobbyRequests, key)
+		}
+	}
 }
 
 // LeaveLobby removes a member and hands an empty-owner lobby to its lowest
@@ -616,6 +875,9 @@ func (s *Store) LeaveLobby(lobbyID, steamID uint64) error {
 	}
 	if !next.Valid {
 		_, err := s.db.Exec(`DELETE FROM lobbies WHERE lobby_id = ?`, lobbyID)
+		if err == nil {
+			s.dropLobbyRequests(lobbyID)
+		}
 		return err
 	}
 	_, err := s.db.Exec(`UPDATE lobbies SET owner_id = ? WHERE lobby_id = ?`, uint64(next.Int64), lobbyID)

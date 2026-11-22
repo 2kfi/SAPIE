@@ -3,9 +3,19 @@ package router
 
 import (
 	"log"
+	"strconv"
+	"time"
 
+	"github.com/sapie/sapie/server/internal/auth"
 	"github.com/sapie/sapie/server/internal/protocol"
 )
+
+const (
+	RelayPacketLimit = 200
+	RelayWindow      = time.Second
+)
+
+func RelayBucket(from uint64) string { return "relay:" + strconv.FormatUint(from, 10) }
 
 // Peer is a live connection that can receive frames.
 type Peer interface {
@@ -26,8 +36,9 @@ type Resolver interface {
 }
 
 type Router struct {
-	lookup   Lookup
-	resolver Resolver
+	lookup       Lookup
+	resolver     Resolver
+	relayLimiter *auth.Limiter
 }
 
 func New(lookup Lookup) *Router { return &Router{lookup: lookup} }
@@ -36,16 +47,31 @@ func NewWithResolver(lookup Lookup, resolver Resolver) *Router {
 	return &Router{lookup: lookup, resolver: resolver}
 }
 
+func (r *Router) SetRelayLimiter(l *auth.Limiter) { r.relayLimiter = l }
+
 // Route is the single place source_id is assigned.
 func (r *Router) Route(from uint64, msg *protocol.Common_Message) {
 	if msg == nil {
 		return
 	}
+	if isP2P(msg) && msg.DestId != 0 && r.relayLimiter != nil {
+		bucket := RelayBucket(from)
+		allowed, err := r.relayLimiter.AllowBucket(bucket, RelayPacketLimit, RelayWindow)
+		if err != nil || !allowed {
+			log.Printf("route relay from=%d dropped: rate limit", from)
+			return
+		}
+		if err := r.relayLimiter.RecordBucket(bucket); err != nil {
+			log.Printf("route relay from=%d record: %v", from, err)
+		}
+	}
 	msg.SourceId = from
+	seen := make(map[uint64]bool)
 	for _, to := range r.recipients(from, msg) {
-		if to == from {
+		if to == from || seen[to] {
 			continue
 		}
+		seen[to] = true
 		r.Deliver(to, &protocol.Frame{Payload: &protocol.Frame_Steam{Steam: msg}})
 	}
 }

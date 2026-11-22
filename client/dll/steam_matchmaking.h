@@ -23,6 +23,8 @@
 #define PENDING_JOIN_TIMEOUT 10.0
 #define REQUEST_LOBBY_DATA_TIMEOUT 6.0
 #define LOBBY_DELETED_TIMEOUT 2
+#define LOBBY_CREATE_REQUEST_RATE 0.2
+#define SERVER_LOBBY_SEARCH_TIMEOUT 3.0
 
 struct Pending_Joins {
     SteamAPICall_t api_id;
@@ -34,6 +36,8 @@ struct Pending_Joins {
 struct Pending_Creates {
     SteamAPICall_t api_id;
     std::chrono::high_resolution_clock::time_point created;
+    std::chrono::high_resolution_clock::time_point last_assign_request;
+    uint64 assign_request_id;
     ELobbyType eLobbyType;
     int cMaxMembers;
 };
@@ -78,6 +82,7 @@ public ISteamMatchmaking
 
     std::vector<Lobby> lobbies;
     uint32 next_lobby_account_id = 0;
+    uint64 next_assign_request_id = 0;
     std::chrono::high_resolution_clock::time_point last_sent_lobbies;
     std::vector<struct Pending_Joins> pending_joins;
     std::vector<struct Pending_Creates> pending_creates;
@@ -89,6 +94,8 @@ public ISteamMatchmaking
     std::vector<CSteamID> filtered_lobbies;
     std::chrono::high_resolution_clock::time_point lobby_last_search;
     SteamAPICall_t search_call_api_id;
+    uint64 lobby_list_request_id = 0;
+    std::chrono::high_resolution_clock::time_point lobby_list_searched;
     bool searching;
 
     std::vector<struct Chat_Entry> chat_entries;
@@ -121,6 +128,65 @@ Lobby *get_lobby(CSteamID id)
         return NULL;
 
     return &(*lobby);
+}
+
+static sapie::LobbyMetadataFilter::Comparison server_comparison(ELobbyComparison comparison)
+{
+    switch (comparison) {
+    case k_ELobbyComparisonNotEqual: return sapie::LobbyMetadataFilter::NOT_EQUAL;
+    case k_ELobbyComparisonGreaterThan: return sapie::LobbyMetadataFilter::GREATER;
+    case k_ELobbyComparisonEqualToOrGreaterThan: return sapie::LobbyMetadataFilter::GREATER_EQUAL;
+    case k_ELobbyComparisonLessThan: return sapie::LobbyMetadataFilter::LESS;
+    case k_ELobbyComparisonEqualToOrLessThan: return sapie::LobbyMetadataFilter::LESS_EQUAL;
+    default: return sapie::LobbyMetadataFilter::EQUAL;
+    }
+}
+
+void finish_lobby_search()
+{
+    if (!searching) return;
+    if (search_call_api_id) {
+        LobbyMatchList_t data;
+        data.m_nLobbiesMatching = filtered_lobbies.size();
+        callback_results->addCallResult(search_call_api_id, data.k_iCallback, &data, sizeof(data));
+        callbacks->addCBResult(data.k_iCallback, &data, sizeof(data));
+    }
+    searching = false;
+    search_call_api_id = 0;
+    lobby_list_request_id = 0;
+}
+
+bool send_lobby_list_request(uint64 request_id)
+{
+    sapie::Frame frame;
+    sapie::LobbyListRequest *request = frame.mutable_lobby_list_request();
+    request->set_request_id(request_id);
+    request->set_appid(settings->get_local_game_id().AppID());
+    request->set_joinable(true);
+    for (const auto &f : filter_values_copy) {
+        sapie::LobbyMetadataFilter *filter = request->add_filters();
+        filter->set_key(f.key);
+        filter->set_comparison(server_comparison(f.eComparisonType));
+        if (f.is_int) filter->set_numeric_value(f.value_int);
+        else filter->set_string_value(f.value_string);
+    }
+    return network->send_frame(frame);
+}
+
+void apply_discovery_lobby(const Lobby &snapshot)
+{
+    if (snapshot.appid() != settings->get_local_game_id().AppID()) return;
+    Lobby *lobby = get_lobby((uint64)snapshot.room_id());
+    if (!lobby) {
+        size_t old_size = lobbies.size();
+        lobbies.resize(old_size + 1);
+        lobbies[old_size] = snapshot;
+        lobby = &(lobbies[old_size]);
+    } else if (!protobuf_message_equal(*lobby, snapshot)) {
+        *lobby = snapshot;
+    }
+    sapie::local_mirror().upsert_lobby(*lobby);
+    PUSH_BACK_IF_NOT_IN(filtered_lobbies, (uint64)snapshot.room_id());
 }
 
 void send_lobby_data()
@@ -435,10 +501,10 @@ SteamAPICall_t RequestLobbyList()
     searching = true;
     if (search_call_api_id) callback_results->rmCallBack(search_call_api_id, NULL);
     search_call_api_id = callback_results->reserveCallResult();
+    lobby_list_request_id = search_call_api_id;
+    lobby_list_searched = std::chrono::high_resolution_clock::now();
+    if (!send_lobby_list_request(lobby_list_request_id)) lobby_list_request_id = 0;
 
-
-
-    
     return search_call_api_id;
 }
 
@@ -576,58 +642,49 @@ static bool leave_lobby(Lobby *lobby, CSteamID id)
 
 #define LOBBY_CREATE_DELAY 0.07 //artificial delay for lobby creation
 
+void send_lobby_assign_request(Pending_Creates &pending)
+{
+    // room_id is a temporary correlation value; only the server-issued ID is adopted.
+    uint32 account_id = settings->get_local_steam_id().GetAccountID() + ++next_lobby_account_id;
+    Lobby lobby;
+    lobby.set_room_id(make_steam_id_lobby(account_id).ConvertToUint64());
+    lobby.set_joinable(true);
+    lobby.set_member_limit(pending.cMaxMembers);
+    lobby.set_type(pending.eLobbyType);
+    lobby.set_owner(settings->get_local_steam_id().ConvertToUint64());
+    lobby.set_appid(settings->get_local_game_id().AppID());
+    lobby.set_assign_request_id(pending.assign_request_id);
+    enter_lobby(&lobby, settings->get_local_steam_id());
+
+    Common_Message msg;
+    msg.set_source_id(settings->get_local_steam_id().ConvertToUint64());
+    msg.set_allocated_lobby(new Lobby(lobby));
+    network->send_steam(&msg, true);
+    pending.last_assign_request = std::chrono::high_resolution_clock::now();
+}
+
 void Create_pending_lobbies()
 {
     auto p_c = std::begin(pending_creates);
     while (p_c != std::end(pending_creates)) {
-        if (check_timedout(p_c->created, LOBBY_CREATE_DELAY)) {
-            Lobby lobby;
-            // The account ID is derived from the server-assigned local SteamID.
-            uint32 account_id = settings->get_local_steam_id().GetAccountID() + ++next_lobby_account_id;
-            CSteamID lobby_id = make_steam_id_lobby(account_id);
-            lobby.set_room_id(lobby_id.ConvertToUint64());
-            lobby.set_joinable(true);
-            lobby.set_member_limit(p_c->cMaxMembers);
-            lobby.set_type(p_c->eLobbyType);
-            lobby.set_owner(settings->get_local_steam_id().ConvertToUint64());
-            lobby.set_appid(settings->get_local_game_id().AppID());
-            enter_lobby(&lobby, settings->get_local_steam_id());
-            lobbies.push_back(lobby);
-            sapie::local_mirror().upsert_lobby(lobby);
-
-            if (settings->disable_lobby_creation) {
-                LobbyCreated_t data;
-                data.m_eResult = k_EResultFail;
-                data.m_ulSteamIDLobby = 0;
-                callback_results->addCallResult(p_c->api_id, data.k_iCallback, &data, sizeof(data));
-                callbacks->addCBResult(data.k_iCallback, &data, sizeof(data));
-            } else {
-                LobbyCreated_t data;
-                data.m_eResult = k_EResultOK;
-                data.m_ulSteamIDLobby = lobby.room_id();
-                callback_results->addCallResult(p_c->api_id, data.k_iCallback, &data, sizeof(data));
-                callbacks->addCBResult(data.k_iCallback, &data, sizeof(data));
-
-                {
-                    LobbyEnter_t data;
-                    data.m_ulSteamIDLobby = lobby.room_id();
-                    data.m_rgfChatPermissions = 0; //Unused - Always 0
-                    if (p_c->eLobbyType == k_ELobbyTypePrivate)
-                        data.m_bLocked = true;
-                    else
-                        data.m_bLocked = false;
-                    data.m_EChatRoomEnterResponse = k_EChatRoomEnterResponseSuccess;
-                    callbacks->addCBResult(data.k_iCallback, &data, sizeof(data));
-                }
-
-                on_self_enter_leave_lobby(lobby_id, p_c->eLobbyType, false);
-                trigger_lobby_dataupdate(lobby_id, lobby_id, true);
-            }
-
-            p_c = pending_creates.erase(p_c);
-        } else {
+        if (!check_timedout(p_c->created, LOBBY_CREATE_DELAY)) {
             ++p_c;
+            continue;
         }
+        if (settings->disable_lobby_creation) {
+            LobbyCreated_t data;
+            data.m_eResult = k_EResultFail;
+            data.m_ulSteamIDLobby = 0;
+            callback_results->addCallResult(p_c->api_id, data.k_iCallback, &data, sizeof(data));
+            callbacks->addCBResult(data.k_iCallback, &data, sizeof(data));
+            p_c = pending_creates.erase(p_c);
+            continue;
+        }
+        if (!p_c->assign_request_id) p_c->assign_request_id = ++next_assign_request_id;
+        if (check_timedout(p_c->last_assign_request, LOBBY_CREATE_REQUEST_RATE)) {
+            send_lobby_assign_request(*p_c);
+        }
+        ++p_c;
     }
 }
 
@@ -644,6 +701,7 @@ SteamAPICall_t CreateLobby( ELobbyType eLobbyType, int cMaxMembers )
     std::lock_guard<std::recursive_mutex> lock(global_mutex);
     struct Pending_Creates p_c;
     p_c.api_id = callback_results->reserveCallResult();
+    p_c.assign_request_id = 0;
     p_c.eLobbyType = eLobbyType;
     p_c.cMaxMembers = cMaxMembers;
     p_c.created = std::chrono::high_resolution_clock::now();
@@ -1272,7 +1330,7 @@ void RunCallbacks()
 {
     RunBackground();
 
-    if (searching) {
+    if (searching && lobby_list_request_id == 0) {
         PRINT_DEBUG("Searching for lobbies %zu\n", lobbies.size());
         for(auto & l: lobbies) {
             bool use = l.joinable() && (l.type() == k_ELobbyTypePublic || l.type() == k_ELobbyTypeInvisible || l.type() == k_ELobbyTypeFriendsOnly) && !l.deleted();
@@ -1339,7 +1397,7 @@ void RunCallbacks()
         }
     }
 
-    if (searching && check_timedout(lobby_last_search, LOBBY_SEARCH_TIMEOUT)) {
+    if (searching && lobby_list_request_id == 0 && check_timedout(lobby_last_search, LOBBY_SEARCH_TIMEOUT)) {
         PRINT_DEBUG("LOBBY_SEARCH_TIMEOUT %zu\n", filtered_lobbies.size());
         LobbyMatchList_t data;
         data.m_nLobbiesMatching = filtered_lobbies.size();
@@ -1347,6 +1405,11 @@ void RunCallbacks()
         callbacks->addCBResult(data.k_iCallback, &data, sizeof(data));
         searching = false;
         search_call_api_id = 0;
+    }
+
+    if (searching && lobby_list_request_id != 0 && check_timedout(lobby_list_searched, SERVER_LOBBY_SEARCH_TIMEOUT)) {
+        PRINT_DEBUG("SERVER_LOBBY_SEARCH_TIMEOUT %zu\n", filtered_lobbies.size());
+        finish_lobby_search();
     }
 
     auto g = std::begin(pending_joins);
@@ -1420,6 +1483,48 @@ void RunCallbacks()
 
 void Callback(Common_Message *msg)
 {
+    if (msg->has_lobby() && msg->lobby().assign_request_id()) {
+        auto pending = std::find_if(pending_creates.begin(), pending_creates.end(),
+            [&msg](Pending_Creates const &item) { return item.assign_request_id == msg->lobby().assign_request_id(); });
+        if (pending != pending_creates.end()) {
+            Lobby lobby = msg->lobby();
+            lobby.set_assign_request_id(0);
+            lobby.set_search_request_id(0);
+            Lobby *existing = get_lobby((uint64)lobby.room_id());
+            if (existing) *existing = lobby;
+            else lobbies.push_back(lobby);
+            sapie::local_mirror().upsert_lobby(lobby);
+
+            SteamAPICall_t api_id = pending->api_id;
+            ELobbyType lobby_type = pending->eLobbyType;
+            pending_creates.erase(pending);
+
+            LobbyCreated_t created;
+            created.m_eResult = k_EResultOK;
+            created.m_ulSteamIDLobby = lobby.room_id();
+            callback_results->addCallResult(api_id, created.k_iCallback, &created, sizeof(created));
+            callbacks->addCBResult(created.k_iCallback, &created, sizeof(created));
+
+            LobbyEnter_t entered;
+            entered.m_ulSteamIDLobby = lobby.room_id();
+            entered.m_rgfChatPermissions = 0;
+            entered.m_bLocked = lobby_type == k_ELobbyTypePrivate;
+            entered.m_EChatRoomEnterResponse = k_EChatRoomEnterResponseSuccess;
+            callbacks->addCBResult(entered.k_iCallback, &entered, sizeof(entered));
+            on_self_enter_leave_lobby(CSteamID((uint64)lobby.room_id()), lobby_type, false);
+            trigger_lobby_dataupdate(CSteamID((uint64)lobby.room_id()), CSteamID((uint64)lobby.room_id()), true);
+        }
+        return;
+    }
+
+    if (msg->has_lobby() && msg->lobby().search_request_id()) {
+        if (msg->lobby().search_request_id() == lobby_list_request_id) {
+            if (msg->lobby().deleted()) finish_lobby_search();
+            else apply_discovery_lobby(msg->lobby());
+        }
+        return;
+    }
+
     if (msg->has_lobby()) {
         PRINT_DEBUG("GOT A LOBBY appid: %lu\n", msg->lobby().appid());
         // The server also echoes lobbies we own; those carry the authoritative roster.

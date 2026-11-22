@@ -1307,6 +1307,135 @@ func TestGameLoginKeepsPresentedTokenValid(t *testing.T) {
 	}
 }
 
+func TestLobbyAssignmentAndDiscoveryFrames(t *testing.T) {
+	store, err := state.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice, err := store.CreateAccount("alice", hash, "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := New(store, auth.NewLimiter(nil))
+	go srv.Serve(ctx, ln)
+
+	c, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	login := &protocol.Frame{Payload: &protocol.Frame_Login{Login: &protocol.LoginRequest{Username: "alice", Password: "pw", Appid: 480}}}
+	if err := protocol.WriteFrame(c, login); err != nil {
+		t.Fatal(err)
+	}
+	if response := readLoginResponse(t, c); response.Status != protocol.LoginResponse_OK {
+		t.Fatalf("login = %v", response.Status)
+	}
+
+	const clientRoomID = uint64(0x0186000000001234)
+	lobby := &protocol.Lobby{
+		RoomId:          clientRoomID,
+		Owner:           clientRoomID,
+		Appid:           480,
+		Type:            state.LobbyTypePublic,
+		MemberLimit:     4,
+		Joinable:        true,
+		AssignRequestId: 77,
+		Values:          map[string][]byte{"map": []byte("derail")},
+	}
+	lobby.Members = append(lobby.Members, &protocol.Lobby_Member{Id: alice})
+	create := &protocol.Frame{Payload: &protocol.Frame_Steam{Steam: &protocol.Common_Message{
+		Messages: &protocol.Common_Message_Lobby{Lobby: lobby},
+	}}}
+	if err := protocol.WriteFrame(c, create); err != nil {
+		t.Fatal(err)
+	}
+
+	var assignedID uint64
+	for i := 0; i < 12; i++ {
+		frame := readSessionFrame(t, c)
+		steam, ok := frame.Payload.(*protocol.Frame_Steam)
+		if !ok || steam.Steam.GetLobby() == nil || steam.Steam.GetLobby().GetAssignRequestId() != 77 {
+			continue
+		}
+		assigned := steam.Steam.GetLobby()
+		if assigned.GetRoomId() == clientRoomID || !state.IsLobbySteamID(assigned.GetRoomId()) {
+			t.Fatalf("assigned room_id = %#x; client ID was %#x", assigned.GetRoomId(), clientRoomID)
+		}
+		if assigned.GetOwner() != alice {
+			t.Fatalf("assigned owner = %d, want %d", assigned.GetOwner(), alice)
+		}
+		assignedID = assigned.GetRoomId()
+		break
+	}
+	if assignedID == 0 {
+		t.Fatal("no authoritative lobby assignment frame")
+	}
+
+	req := &protocol.Frame{Payload: &protocol.Frame_LobbyListRequest{LobbyListRequest: &protocol.LobbyListRequest{
+		RequestId: 88,
+		Appid:     480,
+		Filters: []*protocol.LobbyMetadataFilter{{
+			Key:        "map",
+			MatchValue: &protocol.LobbyMetadataFilter_StringValue{StringValue: "derail"},
+		}},
+	}}}
+	if err := protocol.WriteFrame(c, req); err != nil {
+		t.Fatal(err)
+	}
+
+	gotResponse, gotSnapshot, gotEnd := false, false, false
+	for i := 0; i < 12 && !(gotResponse && gotSnapshot && gotEnd); i++ {
+		frame := readSessionFrame(t, c)
+		if response, ok := frame.Payload.(*protocol.Frame_LobbyListResponse); ok {
+			if response.LobbyListResponse.GetRequestId() == 88 {
+				gotResponse = true
+			}
+			continue
+		}
+		steam, ok := frame.Payload.(*protocol.Frame_Steam)
+		if !ok || steam.Steam.GetLobby() == nil || steam.Steam.GetLobby().GetSearchRequestId() != 88 {
+			continue
+		}
+		result := steam.Steam.GetLobby()
+		if result.GetDeleted() {
+			gotEnd = true
+			continue
+		}
+		if result.GetRoomId() == assignedID {
+			gotSnapshot = true
+		}
+		if result.GetRoomId() == clientRoomID {
+			t.Fatal("discovery echoed the client-supplied room ID")
+		}
+	}
+	if !gotResponse || !gotSnapshot || !gotEnd {
+		t.Fatalf("discovery frames: response=%v snapshot=%v end=%v", gotResponse, gotSnapshot, gotEnd)
+	}
+}
+
+func readSessionFrame(t *testing.T, c net.Conn) *protocol.Frame {
+	t.Helper()
+	c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	frame, err := protocol.ReadFrame(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return frame
+}
+
 func readLoginResponse(t *testing.T, c net.Conn) *protocol.LoginResponse {
 	t.Helper()
 	c.SetReadDeadline(time.Now().Add(5 * time.Second))

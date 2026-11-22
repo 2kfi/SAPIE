@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sapie/sapie/server/internal/auth"
 	"github.com/sapie/sapie/server/internal/protocol"
 )
 
@@ -103,7 +104,7 @@ func TestRouteEndpointsStampsAuthenticatedID(t *testing.T) {
 	r := NewWithResolver(fakeLookup{1: alice, 2: bob}, resolver)
 
 	own := &protocol.EndpointSignal{
-		SteamId: 99, // a pretending client must not choose the stamped ID
+		SteamId:   99, // a pretending client must not choose the stamped ID
 		Endpoints: &protocol.EndpointReport{Ipv4: []byte{203, 0, 113, 1}, Ipv4Port: 40000},
 	}
 	peerReport := &protocol.EndpointReport{
@@ -389,5 +390,42 @@ func TestRouteLobbyFanoutSkipsBlockedMembers(t *testing.T) {
 		if delivered(t, frame).GetSourceId() != 1 {
 			t.Fatal("lobby frame lost source_id stamp")
 		}
+	}
+}
+
+func TestRelayPacketLimitDropsOverflow(t *testing.T) {
+	dest := &fakePeer{}
+	r := NewWithResolver(fakeLookup{2: dest}, p2pResolver())
+	r.SetRelayLimiter(auth.NewLimiter(nil))
+
+	for i := 0; i < RelayPacketLimit; i++ {
+		r.Route(1, socketMsg(2, protocol.Networking_Sockets_DATA))
+	}
+	if len(dest.frames) != RelayPacketLimit {
+		t.Fatalf("relayed = %d, want %d", len(dest.frames), RelayPacketLimit)
+	}
+	r.Route(1, socketMsg(2, protocol.Networking_Sockets_DATA))
+	if len(dest.frames) != RelayPacketLimit {
+		t.Fatalf("overflow relayed: %d frames", len(dest.frames))
+	}
+	r.Route(1, socketMsg(2, protocol.Networking_Sockets_CONNECTION_REQUEST))
+	if len(dest.frames) != RelayPacketLimit {
+		t.Fatalf("signaling consumed relay budget: %d frames", len(dest.frames))
+	}
+}
+
+func TestRouteDeliversToDuplicateRecipientOnce(t *testing.T) {
+	peer := &fakePeer{}
+	resolver := fakeResolver{
+		friends:     map[uint64][]uint64{1: {2, 2}},
+		userLobbies: map[uint64][]uint64{1: {7}},
+		lobbies:     map[uint64][]uint64{7: {2}},
+	}
+	r := NewWithResolver(fakeLookup{2: peer}, resolver)
+	r.Route(1, &protocol.Common_Message{
+		Messages: &protocol.Common_Message_Friend{Friend: &protocol.Friend{Id: 1}},
+	})
+	if len(peer.frames) != 1 {
+		t.Fatalf("delivered = %d, want 1", len(peer.frames))
 	}
 }
