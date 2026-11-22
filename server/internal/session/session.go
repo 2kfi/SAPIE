@@ -114,6 +114,9 @@ func New(store *state.Store, limiter *auth.Limiter) *Server {
 		idleTimeout: readTimeout, peers: make(map[uint64]*Session),
 	}
 	s.router = router.NewWithResolver(s, store)
+	// Relay counters are per live sender; the login limiter is persistent and
+	// would turn packet floods into rate_events writes.
+	s.router.SetRelayLimiter(auth.NewLimiter(nil))
 	return s
 }
 
@@ -280,6 +283,8 @@ func (s *Server) handle(conn net.Conn) {
 			session.setEndpoints(payload.EndpointReport, conn.RemoteAddr())
 		case *protocol.Frame_EndpointSignal:
 			continue // signaling is server-authored; a client copy is never accepted
+		case *protocol.Frame_LobbyListRequest:
+			s.handleLobbyList(session, payload.LobbyListRequest)
 		case *protocol.Frame_Steam:
 			s.handleSteam(session, payload.Steam)
 		case *protocol.Frame_TicketRequest:
@@ -391,20 +396,41 @@ func (s *Server) handleSteam(session *Session, msg *protocol.Common_Message) {
 			return
 		}
 		snapshot := state.Lobby{
-			LobbyID:     lobby.GetRoomId(),
-			Owner:       lobby.GetOwner(),
-			Appid:       lobby.GetAppid(),
-			MemberLimit: lobby.GetMemberLimit(),
-			Type:        lobby.GetType(),
-			Joinable:    lobby.GetJoinable(),
+			LobbyID:         lobby.GetRoomId(),
+			Owner:           lobby.GetOwner(),
+			Appid:           lobby.GetAppid(),
+			MemberLimit:     lobby.GetMemberLimit(),
+			Type:            lobby.GetType(),
+			Joinable:        lobby.GetJoinable(),
+			AssignRequestID: lobby.GetAssignRequestId(),
+			Values:          make(map[string]string, len(lobby.GetValues())),
+		}
+		for k, v := range lobby.GetValues() {
+			snapshot.Values[k] = string(v)
 		}
 		for _, member := range lobby.GetMembers() {
 			snapshot.Members = append(snapshot.Members, member.GetId())
 		}
-		if err := s.store.UpsertLobby(session.steamID, snapshot); err != nil {
-			log.Printf("session %d: sync lobby %d: %v", session.steamID, lobby.GetRoomId(), err)
+		assignedID, created, err := s.store.SyncLobby(session.steamID, snapshot)
+		if err != nil {
+			log.Printf("session %d: sync lobby %d: %v", session.steamID, snapshot.LobbyID, err)
 			return
 		}
+		if created {
+			// The creating client learns the server-issued ID through the lobby
+			// callback path; the client-supplied room_id is never echoed as authority.
+			assigned := cloneLobby(lobby)
+			assigned.RoomId = assignedID
+			assigned.Owner = session.steamID
+			assigned.AssignRequestId = snapshot.AssignRequestID
+			assigned.SearchRequestId = 0
+			s.router.Deliver(session.steamID, &protocol.Frame{Payload: &protocol.Frame_Steam{
+				Steam: &protocol.Common_Message{Messages: &protocol.Common_Message_Lobby{Lobby: assigned}},
+			}})
+			return
+		}
+		lobby.RoomId = assignedID
+		lobby.Owner = session.steamID
 	case *protocol.Common_Message_LobbyMessages:
 		event := payload.LobbyMessages
 		if event == nil {
@@ -442,6 +468,115 @@ func (s *Server) handleSteam(session *Session, msg *protocol.Common_Message) {
 		stampSourceHint(session.conn.RemoteAddr(), msg)
 	}
 	s.router.Route(session.steamID, msg)
+}
+
+// handleLobbyList answers a discovery request and sends the matching lobbies
+// through the same Common_Message_Lobby path the game already consumes.
+func (s *Server) handleLobbyList(session *Session, req *protocol.LobbyListRequest) {
+	if req == nil {
+		return
+	}
+	q := state.LobbySearch{
+		Requester:  session.steamID,
+		Appid:      req.GetAppid(),
+		Joinable:   req.GetJoinable(),
+		MinMembers: req.GetMinMembers(),
+		MaxMembers: req.GetMaxMembers(),
+	}
+	for _, f := range req.GetFilters() {
+		filter := state.LobbyFilter{Key: f.GetKey(), Compare: state.LobbyComparison(f.GetComparison())}
+		switch v := f.GetMatchValue().(type) {
+		case *protocol.LobbyMetadataFilter_StringValue:
+			value := v.StringValue
+			filter.String = &value
+		case *protocol.LobbyMetadataFilter_NumericValue:
+			value := v.NumericValue
+			filter.Numeric = &value
+		}
+		q.Filters = append(q.Filters, filter)
+	}
+	ids, err := s.store.SearchLobbies(q)
+	if err != nil {
+		log.Printf("session %d: lobby search: %v", session.steamID, err)
+		return
+	}
+	response := &protocol.LobbyListResponse{RequestId: req.GetRequestId()}
+	for _, id := range ids {
+		response.LobbyIds = append(response.LobbyIds, id)
+	}
+	if err := session.Send(&protocol.Frame{Payload: &protocol.Frame_LobbyListResponse{LobbyListResponse: response}}); err != nil {
+		log.Printf("session %d: lobby list response: %v", session.steamID, err)
+	}
+	for _, id := range ids {
+		lobby, err := s.store.Lobby(id)
+		if err != nil {
+			continue
+		}
+		values, err := s.store.LobbyMetadata(id)
+		if err != nil {
+			continue
+		}
+		s.router.Deliver(session.steamID, &protocol.Frame{Payload: &protocol.Frame_Steam{
+			Steam: &protocol.Common_Message{Messages: &protocol.Common_Message_Lobby{
+				Lobby: lobbySnapshot(lobby, values, req.GetRequestId()),
+			}},
+		}})
+	}
+	// A deleted empty lobby closes the result set without touching a real room.
+	s.router.Deliver(session.steamID, &protocol.Frame{Payload: &protocol.Frame_Steam{
+		Steam: &protocol.Common_Message{Messages: &protocol.Common_Message_Lobby{
+			Lobby: &protocol.Lobby{SearchRequestId: req.GetRequestId(), Deleted: true},
+		}},
+	}})
+}
+
+func cloneLobby(l *protocol.Lobby) *protocol.Lobby {
+	copy := &protocol.Lobby{
+		RoomId:          l.GetRoomId(),
+		Owner:           l.GetOwner(),
+		MemberLimit:     l.GetMemberLimit(),
+		Type:            l.GetType(),
+		Joinable:        l.GetJoinable(),
+		Appid:           l.GetAppid(),
+		Deleted:         l.GetDeleted(),
+		TimeDeleted:     l.GetTimeDeleted(),
+		SearchRequestId: l.GetSearchRequestId(),
+		AssignRequestId: l.GetAssignRequestId(),
+		Values:          make(map[string][]byte, len(l.GetValues())),
+	}
+	for k, v := range l.GetValues() {
+		copy.Values[k] = append([]byte(nil), v...)
+	}
+	for _, m := range l.GetMembers() {
+		member := &protocol.Lobby_Member{Id: m.GetId(), Values: make(map[string][]byte, len(m.GetValues()))}
+		for k, v := range m.GetValues() {
+			member.Values[k] = append([]byte(nil), v...)
+		}
+		copy.Members = append(copy.Members, member)
+	}
+	if game := l.GetGameserver(); game != nil {
+		copy.Gameserver = &protocol.Lobby_Gameserver{
+			Id: game.GetId(), Ip: game.GetIp(), Port: game.GetPort(), NumUpdate: game.GetNumUpdate(),
+		}
+	}
+	return copy
+}
+
+func lobbySnapshot(l state.Lobby, values map[string][]byte, requestID uint64) *protocol.Lobby {
+	p := &protocol.Lobby{
+		RoomId:          l.LobbyID,
+		Owner:           l.Owner,
+		Appid:           l.Appid,
+		MemberLimit:     l.MemberLimit,
+		Type:            l.Type,
+		Joinable:        l.Joinable,
+		Values:          values,
+		SearchRequestId: requestID,
+	}
+	for _, member := range l.Members {
+		p.Members = append(p.Members, &protocol.Lobby_Member{Id: member})
+	}
+	return p
 }
 
 // stampSourceHint trusts the client's declared UDP port because the TCP remote port is ephemeral.

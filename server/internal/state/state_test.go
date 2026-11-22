@@ -791,3 +791,139 @@ func TestDeleteExpiredRates(t *testing.T) {
 		t.Fatalf("fresh rate count = %d, %v", fresh, err)
 	}
 }
+
+func TestSyncLobbyIssuesAuthoritativeID(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.CreateAccount("alice", hash, "Alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := Lobby{
+		Appid:           480,
+		Type:            LobbyTypePublic,
+		MemberLimit:     4,
+		Joinable:        true,
+		Members:         []uint64{owner},
+		AssignRequestID: 77,
+		Values:          map[string]string{"map": "derail"},
+	}
+	id, created, err := store.SyncLobby(owner, snapshot)
+	if err != nil || !created {
+		t.Fatalf("first sync = %d, %v, %v", id, created, err)
+	}
+	if !IsLobbySteamID(id) || uint32(id) == 0 {
+		t.Fatalf("issued id = %#x, want server lobby SteamID", id)
+	}
+	again, created, err := store.SyncLobby(owner, snapshot)
+	if err != nil || created || again != id {
+		t.Fatalf("retry sync = %d, %v, %v; want %d, false, nil", again, created, err, id)
+	}
+
+	values, err := store.LobbyMetadata(id)
+	if err != nil || string(values["map"]) != "derail" {
+		t.Fatalf("metadata = %q, %v", values, err)
+	}
+	if _, _, err := store.SyncLobby(owner, Lobby{LobbyID: LobbySteamID(999), Owner: owner}); !errors.Is(err, ErrLobbyNotAuthoritative) {
+		t.Fatalf("unissued id accepted: %v", err)
+	}
+}
+
+func TestSearchLobbiesFiltersMetadataAndBlocks(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	hash, err := auth.HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, _ := store.CreateAccount("alice", hash, "Alice")
+	viewer, _ := store.CreateAccount("bob", hash, "Bob")
+	blocked, _ := store.CreateAccount("carol", hash, "Carol")
+
+	match, _, err := store.SyncLobby(owner, Lobby{
+		Appid: 480, Type: LobbyTypePublic, MemberLimit: 4, Joinable: true,
+		Members: []uint64{owner}, AssignRequestID: 1,
+		Values: map[string]string{"map": "derail", "round": "12"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = store.SyncLobby(owner, Lobby{
+		Appid: 480, Type: LobbyTypePublic, MemberLimit: 4, Joinable: true,
+		Members: []uint64{owner}, AssignRequestID: 2,
+		Values: map[string]string{"map": "sandstorm", "round": "12"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = store.SyncLobby(owner, Lobby{
+		Appid: 620, Type: LobbyTypePublic, MemberLimit: 4, Joinable: true,
+		Members: []uint64{owner}, AssignRequestID: 3,
+		Values: map[string]string{"map": "derail", "round": "12"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = store.SyncLobby(owner, Lobby{
+		Appid: 480, Type: LobbyTypePrivate, MemberLimit: 4, Joinable: true,
+		Members: []uint64{owner}, AssignRequestID: 4,
+		Values: map[string]string{"map": "derail", "round": "12"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mapValue := "derail"
+	roundValue := int64(10)
+	query := LobbySearch{
+		Requester: viewer,
+		Appid:     480,
+		Joinable:  true,
+		Filters: []LobbyFilter{
+			{Key: "map", String: &mapValue, Compare: CompareEqual},
+			{Key: "round", Numeric: &roundValue, Compare: CompareGreater},
+		},
+	}
+	ids, err := store.SearchLobbies(query)
+	if err != nil || len(ids) != 1 || ids[0] != match {
+		t.Fatalf("search = %v, %v; want [%d]", ids, err, match)
+	}
+	if err := store.JoinLobby(match, viewer, 480); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.LeaveLobby(match, viewer); err != nil {
+		t.Fatal(err)
+	}
+	values, err := store.LobbyMetadata(match)
+	if err != nil || string(values["map"]) != "derail" {
+		t.Fatalf("metadata after leave = %q, %v", values, err)
+	}
+
+	if err := store.BlockUser(viewer, owner); err != nil {
+		t.Fatal(err)
+	}
+	ids, err = store.SearchLobbies(query)
+	if err != nil || len(ids) != 0 {
+		t.Fatalf("blocked search = %v, %v; want empty", ids, err)
+	}
+	if err := store.JoinLobby(match, blocked, 480); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.BlockUser(viewer, blocked); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinLobby(match, viewer, 480); !errors.Is(err, ErrPairBlocked) {
+		t.Fatalf("blocked join = %v, want ErrPairBlocked", err)
+	}
+}

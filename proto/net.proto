@@ -52,6 +52,10 @@ message Lobby {
     uint32 appid = 9;
     bool deleted = 32;
     uint64 time_deleted = 33;
+    // Client-local correlation IDs. The server echoes assign_request_id on the
+    // assigned room_id and search_request_id on discovery snapshots.
+    uint64 search_request_id = 34;
+    uint64 assign_request_id = 35;
 }
 
 message Lobby_Messages {

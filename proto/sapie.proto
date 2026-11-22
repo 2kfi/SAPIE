@@ -29,6 +29,37 @@ message EndpointSignal {
   EndpointReport endpoints = 2;
 }
 
+message LobbyMetadataFilter {
+  enum Comparison {
+    EQUAL = 0;
+    NOT_EQUAL = 1;
+    GREATER = 2;
+    GREATER_EQUAL = 3;
+    LESS = 4;
+    LESS_EQUAL = 5;
+  }
+  string key = 1;
+  oneof match_value {
+    string string_value = 2;
+    int64 numeric_value = 3;
+  }
+  Comparison comparison = 4;
+}
+
+message LobbyListRequest {
+  uint64 request_id = 1;
+  uint32 appid = 2;
+  repeated LobbyMetadataFilter filters = 3;
+  uint32 min_members = 4;
+  uint32 max_members = 5; // 0 means no upper bound
+  bool joinable = 6;
+}
+
+message LobbyListResponse {
+  uint64 request_id = 1;
+  repeated uint64 lobby_ids = 2;
+}
+
 message LoginRequest {
   string username = 1;
   string password = 2;
@@ -119,5 +150,7 @@ message Frame {
     ContentServerResponse content_server_response = 13;
     EndpointReport endpoint_report = 14;
     EndpointSignal endpoint_signal = 15;
+    LobbyListRequest lobby_list_request = 16;
+    LobbyListResponse lobby_list_response = 17;
   }
 }
