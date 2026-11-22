@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-const STATE_FILE: &str = "launcher-state.json";
+pub(crate) const STATE_FILE: &str = "launcher-state.json";
 pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -76,7 +76,7 @@ impl Default for LauncherState {
     }
 }
 
-fn drop_secret_keys(value: &mut Value) -> bool {
+pub(crate) fn drop_secret_keys(value: &mut Value) -> bool {
     let mut changed = false;
     match value {
         Value::Object(map) => {
@@ -116,7 +116,7 @@ fn backup_at(path: &Path, extension: &str, files: &dyn FileSystem) -> Result<()>
     Ok(())
 }
 
-fn write_atomic(path: &Path, bytes: &[u8], files: &dyn FileSystem) -> Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8], files: &dyn FileSystem) -> Result<()> {
     let temp = path.with_extension("json.tmp");
     files.write(&temp, bytes)?;
     files.rename(&temp, path)?;
@@ -161,7 +161,12 @@ pub fn load_from(path: &Path, files: &dyn FileSystem) -> Result<LauncherState> {
 
     let scrubbed = drop_secret_keys(&mut value);
     if legacy || scrubbed {
-        backup_at(path, "json.bak", files)?;
+        let backup = if scrubbed {
+            serde_json::to_vec_pretty(&value)?
+        } else {
+            raw.clone()
+        };
+        files.write(&path.with_extension("json.bak"), &backup)?;
         value["schema_version"] = Value::from(SCHEMA_VERSION);
         let bytes = serde_json::to_vec_pretty(&value)?;
         write_atomic(path, &bytes, files)?;
@@ -185,7 +190,7 @@ pub fn save_at(path: &Path, state: &LauncherState) -> Result<()> {
 }
 
 pub fn load(platform: &dyn Platform) -> Result<LauncherState> {
-    load_from(&platform.paths().data_dir()?.join(STATE_FILE), platform.files())
+    crate::migration::migrate(platform)
 }
 
 pub fn save(platform: &dyn Platform, state: &LauncherState) -> Result<()> {
