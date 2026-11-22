@@ -1,13 +1,18 @@
 # Changelog
 
-The `0.4` tag and its release assets are published. This tree holds the 0.5 work, which is
-code-complete but unreleased. "Shipped in code" means the change is present and covered by checks
-that ran locally or in CI; it does not mean a release artifact or a real game run was verified. The
-status of the 0.5 gates is in `docs/verification/`.
+The `0.4` tag and its release assets are published. Tag `0.5` is published as an unsigned release,
+built by CI run `45028412891` from commit `732e0d3`. "Shipped in code" means the change is present
+and covered by checks that ran locally or in CI; it does not mean a clean VM install or a real game
+run was verified. The status of the 0.5 gates is in `docs/verification/`.
 
-## Unreleased 0.5
+## 0.5 (published 2026-11-22)
 
-Code-complete in this tree, with local evidence only. No 0.5 tag, release or publish is recorded.
+Tag `0.5` at commit `732e0d3` passed every CI job in run `45028412891`. The release carries 17
+assets: three versioned bundles, four installers (NSIS, MSI and two AppImages), `container.tar.gz`,
+six SBOMs, `SHA256SUMS`, `UNSIGNED-UPDATES.txt` and the update public key. All seven small assets
+covered by `SHA256SUMS` that were downloaded and checked matched; the full NSIS installer matched
+its recorded size. Update manifests are unsigned because no `SAPIE_UPDATE_SIGNING_KEY` is
+configured, so auto-update is disabled.
 
 - Two launchers from one core: SAPIE for Windows and SAPIE for Linux. Shared Rust core behind a C ABI
   in `launcher/core`, shared Qt Quick UI in `launcher/ui`, platform code in `launcher/windows` and
@@ -24,10 +29,13 @@ Code-complete in this tree, with local evidence only. No 0.5 tag, release or pub
 ### NOT VERIFIED for 0.5
 
 - G1, G2, G3 and G4 are not signed off. No gate has a PASSED result in this tree.
-- No Windows runner, signed artifact, clean VM or real game run was recorded. The packaging scripts
-  were not run into shippable artifacts.
-- No screen-reader pass, no 0.4 to 0.5 upgrade run and no downgrade run was recorded.
-- Web UI Node checks were not run in this worktree.
+- No signed artifact or signed update manifest was produced. The release ships an
+  `UNSIGNED-UPDATES.txt` notice instead.
+- No clean VM install, 0.4 to 0.5 upgrade, downgrade, real game run or screen-reader pass was
+  recorded.
+- No two-peer NAT or CGNAT punching evidence was recorded.
+- `SHA256SUMS` covers bundles, SBOMs, the container and the update public key. The standalone
+  installer assets are not listed in it.
 
 Status is recorded in `docs/verification/0.5-rc-checklist.md`, `0.5-platform-gate.md` and
 `0.5-core-gate.md`.
