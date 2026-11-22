@@ -223,7 +223,10 @@ Two tag-triggered jobs in `build.yml` build the Qt launchers from `launcher/`:
 - `launcher-linux-qt` runs on x64 and arm64 runners with Qt 6.8, then calls
   `launcher/linux/packaging/build-package.sh` for AppImage, deb and Flatpak. It
   uploads `launcher-linux-x64` and `launcher-linux-arm64` payloads plus
-  `installer-linux-qt-<arch>` with `SHA256SUMS.txt` and SPDX SBOMs.
+  `installer-linux-qt-<arch>` with `SHA256SUMS.txt` and SPDX SBOMs. Flatpak is
+  built only when the `org.kde` 6.8 runtime and SDK are installed in the runner's
+  user Flatpak installation; otherwise the step reports `Flatpak NOT VERIFIED`
+  and the release still ships the AppImage and deb.
 
 Repository secrets used by these jobs:
 
