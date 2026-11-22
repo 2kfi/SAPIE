@@ -8,7 +8,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $makensis = Get-Command makensis -ErrorAction Stop
 $script = Join-Path $PSScriptRoot 'nsis/sapie.nsi'
+$icon = Join-Path $Icons 'sapie.ico'
 
 & $makensis.Source `
-  /DVERSION=$Version /DVERSION_RC=$versionRc /DSOURCE=$Stage /DICON=(Join-Path $Icons 'sapie.ico') /DOUT=$Out $script
+  /DVERSION=$Version /DVERSION_RC=$versionRc /DSOURCE=$Stage /DICON=$icon /DOUT=$Out $script
 if ($LASTEXITCODE -ne 0) { throw 'makensis failed.' }
