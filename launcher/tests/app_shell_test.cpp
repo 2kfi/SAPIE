@@ -15,6 +15,9 @@ class AppShellTest : public QObject
 private slots:
     void redactsCredentialValues();
     void loadsTheShellFromResources();
+    void readsInviteFromStartupArguments();
+    void forwardsInviteFromSecondInstance();
+    void shippedAppWiresNativeCallbacks();
 };
 
 void AppShellTest::redactsCredentialValues()
@@ -45,6 +48,46 @@ void AppShellTest::loadsTheShellFromResources()
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
     QVERIFY(window != nullptr);
     QCOMPARE(window->color(), QColor(QStringLiteral("#17191D")));
+}
+
+void AppShellTest::readsInviteFromStartupArguments()
+{
+    QCOMPARE(LauncherShell::inviteFromArguments(
+                     {QStringLiteral("sapie-launcher"), QStringLiteral("sapie://join/42?exp=1")}),
+             QStringLiteral("sapie://join/42?exp=1"));
+    QCOMPARE(LauncherShell::inviteFromArguments(
+                     {QStringLiteral("sapie-launcher"), QStringLiteral("--no-invite")}),
+             QString());
+    QCOMPARE(LauncherShell::inviteFromArguments(
+                     {QStringLiteral("sapie://join/1\n2")}),
+             QString());
+}
+
+void AppShellTest::forwardsInviteFromSecondInstance()
+{
+    LauncherShell primary;
+    QVERIFY(primary.acquireSingleInstance());
+    QSignalSpy inviteSpy(&primary, &LauncherShell::inviteReceived);
+
+    LauncherShell second;
+    QVERIFY(!second.acquireSingleInstance(QStringLiteral("sapie://join/123")));
+    QVERIFY(inviteSpy.wait(2000));
+    QCOMPARE(inviteSpy.count(), 1);
+    QCOMPARE(inviteSpy.first().at(0).toString(), QStringLiteral("sapie://join/123"));
+}
+
+void AppShellTest::shippedAppWiresNativeCallbacks()
+{
+    QFile source(QStringLiteral(SAPIE_MAIN_SOURCE));
+    QVERIFY(source.open(QIODevice::ReadOnly));
+    const QString main = QString::fromUtf8(source.readAll());
+    QVERIFY(main.contains(QStringLiteral("QApplication app")));
+    QVERIFY(main.contains(QStringLiteral("inviteFromArguments")));
+    QVERIFY(main.contains(QStringLiteral("pickExecutableRequested")));
+    QVERIFY(main.contains(QStringLiteral("setChosenExecutable(path)")));
+    QVERIFY(main.contains(QStringLiteral("inviteReceived")));
+    QVERIFY(main.contains(QStringLiteral("core.handleDeepLink(url)")));
+    QVERIFY(!main.contains(QStringLiteral("QLocalServer")));
 }
 
 QTEST_MAIN(AppShellTest)

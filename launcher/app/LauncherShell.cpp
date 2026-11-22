@@ -3,6 +3,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QRegularExpression>
@@ -15,6 +16,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 
 namespace {
 void messageHandler(QtMsgType type, const QMessageLogContext &context, const QString &message)
@@ -72,13 +74,34 @@ QString LauncherShell::redact(const QString &message)
     return result;
 }
 
-bool LauncherShell::acquireSingleInstance()
+QString LauncherShell::inviteFromArguments(const QStringList &arguments)
+{
+    const QString prefix = QStringLiteral("sapie://join/");
+    for (const QString &argument : arguments) {
+        if (argument.startsWith(prefix) && !argument.contains(QLatin1Char('\n'))
+            && !argument.contains(QLatin1Char('\r'))) {
+            return argument;
+        }
+    }
+    return {};
+}
+
+QString LauncherShell::pickExecutable()
+{
+    return QFileDialog::getOpenFileName(nullptr, QStringLiteral("Choose executable"),
+                                        QDir::homePath(), QStringLiteral("All files (*)"));
+}
+
+bool LauncherShell::acquireSingleInstance(const QString &inviteUrl)
 {
     const QString name = QStringLiteral("sapie-launcher");
     QLocalSocket probe(this);
     probe.connectToServer(name);
     if (probe.waitForConnected(200)) {
-        probe.write("raise");
+        const QByteArray payload = inviteUrl.isEmpty()
+                ? QByteArray("raise")
+                : QByteArray("join ") + inviteUrl.toUtf8() + '\n';
+        probe.write(payload);
         probe.waitForBytesWritten(200);
         return false;
     }
@@ -89,7 +112,40 @@ bool LauncherShell::acquireSingleInstance()
         qWarning() << "Could not reserve the launcher instance:" << m_instanceServer->errorString();
         return false;
     }
+    connect(m_instanceServer, &QLocalServer::newConnection, this,
+            &LauncherShell::onInstanceConnection);
     return true;
+}
+
+void LauncherShell::onInstanceConnection()
+{
+    while (m_instanceServer->hasPendingConnections()) {
+        QLocalSocket *socket = m_instanceServer->nextPendingConnection();
+        auto buffer = std::make_shared<QByteArray>();
+        const auto read = [this, socket, buffer]() {
+            buffer->append(socket->readAll());
+            if (*buffer == "raise") {
+                socket->disconnectFromServer();
+                return;
+            }
+            const int split = buffer->indexOf('\n');
+            if (split < 0) {
+                if (buffer->size() > 4096) {
+                    socket->disconnectFromServer();
+                }
+                return;
+            }
+            if (buffer->startsWith("join ")) {
+                const QString url = QString::fromUtf8(buffer->constData() + 5, split - 5);
+                if (!url.isEmpty()) {
+                    emit inviteReceived(url);
+                }
+            }
+            socket->disconnectFromServer();
+        };
+        connect(socket, &QLocalSocket::readyRead, this, read);
+        read();
+    }
 }
 
 void LauncherShell::restoreWindow(QQuickWindow *window)

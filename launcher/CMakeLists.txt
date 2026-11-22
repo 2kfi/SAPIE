@@ -11,7 +11,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 option(SAPIE_CARGO_OFFLINE "Build the Rust core without network access" OFF)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Qml Quick Network Test)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Qml Quick Network Test Widgets)
 find_package(Threads REQUIRED)
 
 qt_standard_project_setup()
@@ -71,7 +71,7 @@ add_library(sapie_app STATIC
   app/LauncherShell.h
 )
 target_include_directories(sapie_app PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/app")
-target_link_libraries(sapie_app PUBLIC Qt6::Core Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick)
+target_link_libraries(sapie_app PUBLIC Qt6::Core Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::Widgets)
 
 qt_add_executable(sapie_launcher
   app/main.cpp
@@ -106,6 +106,8 @@ qt_add_executable(app_shell_test
   app/app.qrc
 )
 target_link_libraries(app_shell_test PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test sapie_app)
+target_compile_definitions(app_shell_test PRIVATE
+  SAPIE_MAIN_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/app/main.cpp")
 add_test(NAME app_shell_test COMMAND app_shell_test)
 set_tests_properties(app_shell_test PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
