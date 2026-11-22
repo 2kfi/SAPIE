@@ -104,6 +104,31 @@ func (r *Router) lobbyRecipients(from, lobbyID uint64) []uint64 {
 	return allowed
 }
 
+// RouteEndpoints exchanges rendezvous endpoints between a joining session and
+// its lobby mates. from is the authenticated session, never a client-supplied ID.
+func (r *Router) RouteEndpoints(from, lobbyID uint64, own *protocol.EndpointSignal, peers func(uint64) *protocol.EndpointReport) {
+	if own == nil {
+		return
+	}
+	own.SteamId = from
+	for _, to := range r.lobbyRecipients(from, lobbyID) {
+		if to == from {
+			continue
+		}
+		r.Deliver(to, endpointFrame(own))
+		if peers == nil {
+			continue
+		}
+		if report := peers(to); report != nil && (len(report.GetIpv4()) > 0 || len(report.GetIpv6()) > 0) {
+			r.Deliver(from, endpointFrame(&protocol.EndpointSignal{SteamId: to, Endpoints: report}))
+		}
+	}
+}
+
+func endpointFrame(signal *protocol.EndpointSignal) *protocol.Frame {
+	return &protocol.Frame{Payload: &protocol.Frame_EndpointSignal{EndpointSignal: signal}}
+}
+
 // p2pAllowed reports whether to is a friend of from or shares a lobby with them.
 func (r *Router) p2pAllowed(from, to uint64) bool {
 	if r.resolver == nil {

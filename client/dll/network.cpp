@@ -960,6 +960,7 @@ bool Server_Connection::connect_and_login()
     }
     request.mutable_login()->set_appid(settings->get_local_game_id().AppID());
     request.mutable_login()->set_client_version("sapie-m1");
+    request.mutable_login()->mutable_endpoints()->CopyFrom(network->buildEndpointReport());
 
     sapie::Frame response;
     bool ok = send_sapie_frame(new_sock, request) && recv_sapie_frame(new_sock, response)
@@ -985,6 +986,11 @@ bool Server_Connection::send_frame(const google::protobuf::MessageLite &message)
 
 bool Server_Connection::send_steam(Common_Message *msg)
 {
+    if (msg->has_lobby_messages() && msg->lobby_messages().type() == Lobby_Messages::JOIN) {
+        sapie::Frame report;
+        report.mutable_endpoint_report()->CopyFrom(network->buildEndpointReport());
+        if (!send_frame(report)) return false;
+    }
     sapie::Frame frame;
     frame.mutable_steam()->CopyFrom(*msg);
     return send_frame(frame);
@@ -1093,6 +1099,9 @@ void Server_Connection::pump()
             last_send = std::chrono::steady_clock::now();
         } else if (frame.has_pong()) {
             last_receive = std::chrono::steady_clock::now();
+        } else if (frame.has_endpoint_signal()) {
+            const auto &signal = frame.endpoint_signal();
+            network->setPeerEndpoints(signal.steam_id(), signal.endpoints());
         } else if (frame.has_stats_response()) {
             const auto &response = frame.stats_response();
             for (const auto &name : sapie::local_mirror().apply_stats_response(response, network->appid)) {
@@ -1699,4 +1708,29 @@ bool Networking::setCallback(Callback_Ids id, CSteamID steam_id, void (*message_
 uint32 Networking::getOwnIP()
 {
     return own_ip;
+}
+
+sapie::EndpointReport Networking::buildEndpointReport() const
+{
+    sapie::EndpointReport report;
+    if (!enabled || !udp_port) return report;
+    // shortcut: only an IPv4 UDP socket is bound today, so no IPv6 endpoint is
+    // reported until punching binds one; the server still carries both families.
+    uint32 ip = htonl(own_ip);
+    report.set_ipv4(std::string(reinterpret_cast<const char *>(&ip), sizeof(ip)));
+    report.set_ipv4_port(udp_port);
+    return report;
+}
+
+void Networking::setPeerEndpoints(uint64_t steam_id, const sapie::EndpointReport &report)
+{
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    peer_endpoints[steam_id] = report;
+}
+
+const sapie::EndpointReport *Networking::peerEndpoints(uint64_t steam_id) const
+{
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    auto it = peer_endpoints.find(steam_id);
+    return it == peer_endpoints.end() ? nullptr : &it->second;
 }

@@ -19,6 +19,7 @@
 #define NETWORK_INCLUDE
 
 #include "base.h"
+#include "sapie.pb.h"
 
 #include <memory>
 
@@ -121,6 +122,7 @@ class Networking {
     uint16 udp_port, tcp_port;
     uint32 own_ip;
     std::vector<struct Connection> connections;
+    std::map<uint64_t, sapie::EndpointReport> peer_endpoints;
     struct Connection *find_connection(CSteamID id, uint32 appid = 0);
     struct Connection *new_connection(CSteamID id, uint32 appid);
 
@@ -135,7 +137,7 @@ class Networking {
     std::vector<IP_PORT> custom_broadcasts;
 
     std::vector<struct TCP_Socket> accepted;
-    std::recursive_mutex mutex;
+    mutable std::recursive_mutex mutex;
 
     struct Network_Callback_Container callbacks[CALLBACK_IDS_MAX];
     class SteamCallBacks *steam_callbacks;
@@ -170,6 +172,10 @@ public:
     bool send_frame(const google::protobuf::MessageLite &message);
     bool sendToAll(Common_Message *msg, bool reliable);
     bool sendToIPPort(Common_Message *msg, uint32 ip, uint16 port, bool reliable);
+
+    sapie::EndpointReport buildEndpointReport() const;
+    void setPeerEndpoints(uint64_t steam_id, const sapie::EndpointReport &report);
+    const sapie::EndpointReport *peerEndpoints(uint64_t steam_id) const;
 
     bool setCallback(Callback_Ids id, CSteamID steam_id, void (*message_callback)(void *object, Common_Message *msg), void *object);
     uint16 get_udp_port() const { return udp_port; } // host order, the port this client actually bound

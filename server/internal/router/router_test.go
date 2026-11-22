@@ -97,6 +97,52 @@ func TestRouteFanout(t *testing.T) {
 	}
 }
 
+func TestRouteEndpointsStampsAuthenticatedID(t *testing.T) {
+	alice, bob := &fakePeer{}, &fakePeer{}
+	resolver := fakeResolver{lobbies: map[uint64][]uint64{7: {1, 2}}}
+	r := NewWithResolver(fakeLookup{1: alice, 2: bob}, resolver)
+
+	own := &protocol.EndpointSignal{
+		SteamId: 99, // a pretending client must not choose the stamped ID
+		Endpoints: &protocol.EndpointReport{Ipv4: []byte{203, 0, 113, 1}, Ipv4Port: 40000},
+	}
+	peerReport := &protocol.EndpointReport{
+		Ipv4: []byte{203, 0, 113, 2}, Ipv4Port: 50000,
+		Ipv6: bytes.Repeat([]byte{0x20}, 16), Ipv6Port: 50001,
+	}
+	r.RouteEndpoints(1, 7, own, func(id uint64) *protocol.EndpointReport {
+		if id == 2 {
+			return peerReport
+		}
+		return nil
+	})
+
+	if len(bob.frames) != 1 || len(alice.frames) != 1 {
+		t.Fatalf("endpoint frames = alice %d, bob %d, want 1/1", len(alice.frames), len(bob.frames))
+	}
+	if got := bob.frames[0].GetEndpointSignal(); got.GetSteamId() != 1 ||
+		!bytes.Equal(got.GetEndpoints().GetIpv4(), own.GetEndpoints().GetIpv4()) {
+		t.Fatalf("bob got %+v", got)
+	}
+	if got := alice.frames[0].GetEndpointSignal(); got.GetSteamId() != 2 ||
+		!bytes.Equal(got.GetEndpoints().GetIpv6(), peerReport.GetIpv6()) {
+		t.Fatalf("alice got %+v", got)
+	}
+}
+
+func TestRouteEndpointsHonorsBlockList(t *testing.T) {
+	alice, bob := &fakePeer{}, &fakePeer{}
+	resolver := fakeResolver{
+		lobbies: map[uint64][]uint64{7: {1, 2}},
+		blocked: map[[2]uint64]bool{{1, 2}: true},
+	}
+	r := NewWithResolver(fakeLookup{1: alice, 2: bob}, resolver)
+	r.RouteEndpoints(1, 7, &protocol.EndpointSignal{SteamId: 1}, nil)
+	if len(alice.frames) != 0 || len(bob.frames) != 0 {
+		t.Fatal("blocked endpoint signaling was delivered")
+	}
+}
+
 func delivered(t *testing.T, frame *protocol.Frame) *protocol.Common_Message {
 	t.Helper()
 	steam, ok := frame.Payload.(*protocol.Frame_Steam)
