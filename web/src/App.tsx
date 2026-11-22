@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Login from './screens/Login'
 import Register from './screens/Register'
 import Shell from './screens/Shell'
+import InviteDialog from './components/InviteDialog'
 import PlainHttpNotice from './components/PlainHttpNotice'
 import Toast from './components/Toast'
+import { clearInviteParam, readInviteParam } from './lib/invite'
 import { navigate, readRoute, type Route } from './routes'
 import {
   logout,
@@ -17,13 +19,26 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null)
   const [loginReason, setLoginReason] = useState<string | null>(null)
   const [session, setSession] = useState<Session | null>(null)
+  const [invite, setInvite] = useState<string | null>(readInviteParam)
   const sessionRef = useRef<Session | null>(null)
+  const inviteRef = useRef(invite)
 
   useEffect(() => {
-    const syncRoute = () => setRoute(readRoute())
+    const syncRoute = () => {
+      setRoute(readRoute())
+      setInvite(readInviteParam())
+    }
     window.addEventListener('hashchange', syncRoute)
-    return () => window.removeEventListener('hashchange', syncRoute)
+    window.addEventListener('popstate', syncRoute)
+    return () => {
+      window.removeEventListener('hashchange', syncRoute)
+      window.removeEventListener('popstate', syncRoute)
+    }
   }, [])
+
+  useEffect(() => {
+    inviteRef.current = invite
+  }, [invite])
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
@@ -49,7 +64,22 @@ export default function App() {
     sessionRef.current = next
     setSession(next)
     setLoginReason(null)
+    if (!inviteRef.current) go('friends')
+  }, [go])
+
+  const closeInvite = useCallback(() => {
+    clearInviteParam()
+    inviteRef.current = null
+    setInvite(null)
+    if (route === 'login' || route === 'register') go('friends')
+  }, [go, route])
+
+  const joinedInvite = useCallback((lobbyId: string) => {
+    clearInviteParam()
+    inviteRef.current = null
+    setInvite(null)
     go('friends')
+    setNotice(`Joined lobby ${lobbyId}.`)
   }, [go])
 
   const signOut = useCallback(() => {
@@ -71,7 +101,11 @@ export default function App() {
     <>
       <PlainHttpNotice />
       {route === 'login' ? (
-        <Login onConnected={connected} onNavigate={go} reason={loginReason} />
+        <Login
+          onConnected={connected}
+          onNavigate={go}
+          reason={loginReason ?? (invite ? 'Sign in to review your lobby invite.' : null)}
+        />
       ) : route === 'register' ? (
         <Register onConnected={connected} onBack={() => go('login')} />
       ) : (
@@ -84,6 +118,14 @@ export default function App() {
         />
       )}
       <Toast message={notice} onDismiss={() => setNotice(null)} />
+      {invite && session ? (
+        <InviteDialog
+          invite={invite}
+          session={session}
+          onClose={closeInvite}
+          onJoined={joinedInvite}
+        />
+      ) : null}
     </>
   )
 }

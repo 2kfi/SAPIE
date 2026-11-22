@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from '../App';
 import { mockFetch } from './fetch';
 
+const INVITE = 'sapie://join/42?exp=1795199695&sig=abc';
+
 function sessionReplies() {
   return {
     friends: { friends: [] },
@@ -30,6 +32,7 @@ function baseHandler(unauthorized = false) {
     if (url.endsWith('/friends/requests')) return { json: replies.requests };
     if (url.endsWith('/friends/blocked')) return { json: replies.blocked };
     if (url.endsWith('/lobbies')) return { json: replies.lobbies };
+    if (url.endsWith('/lobbies/42/join')) return { json: { lobby_id: 42 } };
     if (url.endsWith('/logout')) return { json: {} };
     return undefined;
   };
@@ -77,5 +80,19 @@ describe('App session flow', () => {
     expect(await screen.findByText('You have signed out.')).toBeInTheDocument();
     expect(localStorage.length).toBe(0);
     expect(document.body.textContent).not.toContain('session-token-123');
+  });
+
+  it('opens the invite panel from a web fallback link and joins that lobby', async () => {
+    window.history.replaceState(null, '', `/?invite=${encodeURIComponent(INVITE)}#/login`);
+    const fetchMock = mockFetch(baseHandler());
+    render(<App />);
+    expect(await screen.findByText('Sign in to review your lobby invite.')).toBeInTheDocument();
+    signIn();
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Join lobby 42');
+    fireEvent.click(screen.getByRole('button', { name: 'Join lobby 42' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) =>
+      String(url).endsWith('/lobbies/42/join'))).toBe(true));
+    expect(await screen.findByText('Joined lobby 42.')).toBeInTheDocument();
+    expect(window.location.search).toBe('');
   });
 });

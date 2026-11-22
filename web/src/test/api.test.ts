@@ -3,11 +3,13 @@ import {
   acceptFriendRequest,
   ApiError,
   blockFriend,
+  createLobbyInvite,
   cancelFriendRequest,
   declineFriendRequest,
   getFriends,
   getLobbies,
   getStats,
+  joinLobby,
   listBlocked,
   listFriendRequests,
   listSessions,
@@ -25,6 +27,7 @@ import {
 import { bodyOf, headerOf, mockFetch } from './fetch'
 
 const TOKEN = 'tok_live_only'
+const INVITE = 'sapie://join/42?exp=1795199695&sig=abc'
 
 describe('typed API client', () => {
   it('returns a login result with no password field', async () => {
@@ -70,6 +73,9 @@ describe('typed API client', () => {
       [revokeSession('h', TOKEN, 'abc'), 'DELETE', '/api/v1/sessions/abc'],
       [getStats('h', TOKEN, 42), 'GET', '/api/v1/users/42/stats'],
       [getLobbies('h', TOKEN), 'GET', '/api/v1/lobbies'],
+      [joinLobby('h', TOKEN, 42), 'POST', '/api/v1/lobbies/42/join'],
+      [joinLobby('h', TOKEN, 42, INVITE), 'POST', '/api/v1/lobbies/42/join'],
+      [createLobbyInvite('h', TOKEN, 42), 'POST', '/api/v1/lobbies/42/invite'],
     ]
     await Promise.all(calls.map(([promise]) => promise))
     const seen = calls.map((_call, index) => {
@@ -77,6 +83,9 @@ describe('typed API client', () => {
       return [init?.method ?? 'GET', String(url)] as const
     })
     expect(seen).toEqual(calls.map(([, method, path]) => [method, path]))
+    expect(bodyOf(fetchMock.mock.calls[17][1])).toEqual({})
+    expect(bodyOf(fetchMock.mock.calls[18][1])).toEqual({ invite: INVITE })
+    expect(bodyOf(fetchMock.mock.calls[19][1])).toEqual({})
     expect(localStorage.length).toBe(0)
   })
 
