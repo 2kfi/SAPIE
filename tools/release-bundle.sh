@@ -133,6 +133,8 @@ cp "$server_arm64" "$container/server/sapie-server-linux-arm64"
 cp "$server_win" "$container/server/sapie-server-windows-amd64.exe"
 cp "$server_win_arm" "$container/server/sapie-server-windows-arm64.exe"
 cp -R "$web_dist/." "$container/web/dist/"
+tar -czf "$output/container.tar.gz" -C "$output" container
+rm -rf "$container"
 
 cp "$SCRIPT_DIR/update-signing-public.pem" "$output/update-signing-public.pem"
 
