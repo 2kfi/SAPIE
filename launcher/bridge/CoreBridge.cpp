@@ -9,6 +9,9 @@ extern "C" {
 #include <QDesktopServices>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QStringList>
 #include <QUrl>
 
@@ -73,6 +76,84 @@ QString connectionStateFor(SapieStatus status)
     default:
         return QStringLiteral("signedOut");
     }
+}
+
+QVariantMap friendToMap(const QJsonObject &item)
+{
+    QVariantMap result;
+    result[QStringLiteral("id")] = item.value(QStringLiteral("steam_id")).toString();
+    result[QStringLiteral("name")] = item.value(QStringLiteral("persona_name")).toString();
+    result[QStringLiteral("status")] = item.value(QStringLiteral("persona_state")).toInt() == 1
+            ? QStringLiteral("online")
+            : QStringLiteral("offline");
+    const QString connect = item.value(QStringLiteral("connect_str")).toString();
+    result[QStringLiteral("note")] = connect;
+    return result;
+}
+
+QVariantList friendsFrom(const QJsonArray &items)
+{
+    QVariantList result;
+    for (const QJsonValue &item : items) {
+        result.append(friendToMap(item.toObject()));
+    }
+    return result;
+}
+
+QVariantList requestsFrom(const QJsonObject &payload)
+{
+    QVariantList result;
+    for (const QString &direction : {QStringLiteral("incoming"), QStringLiteral("outgoing")}) {
+        const QJsonArray items = payload.value(direction).toArray();
+        for (const QJsonValue &item : items) {
+            const QJsonObject object = item.toObject();
+            result.append(QVariantMap{
+                {QStringLiteral("id"), object.value(QStringLiteral("id")).toString()},
+                {QStringLiteral("name"), object.value(QStringLiteral("persona_name")).toString()},
+                {QStringLiteral("direction"), direction},
+                {QStringLiteral("note"), object.value(QStringLiteral("message")).toString()}
+            });
+        }
+    }
+    return result;
+}
+
+QVariantList blockedFrom(const QJsonObject &payload)
+{
+    QVariantList result;
+    for (const QJsonValue &item : payload.value(QStringLiteral("blocked")).toArray()) {
+        const QJsonObject object = item.toObject();
+        result.append(QVariantMap{
+            {QStringLiteral("id"), object.value(QStringLiteral("steam_id")).toString()},
+            {QStringLiteral("name"), object.value(QStringLiteral("persona_name")).toString()}
+        });
+    }
+    return result;
+}
+
+QVariantList lobbiesFrom(const QJsonObject &payload)
+{
+    QVariantList result;
+    for (const QJsonValue &item : payload.value(QStringLiteral("lobbies")).toArray()) {
+        const QJsonObject object = item.toObject();
+        const QString id = object.value(QStringLiteral("lobby_id")).toString();
+        const int members = object.value(QStringLiteral("members")).toArray().size();
+        const int capacity = object.value(QStringLiteral("member_limit")).toInt();
+        const bool joinable = object.value(QStringLiteral("joinable")).toBool();
+        const QString state = joinable ? QStringLiteral("joinable")
+                : (capacity > 0 && members >= capacity) ? QStringLiteral("full")
+                                                        : QStringLiteral("private");
+        const quint32 appid = object.value(QStringLiteral("appid")).toInt();
+        result.append(QVariantMap{
+            {QStringLiteral("id"), id},
+            {QStringLiteral("name"), QStringLiteral("Lobby %1").arg(id)},
+            {QStringLiteral("game"), appid == 0 ? QString() : QStringLiteral("App %1").arg(appid)},
+            {QStringLiteral("members"), members},
+            {QStringLiteral("capacity"), capacity},
+            {QStringLiteral("lobbyState"), state}
+        });
+    }
+    return result;
 }
 
 QString fromChar(const char *value)
@@ -941,76 +1022,336 @@ bool CoreBridge::libraryRemove(const QString &path)
                         QStringLiteral("Remove from library"));
 }
 
+bool CoreBridge::serverRequest(const QString &method, const QString &path,
+                               const QByteArray &body, QJsonDocument *out)
+{
+    if (m_core == nullptr) {
+        setLastError(QStringLiteral("The core is not ready."));
+        return false;
+    }
+    const QByteArray methodBytes = method.toUtf8();
+    const QByteArray pathBytes = path.toUtf8();
+    char *rawJson = nullptr;
+    const SapieStatus status = sapie_core_server_request(
+            m_core, methodBytes.constData(), pathBytes.constData(),
+            body.isEmpty() ? nullptr : body.constData(), &rawJson);
+    if (!recordStatus(status, QStringLiteral("Server request"))) {
+        sapie_string_free(rawJson);
+        return false;
+    }
+    CharOwner jsonOwner{rawJson};
+    const QByteArray json = rawJson == nullptr ? QByteArray() : QByteArray(rawJson);
+    if (json.trimmed().isEmpty()) {
+        if (out != nullptr) {
+            *out = QJsonDocument(QJsonObject{});
+        }
+        return true;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument parsed = QJsonDocument::fromJson(json, &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        setLastError(QStringLiteral("The server returned an unreadable response."));
+        return false;
+    }
+    if (out != nullptr) {
+        *out = parsed;
+    }
+    return true;
+}
+
+bool CoreBridge::refreshSocial()
+{
+    QJsonDocument doc;
+    if (!serverRequest(QStringLiteral("GET"), QStringLiteral("/friends"), {}, &doc)) {
+        return false;
+    }
+    m_friends = friendsFrom(doc.object().value(QStringLiteral("friends")).toArray());
+
+    if (!serverRequest(QStringLiteral("GET"), QStringLiteral("/friends/requests"), {}, &doc)) {
+        return false;
+    }
+    const QJsonObject requestPayload = doc.object();
+    m_requests = requestsFrom(requestPayload);
+
+    if (!serverRequest(QStringLiteral("GET"), QStringLiteral("/friends/blocked"), {}, &doc)) {
+        return false;
+    }
+    m_blocked = blockedFrom(doc.object());
+
+    if (!serverRequest(QStringLiteral("GET"), QStringLiteral("/lobbies"), {}, &doc)) {
+        return false;
+    }
+    m_lobbies = lobbiesFrom(doc.object());
+
+    emit friendsChanged();
+    emit requestsChanged();
+    emit blockedChanged();
+    emit lobbiesChanged();
+    return true;
+}
+
+void CoreBridge::applySocialState(bool ok)
+{
+    if (!ok) {
+        const bool offline = m_lastError.contains(QStringLiteral("could not be reached"),
+                                                  Qt::CaseInsensitive)
+                || m_lastError.contains(QStringLiteral("HTTP 5"), Qt::CaseInsensitive)
+                || m_lastError.contains(QStringLiteral("server returned an error"),
+                                        Qt::CaseInsensitive)
+                || m_lastError.contains(QStringLiteral("limiting requests"),
+                                        Qt::CaseInsensitive);
+        m_friendsState = offline ? QStringLiteral("offline") : QStringLiteral("error");
+    } else {
+        m_friendsState = m_friends.isEmpty() && m_requests.isEmpty() && m_blocked.isEmpty()
+                        && m_lobbies.isEmpty()
+                ? QStringLiteral("empty")
+                : QStringLiteral("ready");
+    }
+    emit friendsStateChanged();
+}
+
+bool CoreBridge::finishAfterRefresh(const QString &operation, bool refreshed,
+                                    const QString &success)
+{
+    applySocialState(refreshed);
+    if (!refreshed) {
+        return finish(operation, false, m_lastError);
+    }
+    return finish(operation, true, success);
+}
+
 bool CoreBridge::revokeToken()
 {
-    return finish(QStringLiteral("revokeToken"), false,
-                  QStringLiteral("Server-backed token revocation is not enabled in this build."));
+    if (m_core == nullptr) {
+        setLastError(QStringLiteral("The core is not ready."));
+        return finish(QStringLiteral("revokeToken"), false, m_lastError);
+    }
+    if (!recordStatus(sapie_core_revoke_token(m_core), QStringLiteral("Revoke token"))) {
+        return finish(QStringLiteral("revokeToken"), false, m_lastError);
+    }
+    m_connectionState = QStringLiteral("signedOut");
+    m_accountName.clear();
+    m_rememberSession = false;
+    m_friends.clear();
+    m_requests.clear();
+    m_blocked.clear();
+    m_lobbies.clear();
+    m_friendsState = QStringLiteral("loading");
+    emit connectionStateChanged();
+    emit accountNameChanged();
+    emit rememberSessionChanged();
+    emit friendsChanged();
+    emit requestsChanged();
+    emit blockedChanged();
+    emit lobbiesChanged();
+    emit friendsStateChanged();
+    return finish(QStringLiteral("revokeToken"), true,
+                  QStringLiteral("Session revoked on the server. The local token was cleared."));
 }
 
 bool CoreBridge::listFriends()
 {
-    return finish(QStringLiteral("listFriends"), false,
-                  QStringLiteral("Server-backed friends are not enabled in this build."));
+    m_friendsState = QStringLiteral("loading");
+    emit friendsStateChanged();
+    const bool ok = refreshSocial();
+    applySocialState(ok);
+    return finish(QStringLiteral("listFriends"), ok,
+                  ok ? QStringLiteral("Server data read.") : m_lastError);
 }
 
-bool CoreBridge::addFriend(const QString &)
+namespace {
+bool jsonBody(const QJsonObject &object, QByteArray *out)
 {
-    return finish(QStringLiteral("addFriend"), false,
-                  QStringLiteral("Server-backed friends are not enabled in this build."));
+    if (out == nullptr) {
+        return false;
+    }
+    *out = QJsonDocument(object).toJson(QJsonDocument::Compact);
+    return true;
+}
+} // namespace
+
+bool CoreBridge::addFriend(const QString &nameOrId)
+{
+    const QString name = nameOrId.trimmed();
+    if (name.isEmpty()) {
+        setLastError(QStringLiteral("Enter a player name before sending the request."));
+        return finish(QStringLiteral("addFriend"), false, m_lastError);
+    }
+    QByteArray body;
+    jsonBody({{QStringLiteral("username"), name}}, &body);
+    if (!serverRequest(QStringLiteral("POST"), QStringLiteral("/friends/requests"), body)) {
+        return finish(QStringLiteral("addFriend"), false, m_lastError);
+    }
+    const bool ok = refreshSocial();
+    return finishAfterRefresh(QStringLiteral("addFriend"), ok,
+                              QStringLiteral("Friend request sent through your server."));
 }
 
-bool CoreBridge::removeFriend(const QString &)
+bool CoreBridge::removeFriend(const QString &id)
 {
-    return finish(QStringLiteral("removeFriend"), false,
-                  QStringLiteral("Server-backed friends are not enabled in this build."));
+    bool valid = false;
+    const qulonglong numericId = toId(id, &valid);
+    if (!valid) {
+        setLastError(QStringLiteral("Choose a friend with a valid account ID."));
+        return finish(QStringLiteral("removeFriend"), false, m_lastError);
+    }
+    const QString path = QStringLiteral("/friends/%1").arg(numericId);
+    if (!serverRequest(QStringLiteral("DELETE"), path)) {
+        return finish(QStringLiteral("removeFriend"), false, m_lastError);
+    }
+    const bool ok = refreshSocial();
+    return finishAfterRefresh(QStringLiteral("removeFriend"), ok, QStringLiteral("Friend removed."));
 }
 
-bool CoreBridge::blockFriend(const QString &)
+bool CoreBridge::blockFriend(const QString &id)
 {
-    return finish(QStringLiteral("blockFriend"), false,
-                  QStringLiteral("Server-backed friends are not enabled in this build."));
+    bool valid = false;
+    const qulonglong numericId = toId(id, &valid);
+    if (!valid) {
+        setLastError(QStringLiteral("Choose an account with a valid ID."));
+        return finish(QStringLiteral("blockFriend"), false, m_lastError);
+    }
+    const QString path = QStringLiteral("/friends/%1/block").arg(numericId);
+    if (!serverRequest(QStringLiteral("POST"), path)) {
+        return finish(QStringLiteral("blockFriend"), false, m_lastError);
+    }
+    const bool ok = refreshSocial();
+    return finishAfterRefresh(QStringLiteral("blockFriend"), ok, QStringLiteral("Account blocked."));
 }
 
-bool CoreBridge::unblockFriend(const QString &)
+bool CoreBridge::unblockFriend(const QString &id)
 {
-    return finish(QStringLiteral("unblockFriend"), false,
-                  QStringLiteral("Server-backed friends are not enabled in this build."));
+    bool valid = false;
+    const qulonglong numericId = toId(id, &valid);
+    if (!valid) {
+        setLastError(QStringLiteral("Choose an account with a valid ID."));
+        return finish(QStringLiteral("unblockFriend"), false, m_lastError);
+    }
+    const QString path = QStringLiteral("/friends/%1/block").arg(numericId);
+    if (!serverRequest(QStringLiteral("DELETE"), path)) {
+        return finish(QStringLiteral("unblockFriend"), false, m_lastError);
+    }
+    const bool ok = refreshSocial();
+    return finishAfterRefresh(QStringLiteral("unblockFriend"), ok, QStringLiteral("Account unblocked."));
 }
 
-bool CoreBridge::acceptRequest(const QString &)
+bool CoreBridge::acceptRequest(const QString &id)
 {
-    return finish(QStringLiteral("acceptRequest"), false,
-                  QStringLiteral("Server-backed requests are not enabled in this build."));
+    bool valid = false;
+    const qulonglong numericId = toId(id, &valid);
+    if (!valid) {
+        setLastError(QStringLiteral("Choose a request with a valid ID."));
+        return finish(QStringLiteral("acceptRequest"), false, m_lastError);
+    }
+    const QString path = QStringLiteral("/friends/requests/%1/accept").arg(numericId);
+    if (!serverRequest(QStringLiteral("POST"), path)) {
+        return finish(QStringLiteral("acceptRequest"), false, m_lastError);
+    }
+    const bool ok = refreshSocial();
+    return finishAfterRefresh(QStringLiteral("acceptRequest"), ok, QStringLiteral("Request accepted."));
 }
 
-bool CoreBridge::declineRequest(const QString &)
+bool CoreBridge::declineRequest(const QString &id)
 {
-    return finish(QStringLiteral("declineRequest"), false,
-                  QStringLiteral("Server-backed requests are not enabled in this build."));
+    bool valid = false;
+    const qulonglong numericId = toId(id, &valid);
+    if (!valid) {
+        setLastError(QStringLiteral("Choose a request with a valid ID."));
+        return finish(QStringLiteral("declineRequest"), false, m_lastError);
+    }
+    const QString path = QStringLiteral("/friends/requests/%1/decline").arg(numericId);
+    if (!serverRequest(QStringLiteral("POST"), path)) {
+        return finish(QStringLiteral("declineRequest"), false, m_lastError);
+    }
+    const bool ok = refreshSocial();
+    return finishAfterRefresh(QStringLiteral("declineRequest"), ok, QStringLiteral("Request declined."));
 }
 
-bool CoreBridge::cancelRequest(const QString &)
+bool CoreBridge::cancelRequest(const QString &id)
 {
-    return finish(QStringLiteral("cancelRequest"), false,
-                  QStringLiteral("Server-backed requests are not enabled in this build."));
+    bool valid = false;
+    const qulonglong numericId = toId(id, &valid);
+    if (!valid) {
+        setLastError(QStringLiteral("Choose a request with a valid ID."));
+        return finish(QStringLiteral("cancelRequest"), false, m_lastError);
+    }
+    const QString path = QStringLiteral("/friends/requests/%1").arg(numericId);
+    if (!serverRequest(QStringLiteral("DELETE"), path)) {
+        return finish(QStringLiteral("cancelRequest"), false, m_lastError);
+    }
+    const bool ok = refreshSocial();
+    return finishAfterRefresh(QStringLiteral("cancelRequest"), ok, QStringLiteral("Request cancelled."));
 }
 
 bool CoreBridge::listLobbies()
 {
-    return finish(QStringLiteral("listLobbies"), false,
-                  QStringLiteral("Server-backed lobbies are not enabled in this build."));
+    m_friendsState = QStringLiteral("loading");
+    emit friendsStateChanged();
+    const bool ok = refreshSocial();
+    applySocialState(ok);
+    return finish(QStringLiteral("listLobbies"), ok,
+                  ok ? QStringLiteral("Lobbies read.") : m_lastError);
 }
 
-bool CoreBridge::joinLobby(const QString &)
+bool CoreBridge::joinLobby(const QString &id)
 {
-    return finish(QStringLiteral("joinLobby"), false,
-                  QStringLiteral("Server-backed lobbies are not enabled in this build."));
+    bool valid = false;
+    const qulonglong numericId = toId(id, &valid);
+    if (!valid) {
+        setLastError(QStringLiteral("Choose a lobby with a valid ID."));
+        return finish(QStringLiteral("joinLobby"), false, m_lastError);
+    }
+    QJsonObject payload;
+    if (!m_pendingInvite.isEmpty()) {
+        payload.insert(QStringLiteral("invite"), m_pendingInvite);
+    }
+    QByteArray body;
+    jsonBody(payload, &body);
+    const QString path = QStringLiteral("/lobbies/%1/join").arg(numericId);
+    if (!serverRequest(QStringLiteral("POST"), path, body)) {
+        return finish(QStringLiteral("joinLobby"), false, m_lastError);
+    }
+    const bool ok = refreshSocial();
+    return finishAfterRefresh(QStringLiteral("joinLobby"), ok, QStringLiteral("Join requested."));
 }
 
-bool CoreBridge::inviteFriend(const QString &, const QString &)
+bool CoreBridge::inviteFriend(const QString &id, const QString &lobbyId)
 {
-    return finish(QStringLiteral("inviteFriend"), false,
-                  QStringLiteral("Server-backed invites are not enabled in this build."));
+    bool validFriend = false;
+    const qulonglong friendId = toId(id, &validFriend);
+    if (!validFriend) {
+        setLastError(QStringLiteral("Choose a friend with a valid account ID."));
+        return finish(QStringLiteral("inviteFriend"), false, m_lastError);
+    }
+
+    QString connect = m_pendingInvite;
+    if (!lobbyId.isEmpty()) {
+        bool validLobby = false;
+        const qulonglong numericLobby = toId(lobbyId, &validLobby);
+        if (!validLobby) {
+            setLastError(QStringLiteral("Choose a lobby with a valid ID."));
+            return finish(QStringLiteral("inviteFriend"), false, m_lastError);
+        }
+        const QString invitePath = QStringLiteral("/lobbies/%1/invite").arg(numericLobby);
+        QJsonDocument inviteDoc;
+        if (!serverRequest(QStringLiteral("POST"), invitePath, {}, &inviteDoc)) {
+            return finish(QStringLiteral("inviteFriend"), false, m_lastError);
+        }
+        connect = inviteDoc.object().value(QStringLiteral("url")).toString();
+    }
+    if (connect.isEmpty()) {
+        setLastError(QStringLiteral("Open a join link or choose a lobby before inviting."));
+        return finish(QStringLiteral("inviteFriend"), false, m_lastError);
+    }
+
+    QByteArray body;
+    jsonBody({{QStringLiteral("connect_str"), connect}}, &body);
+    const QString path = QStringLiteral("/friends/%1/invite").arg(friendId);
+    if (!serverRequest(QStringLiteral("POST"), path, body)) {
+        return finish(QStringLiteral("inviteFriend"), false, m_lastError);
+    }
+    return finish(QStringLiteral("inviteFriend"), true,
+                  QStringLiteral("Invite sent through your server."));
 }
 
 bool CoreBridge::recordStatus(quint32 status, const QString &action)

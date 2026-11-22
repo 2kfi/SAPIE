@@ -106,11 +106,7 @@ impl Core {
     }
 
     fn snapshot(&self) -> Result<LauncherState> {
-        Ok(self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone())
+        Ok(self.state.lock().unwrap_or_else(|e| e.into_inner()).clone())
     }
 
     fn update<T>(&self, apply: impl FnOnce(&mut LauncherState) -> Result<T>) -> Result<T> {
@@ -139,6 +135,7 @@ impl SapieCore {
 
 fn status_of(error: &CommandError) -> Status {
     match error.kind {
+        ErrorKind::InvalidArgument => Status::InvalidArgument,
         ErrorKind::InvalidPath => Status::InvalidPath,
         ErrorKind::NotFound => Status::NotFound,
         ErrorKind::PermissionDenied => Status::PermissionDenied,
@@ -184,14 +181,15 @@ unsafe fn str_array(ptr: *const *const c_char, count: usize) -> Option<Vec<Strin
 }
 
 fn join_lobby_id(url: &str) -> Option<&str> {
-    let id = url.strip_prefix("sapie://join/")?.split(['?', '#', '/']).next()?;
+    let id = url
+        .strip_prefix("sapie://join/")?
+        .split(['?', '#', '/'])
+        .next()?;
     (!id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit())).then_some(id)
 }
 
 fn c_string(value: &str) -> *mut c_char {
-    CString::new(value)
-        .unwrap_or_default()
-        .into_raw()
+    CString::new(value).unwrap_or_default().into_raw()
 }
 
 fn opt_string(value: Option<&str>) -> *mut c_char {
@@ -439,7 +437,12 @@ pub unsafe extern "C" fn sapie_core_create_fake(
     if version != ABI_VERSION {
         return Status::AbiVersion;
     }
-    create_with(Arc::new(FakePlatform::default()), callback, user_data, out_core)
+    create_with(
+        Arc::new(FakePlatform::default()),
+        callback,
+        user_data,
+        out_core,
+    )
 }
 
 #[no_mangle]
@@ -537,12 +540,7 @@ pub unsafe extern "C" fn sapie_core_login(
         (Some(server), Some(username), Some(password)) => (server, username, password),
         _ => return Status::InvalidArgument,
     };
-    let session = match auth::login(
-        server,
-        username,
-        password,
-        core.inner.platform.keychain(),
-    ) {
+    let session = match auth::login(server, username, password, core.inner.platform.keychain()) {
         Ok(session) => session,
         Err(error) => return status_of(&error),
     };
@@ -556,7 +554,10 @@ pub unsafe extern "C" fn sapie_core_login(
     }) {
         return status_of(&error);
     }
-    write_out(out_session, Box::into_raw(Box::new(SapieSessionInfo::from(&session))))
+    write_out(
+        out_session,
+        Box::into_raw(Box::new(SapieSessionInfo::from(&session))),
+    )
 }
 
 #[no_mangle]
@@ -950,7 +951,9 @@ pub unsafe extern "C" fn sapie_core_save_game_options(
         (Some(path), Some(args)) => (path, args, as_str(ld_preload)),
         _ => return Status::InvalidArgument,
     };
-    let ld_preload = preload.filter(|value| !value.is_empty()).map(str::to_string);
+    let ld_preload = preload
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
     match core.inner.update(|state| {
         let record = state
             .games
@@ -1065,6 +1068,69 @@ pub unsafe extern "C" fn sapie_core_parse_deep_link(
     }
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn sapie_core_server_request(
+    core: *mut SapieCore,
+    method: *const c_char,
+    path: *const c_char,
+    body: *const c_char,
+    out_json: *mut *mut c_char,
+) -> Status {
+    let core = match as_core(core) {
+        Some(core) => core,
+        None => return Status::InvalidArgument,
+    };
+    let (method, path) = match (as_str(method), as_str(path)) {
+        (Some(method), Some(path)) => (method, path),
+        _ => return Status::InvalidArgument,
+    };
+    let body = if body.is_null() {
+        None
+    } else {
+        match as_str(body) {
+            Some(body) => Some(body),
+            None => return Status::InvalidArgument,
+        }
+    };
+    let server = match core.inner.snapshot() {
+        Ok(state) => match state.server {
+            Some(server) => server,
+            None => {
+                return Status::InvalidArgument;
+            }
+        },
+        Err(error) => return status_of(&error),
+    };
+    match auth::server_request(&server, method, path, body, core.inner.platform.keychain()) {
+        Ok(json) => write_out(out_json, c_string(&json)),
+        Err(error) => status_of(&error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sapie_core_revoke_token(core: *mut SapieCore) -> Status {
+    let core = match as_core(core) {
+        Some(core) => core,
+        None => return Status::InvalidArgument,
+    };
+    let server = match core.inner.snapshot() {
+        Ok(state) => state.server,
+        Err(error) => return status_of(&error),
+    };
+    if let Err(error) = auth::revoke_token(server.as_deref(), core.inner.platform.keychain()) {
+        return status_of(&error);
+    }
+    match core.inner.update(|state| {
+        state.steam_id = None;
+        state.persona_name = None;
+        state.token_expires_at = None;
+        Ok(())
+    }) {
+        Ok(()) => Status::Ok,
+        Err(error) => status_of(&error),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1086,7 +1152,8 @@ mod tests {
     #[test]
     fn create_rejects_unknown_abi_versions() {
         let mut core: *mut SapieCore = ptr::dangling_mut();
-        let status = unsafe { sapie_core_create(ABI_VERSION + 1, None, ptr::null_mut(), &mut core) };
+        let status =
+            unsafe { sapie_core_create(ABI_VERSION + 1, None, ptr::null_mut(), &mut core) };
         assert_eq!(status, Status::AbiVersion);
         assert!(core.is_null());
     }
@@ -1094,9 +1161,58 @@ mod tests {
     #[test]
     fn create_and_destroy_fake_core() {
         let mut core: *mut SapieCore = ptr::null_mut();
-        let status = unsafe { sapie_core_create_fake(ABI_VERSION, None, ptr::null_mut(), &mut core) };
+        let status =
+            unsafe { sapie_core_create_fake(ABI_VERSION, None, ptr::null_mut(), &mut core) };
         assert_eq!(status, Status::Ok);
         assert!(!core.is_null());
+        unsafe { sapie_core_destroy(core) };
+    }
+
+    #[test]
+    fn server_request_validates_caller_arguments() {
+        let mut core: *mut SapieCore = ptr::null_mut();
+        assert_eq!(
+            unsafe { sapie_core_create_fake(ABI_VERSION, None, ptr::null_mut(), &mut core) },
+            Status::Ok
+        );
+        let mut json: *mut c_char = ptr::null_mut();
+        let path = CString::new("/friends").unwrap();
+        let method = CString::new("GET").unwrap();
+        assert_eq!(
+            unsafe {
+                sapie_core_server_request(core, ptr::null(), path.as_ptr(), ptr::null(), &mut json)
+            },
+            Status::InvalidArgument
+        );
+        assert_eq!(
+            unsafe {
+                sapie_core_server_request(
+                    core,
+                    method.as_ptr(),
+                    ptr::null(),
+                    ptr::null(),
+                    &mut json,
+                )
+            },
+            Status::InvalidArgument
+        );
+        assert_eq!(
+            unsafe {
+                sapie_core_server_request(
+                    core,
+                    method.as_ptr(),
+                    path.as_ptr(),
+                    ptr::null(),
+                    &mut json,
+                )
+            },
+            Status::InvalidArgument
+        );
+        assert!(json.is_null());
+        assert_eq!(
+            unsafe { sapie_core_revoke_token(ptr::null_mut()) },
+            Status::InvalidArgument
+        );
         unsafe { sapie_core_destroy(core) };
     }
 
@@ -1157,7 +1273,10 @@ mod tests {
         unsafe { free_string(out) };
 
         out = ptr::null_mut();
-        assert_eq!(unsafe { sapie_core_data_folder(core, &mut out) }, Status::Ok);
+        assert_eq!(
+            unsafe { sapie_core_data_folder(core, &mut out) },
+            Status::Ok
+        );
         assert_eq!(unsafe { as_str(out) }, Some(dir.to_str().unwrap()));
         unsafe { free_string(out) };
 

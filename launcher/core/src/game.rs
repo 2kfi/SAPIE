@@ -497,7 +497,12 @@ fn write_launch_token(dir: &Path, token: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-pub fn launch(path: &str, record: &GameRecord, token: &str, platform: &dyn Platform) -> Result<u32> {
+pub fn launch(
+    path: &str,
+    record: &GameRecord,
+    token: &str,
+    platform: &dyn Platform,
+) -> Result<u32> {
     let (exe, dir) = canonical_game(path)?;
     if !record.configured {
         return Err(CommandError::new(
@@ -513,9 +518,12 @@ pub fn launch(path: &str, record: &GameRecord, token: &str, platform: &dyn Platf
     }
     let token_path = write_launch_token(&dir, token)?;
     platform.acl().protect_token(&token_path)?;
-    let pid = platform
-        .process()
-        .spawn(&exe, &dir, &record.launch_args, record.ld_preload.as_deref());
+    let pid = platform.process().spawn(
+        &exe,
+        &dir,
+        &record.launch_args,
+        record.ld_preload.as_deref(),
+    );
     if pid.is_err() {
         let _ = fs::remove_file(&token_path);
     }

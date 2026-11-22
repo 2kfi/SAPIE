@@ -152,6 +152,16 @@ SapieStatus sapie_core_launcher_version(char **out_version);
 SapieStatus sapie_core_check_updates(SapieCore *core, const char *channel, char **out_version);
 SapieStatus sapie_core_parse_deep_link(const char *url, char **out_lobby_id);
 
+/*
+ * Authenticated user API. The caller supplies a fixed relative path and method;
+ * the core reads the session token from the keychain and never exposes it.
+ * The returned JSON text belongs to the core and must be released with
+ * sapie_string_free. An empty body yields an empty JSON object.
+ */
+SapieStatus sapie_core_server_request(SapieCore *core, const char *method, const char *path,
+                                      const char *body, char **out_json);
+SapieStatus sapie_core_revoke_token(SapieCore *core);
+
 #ifdef __cplusplus
 }
 #endif
