@@ -2,6 +2,7 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -13,6 +14,7 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QQuickWindow>
+#include <QTimer>
 
 #include <cstdio>
 #include <cstdlib>
@@ -101,8 +103,15 @@ bool LauncherShell::acquireSingleInstance(const QString &inviteUrl)
         const QByteArray payload = inviteUrl.isEmpty()
                 ? QByteArray("raise")
                 : QByteArray("join ") + inviteUrl.toUtf8() + '\n';
+        QEventLoop loop;
+        QObject::connect(&probe, &QLocalSocket::bytesWritten, &loop, &QEventLoop::quit);
+        QObject::connect(&probe, &QLocalSocket::errorOccurred, &loop, &QEventLoop::quit);
+        QTimer::singleShot(1000, &loop, &QEventLoop::quit);
         probe.write(payload);
-        probe.waitForBytesWritten(1000);
+        loop.exec();
+        if (probe.bytesToWrite() != 0) {
+            qWarning() << "Timed out forwarding an invitation to the running launcher";
+        }
         return false;
     }
 
