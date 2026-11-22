@@ -31,6 +31,8 @@ pub struct GameRecord {
     pub ld_preload: Option<String>,
     #[serde(default)]
     pub last_played: Option<u64>,
+    #[serde(default)]
+    pub favorite: bool,
 }
 
 impl GameRecord {
@@ -60,6 +62,8 @@ pub struct LauncherState {
     pub token_expires_at: Option<u64>,
     #[serde(default)]
     pub games: BTreeMap<String, GameRecord>,
+    #[serde(default)]
+    pub preferences: BTreeMap<String, String>,
 }
 
 impl Default for LauncherState {
@@ -72,6 +76,7 @@ impl Default for LauncherState {
             persona_name: None,
             token_expires_at: None,
             games: BTreeMap::new(),
+            preferences: BTreeMap::new(),
         }
     }
 }

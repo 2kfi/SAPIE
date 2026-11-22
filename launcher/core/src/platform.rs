@@ -303,9 +303,17 @@ pub struct FakePlatform {
     token: Mutex<Option<String>>,
     spawns: Mutex<Vec<SpawnCall>>,
     files: FakeFileSystem,
+    pub data_dir: Option<PathBuf>,
 }
 
 impl FakePlatform {
+    pub fn with_data_dir(dir: PathBuf) -> Self {
+        Self {
+            data_dir: Some(dir),
+            ..Self::default()
+        }
+    }
+
     pub fn spawned(&self) -> Vec<SpawnCall> {
         self.spawns.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
@@ -321,7 +329,9 @@ impl FakePlatform {
 
 impl Paths for FakePlatform {
     fn data_dir(&self) -> Result<PathBuf> {
-        let dir = std::env::temp_dir().join(format!("sapie-fake-core-{}", std::process::id()));
+        let dir = self.data_dir.clone().unwrap_or_else(|| {
+            std::env::temp_dir().join(format!("sapie-fake-core-{}", std::process::id()))
+        });
         std::fs::create_dir_all(&dir)?;
         Ok(dir)
     }

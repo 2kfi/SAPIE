@@ -91,6 +91,7 @@ typedef struct SapieGameRecord {
     size_t launch_arg_count;
     char *ld_preload;
     uint64_t last_played;
+    int favorite;
 } SapieGameRecord;
 
 /* Version and lifetime. */
@@ -137,6 +138,19 @@ SapieStatus sapie_core_library_list(SapieCore *core, SapieGameRecord **out_recor
 SapieStatus sapie_core_library_add(SapieCore *core, const char *path,
                                     SapieGameRecord **out_record);
 SapieStatus sapie_core_library_remove(SapieCore *core, const char *path);
+
+/* v1 additions. Existing signatures above are unchanged; these are appended. */
+SapieStatus sapie_core_set_favorite(SapieCore *core, const char *path, int favorite);
+SapieStatus sapie_core_save_game_options(SapieCore *core, const char *path,
+                                         const char *const *args, size_t arg_count,
+                                         const char *ld_preload);
+SapieStatus sapie_core_get_preference(SapieCore *core, const char *key, const char *fallback,
+                                      char **out_value);
+SapieStatus sapie_core_set_preference(SapieCore *core, const char *key, const char *value);
+SapieStatus sapie_core_data_folder(SapieCore *core, char **out_path);
+SapieStatus sapie_core_launcher_version(char **out_version);
+SapieStatus sapie_core_check_updates(SapieCore *core, const char *channel, char **out_version);
+SapieStatus sapie_core_parse_deep_link(const char *url, char **out_lobby_id);
 
 #ifdef __cplusplus
 }
