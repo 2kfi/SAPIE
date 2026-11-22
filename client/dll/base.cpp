@@ -146,9 +146,16 @@ CSteamID generate_steam_id_anonserver()
     return CSteamID(generate_account_id(), k_unSteamUserDefaultInstance, k_EUniversePublic, k_EAccountTypeAnonGameServer);
 }
 
-CSteamID generate_steam_id_lobby()
+// Compile-time check: the lobby SteamID prefix must match the server layout.
+static_assert(
+    ((uint64(k_EUniversePublic) << 56) | (uint64(k_EAccountTypeChat) << 52) |
+     (uint64(k_EChatInstanceFlagLobby | k_EChatInstanceFlagMMSLobby) << 32)) == 0x0186000000000000ULL,
+    "lobby SteamID prefix changed; update LobbySteamID on the server");
+
+CSteamID make_steam_id_lobby(uint32 account_id)
 {
-    return CSteamID(generate_account_id(), k_EChatInstanceFlagLobby | k_EChatInstanceFlagMMSLobby, k_EUniversePublic, k_EAccountTypeChat);
+    // account_id is server-assigned; the exact 64-bit value is kept end to end.
+    return CSteamID(account_id, k_EChatInstanceFlagLobby | k_EChatInstanceFlagMMSLobby, k_EUniversePublic, k_EAccountTypeChat);
 }
 
 bool check_timedout(std::chrono::high_resolution_clock::time_point old, double timeout)

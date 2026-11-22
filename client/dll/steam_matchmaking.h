@@ -77,6 +77,7 @@ public ISteamMatchmaking
     class RunEveryRunCB *run_every_runcb;
 
     std::vector<Lobby> lobbies;
+    uint32 next_lobby_account_id = 0;
     std::chrono::high_resolution_clock::time_point last_sent_lobbies;
     std::vector<struct Pending_Joins> pending_joins;
     std::vector<struct Pending_Creates> pending_creates;
@@ -115,7 +116,7 @@ Lobby *get_lobby(CSteamID id)
     if (!id.IsLobby())
         return NULL;
 
-    auto lobby = std::find_if(lobbies.begin(), lobbies.end(), [&id](Lobby const& item) { return (item.room_id() & 0xFFFFFFFF) == (id.GetAccountID()); });
+    auto lobby = std::find_if(lobbies.begin(), lobbies.end(), [&id](Lobby const& item) { return item.room_id() == id.ConvertToUint64(); });
     if (lobbies.end() == lobby)
         return NULL;
 
@@ -581,7 +582,9 @@ void Create_pending_lobbies()
     while (p_c != std::end(pending_creates)) {
         if (check_timedout(p_c->created, LOBBY_CREATE_DELAY)) {
             Lobby lobby;
-            CSteamID lobby_id = generate_steam_id_lobby();
+            // The account ID is derived from the server-assigned local SteamID.
+            uint32 account_id = settings->get_local_steam_id().GetAccountID() + ++next_lobby_account_id;
+            CSteamID lobby_id = make_steam_id_lobby(account_id);
             lobby.set_room_id(lobby_id.ConvertToUint64());
             lobby.set_joinable(true);
             lobby.set_member_limit(p_c->cMaxMembers);

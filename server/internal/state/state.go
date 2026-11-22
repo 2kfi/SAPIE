@@ -18,6 +18,33 @@ import (
 
 const SteamIDBase uint64 = 76561197960265728
 
+// Steam lobby SteamID layout: universe 8 bits, account type 4 bits,
+// instance 20 bits, account ID 32 bits (little-endian field order).
+const (
+	steamUniversePublic       uint64 = 1
+	steamAccountTypeChat      uint64 = 8
+	steamChatInstanceFlags    uint64 = 0x60000 // Lobby | MMSLobby
+	steamAccountTypeShift     uint64 = 52
+	steamUniverseShift        uint64 = 56
+	steamAccountInstanceShift uint64 = 32
+)
+
+// LobbySteamID composes a Steam-shaped lobby SteamID. The low 32 bits stay
+// equal to accountID so CSteamID.GetAccountID() keeps resolving the lobby.
+func LobbySteamID(accountID uint32) uint64 {
+	return steamUniversePublic<<steamUniverseShift |
+		steamAccountTypeChat<<steamAccountTypeShift |
+		steamChatInstanceFlags<<steamAccountInstanceShift |
+		uint64(accountID)
+}
+
+// IsLobbySteamID reports whether id has the public Chat Lobby|MMSLobby layout.
+func IsLobbySteamID(id uint64) bool {
+	const prefixMask = uint64(0xFFFFF)<<steamAccountInstanceShift | 0xF<<steamAccountTypeShift | 0xFF<<steamUniverseShift
+	const expected = steamChatInstanceFlags<<steamAccountInstanceShift | steamAccountTypeChat<<steamAccountTypeShift | steamUniversePublic<<steamUniverseShift
+	return id&prefixMask == expected && uint32(id) != 0
+}
+
 type Account struct {
 	SteamID     uint64 `json:"steam_id"`
 	Username    string `json:"username"`
@@ -32,9 +59,10 @@ type AuthAccount struct {
 }
 
 type Store struct {
-	db     *sql.DB
-	mu     sync.Mutex
-	nextID uint64
+	db                 *sql.DB
+	mu                 sync.Mutex
+	nextID             uint64
+	nextLobbyAccountID uint32
 }
 
 func Open(path string) (*Store, error) {
@@ -93,7 +121,18 @@ func Open(path string) (*Store, error) {
 	if max.Valid && uint64(max.Int64) >= next {
 		next = uint64(max.Int64) + 1
 	}
-	return &Store{db: db, nextID: next}, nil
+	nextLobby := uint32(1)
+	if err := db.QueryRow(`SELECT COALESCE(MAX(lobby_id & 0xFFFFFFFF), 0) FROM lobbies`).Scan(&max); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if max.Valid && max.Int64 > 0 {
+		nextLobby = uint32(uint64(max.Int64)&0xFFFFFFFF) + 1
+		if nextLobby == 0 {
+			nextLobby = 1
+		}
+	}
+	return &Store{db: db, nextID: next, nextLobbyAccountID: nextLobby}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -418,13 +457,14 @@ func decodeRichPresence(blob []byte) map[string][]byte {
 func (s *Store) CreateLobby(owner uint64, appid, lobbyType, memberLimit uint32) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var id uint64
-	if err := s.db.QueryRow(`SELECT COALESCE(MAX(lobby_id), 0) + 1 FROM lobbies`).Scan(&id); err != nil {
-		return 0, err
-	}
+	id := LobbySteamID(s.nextLobbyAccountID)
 	if _, err := s.db.Exec(`INSERT INTO lobbies (lobby_id, owner_id, appid, type, member_limit) VALUES (?, ?, ?, ?, ?)`,
 		id, owner, appid, lobbyType, memberLimit); err != nil {
 		return 0, err
+	}
+	s.nextLobbyAccountID++
+	if s.nextLobbyAccountID == 0 {
+		s.nextLobbyAccountID = 1
 	}
 	_, err := s.db.Exec(`INSERT INTO lobby_members (lobby_id, steam_id) VALUES (?, ?)`, id, owner)
 	return id, err
