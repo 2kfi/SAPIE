@@ -73,7 +73,19 @@ export default function LiveAdmin({ session }: { session: Session }) {
                     <td>{lobby.owner}</td>
                     <td>{lobby.appid}</td>
                     <td>{lobby.members.length} of {lobby.member_limit}</td>
-                    <td>{lobby.joinable ? 'Joinable' : 'Closed'}</td>
+                    <td>
+                      <span className="status-pill">
+                        <span
+                          className={`dot dot--${lobby.joinable && lobby.members.length < lobby.member_limit ? 'online' : 'offline'}`}
+                          aria-hidden="true"
+                        />
+                        {!lobby.joinable
+                          ? 'Closed'
+                          : lobby.members.length >= lobby.member_limit
+                            ? 'Full'
+                            : 'Joinable'}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

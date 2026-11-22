@@ -6,6 +6,7 @@ on:
   pull_request:
     branches: ['dev-client', 'main-client']
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -166,6 +167,10 @@ jobs:
         GHSA-qxg6-89mg-rqv8 GHSA-67mh-4wv8-2f99
     steps:
       - uses: actions/checkout@v7
+      - name: Secret scan
+        run: python3 tools/scan-secrets.py
+      - name: Dependency policy allowlist
+        run: python3 tools/check-dependency-policy.py
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'

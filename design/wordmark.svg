@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 272 64" width="272" height="64" role="img" aria-labelledby="title">
+  <title id="title">SAPIE wordmark, provisional. Mark left, word set in Manrope. Pending G1.</title>
+  <defs>
+    <mask id="keyhole-wordmark">
+      <rect x="0" y="0" width="64" height="64" fill="#ffffff"/>
+      <circle cx="32" cy="26" r="11" fill="#000000"/>
+      <path d="M27 31 H37 L40 48 H24 Z" fill="#000000"/>
+      <path d="M27 19 L27 33 L40 26 Z" fill="#ffffff"/>
+    </mask>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="13" fill="#C5A4FF" mask="url(#keyhole-wordmark)"/>
+  <text x="78" y="44" fill="#E6E8EB" font-family="Manrope, 'Segoe UI', system-ui, sans-serif" font-size="40" font-weight="700" letter-spacing="-1.5">SAPIE</text>
+</svg>

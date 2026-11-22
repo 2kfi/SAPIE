@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-labelledby="title">
+  <title id="title">SAPIE tray silhouette, provisional. Pending G1. Single colour for platform re-tinting.</title>
+  <defs>
+    <mask id="keyhole-tray">
+      <rect x="0" y="0" width="16" height="16" fill="#ffffff"/>
+      <circle cx="8" cy="6.5" r="2.8" fill="#000000"/>
+      <path d="M6.75 7.8 H9.25 L10 12 H6 Z" fill="#000000"/>
+      <path d="M6.75 4.75 L6.75 8.25 L10 6.5 Z" fill="#ffffff"/>
+    </mask>
+  </defs>
+  <rect x="0.5" y="0.5" width="15" height="15" rx="3.5" fill="#C5A4FF" mask="url(#keyhole-tray)"/>
+</svg>

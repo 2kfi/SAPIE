@@ -146,9 +146,9 @@ cd client/src-tauri && cargo build --release
 cd client/src-tauri/ui && npm ci && npm run build
 ```
 
-The shell bundle is loaded from `../ui/dist` with a locked CSP and no remote URLs. On Linux the
-release build needs the webkit2gtk and X11/Wayland/GL development packages listed above. No
-cross-compiled Windows launcher has been executed locally.
+The shell bundle is loaded from `ui/dist` with a locked CSP and no remote URLs, relative to
+`client/src-tauri`. On Linux the release build needs the webkit2gtk and X11/Wayland/GL development
+packages listed above. No cross-compiled Windows launcher has been executed locally.
 
 ## Web UI build
 
@@ -170,8 +170,74 @@ and the dependency audits.
 tag version into `Cargo.toml`, `tauri.conf.json` and both `package.json` files, builds the client,
 server and launcher targets, builds `web/dist`, assembles the release archives, creates the GitHub
 Release and pushes the server container. `tools/release-bundle.sh` copies `web/dist` to the archive
-root as `web/dist`, so `--ui-dir ./web/dist` works from an unpacked bundle. No tag-triggered release
-has been observed in this tree; that path is UNVERIFIED.
+root as `web/dist`, so `--ui-dir ./web/dist` works from an unpacked bundle. Tag `0.4` run
+44882984036 passed and attached NSIS, MSI and AppImage installers. The installers were not executed.
+
+### 0.5 release inputs
+
+`tools/release-bundle.sh` takes `<tag> <artifacts-dir> <output-dir>`. It expects
+these artifact directories from the packaging jobs:
+
+- `launcher-windows-x64`, `launcher-linux-x64`, `launcher-linux-arm64`: the
+  packaged launcher payload for each OS. The script copies the directory tree to
+  `launcher/` inside the archive.
+- `client-<target>-<era>` for the existing five targets and two eras: the ten
+  `steam_api` variants.
+- `web-dist`: the built SPA.
+- `server-windows-amd64`, `server-windows-arm64`, `server-linux-amd64`,
+  `server-linux-arm64`: plain files or same-named artifact directories.
+
+It writes one archive per OS and arch, a `container/` bundle with the Dockerfile,
+compose file, all four server binaries and `web/dist`, six SPDX SBOMs in
+`SBOM-<tag>-<family>.spdx.json`, `THIRD_PARTY_NOTICES.md`, `SHA256SUMS`,
+`update-signing-public.pem`, and signed `update-stable.json` and
+`update-beta.json` with `.sig` files. The manifests pin the exact tag, version,
+per-artifact SHA-256, checksum-file SHA-256 and optional previous version. Verify
+one with:
+
+```sh
+python3 tools/update-manifest.py verify \
+  --manifest update-stable.json --public-key update-signing-public.pem \
+  --channel stable --version 0.5.0
+```
+
+The signing key is the `SAPIE_UPDATE_SIGNING_KEY` repository secret. It can be
+an inline PEM key or a path to one. The public trust root is
+`tools/update-signing-public.pem` and ships in every bundle. Signing is a release
+gate: the bundle step fails if the key is missing or a manifest does not verify.
+Rollback stays manual. Download the previous signed release and reinstall it.
+
+`compose.yaml` publishes the web UI on 8081 and keeps the admin API bound to
+loopback inside the container. It declares the same healthcheck as the
+Dockerfile. The admin port is not published.
+
+### 0.5 packaging jobs
+
+Two tag-triggered jobs in `build.yml` build the Qt launchers from `launcher/`:
+
+- `launcher-windows-qt` uses Qt 6.8 MSVC, `windeployqt`, NSIS, MSI and a portable
+  zip through `launcher/windows/packaging/build-package.ps1`. It uploads
+  `launcher-windows-x64` for the release bundle and `installer-windows-qt` for
+  the GitHub Release, with `SHA256SUMS.txt`, SPDX SBOMs and a signed stable
+  update manifest.
+- `launcher-linux-qt` runs on x64 and arm64 runners with Qt 6.8, then calls
+  `launcher/linux/packaging/build-package.sh` for AppImage, deb and Flatpak. It
+  uploads `launcher-linux-x64` and `launcher-linux-arm64` payloads plus
+  `installer-linux-qt-<arch>` with `SHA256SUMS.txt` and SPDX SBOMs.
+
+Repository secrets used by these jobs:
+
+- `SAPIE_SIGNING_THUMBPRINT`: the Authenticode certificate thumbprint for
+  `launcher/windows/signing/sign.ps1`. The certificate itself is not in the repo.
+- `SAPIE_UPDATE_PUBLIC_KEY`: the update manifest public key, as inline PEM or a
+  path. The checked-in `tools/update-signing-public.pem` is the trust root in
+  release bundles.
+- `SAPIE_UPDATE_SIGNING_KEY`: the signing key for the final release manifests,
+  already used by the release job.
+
+No value for these secrets is stored in the tree. Windows runner, MSVC, signing
+secrets, linuxdeploy, appimagetool and the Flatpak SDK were not available
+locally, so both jobs are NOT VERIFIED here.
 
 The 0.1 release is published and frozen at tag `0.1` (`62007f5`) at
 https://github.com/2kfi/SAPIE/releases/tag/0.1 with the assets

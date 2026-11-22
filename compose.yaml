@@ -6,9 +6,14 @@ services:
     image: ghcr.io/2kfi/sapie-server:latest
     ports:
       - "47584:47584"
-      - "127.0.0.1:8080:8080"
-      - "127.0.0.1:8081:8081"
-    command: ["--admin-listen=:8080", "--ui-listen=0.0.0.0:8081", "--ui-dir=/app/web/dist"]
+      - "8081:8081"
+    command: ["--admin-listen=127.0.0.1:8080", "--ui-listen=0.0.0.0:8081", "--ui-dir=/app/web/dist"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     volumes:
       - sapie-data:/data
     restart: unless-stopped

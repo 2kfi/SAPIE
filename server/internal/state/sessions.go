@@ -1,6 +1,9 @@
 package state
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 const sessionIDPrefixLen = 12
 
@@ -80,4 +83,68 @@ func (s *Store) DeleteExpiredSessions() (int64, error) {
 func (s *Store) DeleteExpiredSessionsFor(steamID uint64, now time.Time) error {
 	_, err := s.db.Exec(`DELETE FROM sessions WHERE steam_id = ? AND expires_at <= ?`, steamID, now.Unix())
 	return err
+}
+
+// RotateSession consumes oldHash and issues newHash in one transaction. The
+// new expiry never exceeds capExpiresAt, so a chain of rotations cannot extend
+// a session past the lifetime granted at the last password login.
+func (s *Store) RotateSession(oldHash, newHash string, capExpiresAt time.Time) (uint64, int64, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+	var steamID uint64
+	var expiresAt int64
+	err = tx.QueryRow(`SELECT steam_id, expires_at FROM sessions
+		WHERE token_hash = ? AND expires_at > CAST(strftime('%s', 'now') AS INTEGER)`, oldHash).
+		Scan(&steamID, &expiresAt)
+	if err != nil {
+		return 0, 0, err
+	}
+	if cap := capExpiresAt.Unix(); expiresAt > cap {
+		expiresAt = cap
+	}
+	if _, err := tx.Exec(`DELETE FROM sessions WHERE token_hash = ?`, oldHash); err != nil {
+		return 0, 0, err
+	}
+	if _, err := tx.Exec(`INSERT INTO sessions (token_hash, steam_id, expires_at) VALUES (?, ?, ?)`,
+		newHash, steamID, expiresAt); err != nil {
+		return 0, 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, 0, err
+	}
+	return steamID, expiresAt, nil
+}
+
+func (s *Store) PasswordHashOf(steamID uint64) (string, error) {
+	var hash string
+	err := s.db.QueryRow(`SELECT password_hash FROM accounts WHERE steam_id = ?`, steamID).Scan(&hash)
+	return hash, err
+}
+
+// ChangePassword writes the new hash and kills every session except the one
+// that made the change, in one transaction.
+func (s *Store) ChangePassword(steamID uint64, currentHash, newHash string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE accounts SET password_hash = ? WHERE steam_id = ?`, newHash, steamID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	if _, err := tx.Exec(`DELETE FROM sessions WHERE steam_id = ? AND token_hash <> ?`, steamID, currentHash); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

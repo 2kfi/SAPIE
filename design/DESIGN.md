@@ -1,5 +1,9 @@
 # SAPIE launcher design
 
+Status: the body of this file records the 0.4 Tauri launcher. `design/identity.md` and `plan.md`
+section 13 supersede its visual direction for 0.5. The contrast table at the end uses the 0.5
+tokens from `design/tokens.css`.
+
 Reading this as: a native game library for players who already own their games, in the same quiet
 instrument-panel language as the web UI, dial ENERGY 2 / RHYTHM 2 / MOTION 2.
 
@@ -91,3 +95,41 @@ Findings from `anti-slop/audit-001-2026-11-20.md`:
 | 7, R-20 no identity | Ember monogram mark, monogram placeholder and ember focus are the recurring motif. |
 | 8, R-21 / R-34 fixed theme | Dark-only reason is written above. No toggle is shown. |
 | 9, R-31 no written reasons | Reasons are recorded in this file and in `design/tokens.css`. |
+
+## 0.5 contrast measurement
+
+This is a token-pair calculation from `design/tokens.css` using the WCAG relative luminance formula.
+It is not a rendered audit. No screen was captured or sampled, because the 0.5 QML components do not
+exist yet. A rendered audit belongs to G1 after M22-e. Normal text needs 4.5:1. Large text, 18px or
+14px bold and above, needs 3:1.
+
+| Foreground | Background | Values | Ratio | AA normal |
+| --- | --- | --- | --- | --- |
+| `--text-primary` | `--bg-app` | `#E6E8EB` / `#17191D` | 14.34:1 | pass |
+| `--text-primary` | `--bg-sidebar` | `#E6E8EB` / `#14161A` | 14.75:1 | pass |
+| `--text-primary` | `--bg-panel` | `#E6E8EB` / `#1D2025` | 13.31:1 | pass |
+| `--text-primary` | `--bg-panel-hover` | `#E6E8EB` / `#252930` | 11.89:1 | pass |
+| `--text-primary` | `--bg-elevated` | `#E6E8EB` / `#292D34` | 11.26:1 | pass |
+| `--text-primary` | `--accent-soft` | `#E6E8EB` / `#342A46` | 10.93:1 | pass |
+| `--text-secondary` | `--bg-app` | `#A0A5AE` / `#17191D` | 7.11:1 | pass |
+| `--text-secondary` | `--bg-panel` | `#A0A5AE` / `#1D2025` | 6.60:1 | pass |
+| `--text-secondary` | `--bg-elevated` | `#A0A5AE` / `#292D34` | 5.59:1 | pass |
+| `--text-muted` | `--bg-app` | `#737984` / `#17191D` | 4.02:1 | fail |
+| `--text-muted` | `--bg-panel` | `#737984` / `#1D2025` | 3.73:1 | fail |
+| `--text-muted` | `--bg-elevated` | `#737984` / `#292D34` | 3.16:1 | fail |
+| `--accent` | `--bg-app` | `#C5A4FF` / `#17191D` | 8.49:1 | pass |
+| `--accent` | `--bg-panel` | `#C5A4FF` / `#1D2025` | 7.88:1 | pass |
+| `--accent` | `--accent-soft` | `#C5A4FF` / `#342A46` | 6.47:1 | pass |
+| `--on-accent` | `--accent` | `#17191D` / `#C5A4FF` | 8.49:1 | pass |
+| `--success` | `--bg-panel` | `#73C991` / `#1D2025` | 8.16:1 | pass |
+| `--warning` | `--bg-panel` | `#E6B86C` / `#1D2025` | 8.90:1 | pass |
+| `--danger` | `--bg-panel` | `#E17B7B` / `#1D2025` | 5.69:1 | pass |
+| `--info` | `--bg-panel` | `#82B8E8` / `#1D2025` | 7.76:1 | pass |
+
+`--text-muted` is the one failing pair. It clears 3:1 on every background, so it is usable for large
+text only. At the 11 to 12px metadata size in `AGENTS-UI.md` it fails. The value is kept because
+section 13.2.3 of `plan.md` and `AGENTS-UI.md` both specify `#737984`. G1 must decide whether to
+restrict it to large text or raise it to a value such as `#8E95A0`, which measures 4.58:1 on
+`--bg-elevated` and 5.41:1 on `--bg-panel`. No shipped surface uses `--text-muted` today: the web
+build aliases its legacy `muted` name to `--text-secondary`, and the QML components are not built
+yet. The failure is recorded here rather than hidden or silently changed.

@@ -1,7 +1,13 @@
 # SAPIE
 
+![SAPIE wordmark, provisional](design/wordmark.svg)
+
+**Your games. Your server.**
+
 Old Steam games, no Steam client, your own server. SAPIE is a non-commercial Steam API replacement
 for games you already own, for gamers by gamers.
+
+The wordmark is provisional and pending G1. See `design/identity.md`.
 
 ## Quick start
 
@@ -34,8 +40,9 @@ is normal.
 ## Downloads
 
 Release archives are attached to numeric `0.x` tags on the
-[releases page](https://github.com/2kfi/SAPIE/releases). The `0.4` work in this tree is a release
-candidate. No `0.4` tag, release notes or assets have been published.
+[releases page](https://github.com/2kfi/SAPIE/releases). The `0.4` tag and its assets are published.
+The 0.5 work in this tree is code-complete but unreleased; no 0.5 tag or artifacts are recorded. See
+[Upgrading from 0.4 to 0.5](docs/UPGRADE.md) for the documented path.
 
 | Release | Notes |
 | --- | --- |
@@ -87,7 +94,8 @@ sidecar with its own NOTICE in the Windows archive. Do not modify it.
 
 [Game setup and flags](docs/QUICKSTART.md) · [Building and CI](docs/BUILD.md) ·
 [Protocol and API](docs/PROTOCOL.md) · [HTTP API](docs/API.md) · [Security](docs/SECURITY.md) ·
-[Contributing](docs/CONTRIBUTING.md) · [Changelog](docs/CHANGELOG.md) · [Known limits](dev_notes.md)
+[Contributing](docs/CONTRIBUTING.md) · [Changelog](docs/CHANGELOG.md) · [Upgrade](docs/UPGRADE.md) ·
+[Known limits](dev_notes.md)
 
 A headless two-client C++ to Go session is recorded in
 [0.4 two-client verification](docs/verification/0.4-two-client.md). A real MW2 run, native GUI

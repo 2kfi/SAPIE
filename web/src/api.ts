@@ -56,6 +56,11 @@ export type Lobby = {
   members: (string | number)[]
 }
 
+export type LobbyInvite = {
+  url: string
+  expires_at: number
+}
+
 export type Achievement = {
   steam_id: string | number
   appid: string | number
@@ -407,8 +412,21 @@ export function joinLobby(
   server: string,
   token: string,
   lobbyId: string | number,
+  invite?: string,
 ): Promise<void> {
   return request(server, `/lobbies/${encodeURIComponent(String(lobbyId))}/join`, {
+    method: 'POST',
+    token,
+    ...(invite ? { body: { invite } } : {}),
+  })
+}
+
+export function createLobbyInvite(
+  server: string,
+  token: string,
+  lobbyId: string | number,
+): Promise<LobbyInvite> {
+  return request(server, `/lobbies/${encodeURIComponent(String(lobbyId))}/invite`, {
     method: 'POST',
     token,
   })

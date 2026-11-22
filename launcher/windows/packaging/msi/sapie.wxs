@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="SAPIE for Windows"
+           Language="1033"
+           Version="$(var.Version)"
+           Manufacturer="SAPIE"
+           UpgradeCode="6e5d4f1c-9d4b-4c23-9d61-1d6cbbf7c3a2">
+    <Package InstallerVersion="200"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Platform="x64"
+             Manufacturer="SAPIE"
+             Description="SAPIE for Windows launcher"/>
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of SAPIE is already installed."/>
+    <MediaTemplate EmbedCab="yes"/>
+
+    <Icon Id="sapie.ico" SourceFile="$(var.IconFile)"/>
+    <Property Id="ARPPRODUCTICON" Value="sapie.ico"/>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="SAPIE"/>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="SAPIEProgramMenuFolder" Name="SAPIE"/>
+      </Directory>
+    </Directory>
+
+    <Component Id="SapieProtocol" Guid="9a5c7b2e-0b43-4d1f-a2c8-70d8d6a24f11" Win64="yes">
+      <RegistryKey Root="HKLM" Key="Software\Classes\sapie">
+        <RegistryValue Value="URL:SAPIE protocol" Type="string"/>
+        <RegistryValue Name="URL Protocol" Value="" Type="string"/>
+        <RegistryKey Key="DefaultIcon">
+          <RegistryValue Value="[INSTALLFOLDER]SAPIE.exe,0" Type="string"/>
+        </RegistryKey>
+        <RegistryKey Key="shell\open\command">
+          <RegistryValue Value="&quot;[INSTALLFOLDER]SAPIE.exe&quot; &quot;%1&quot;" Type="string"/>
+        </RegistryKey>
+      </RegistryKey>
+    </Component>
+
+    <Component Id="SapieShortcut" Guid="c1b9f8e5-8b77-4c1e-9f2f-02f5b79d9481" Win64="yes">
+      <Shortcut Id="LauncherShortcut"
+                Directory="SAPIEProgramMenuFolder"
+                Name="SAPIE for Windows"
+                Target="[INSTALLFOLDER]SAPIE.exe"
+                Icon="sapie.ico"/>
+      <RemoveFolder Id="RemoveSAPIEProgramMenuFolder" Directory="SAPIEProgramMenuFolder" On="uninstall"/>
+      <RegistryValue Root="HKCU" Key="Software\SAPIE\Launcher" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes"/>
+    </Component>
+
+    <Feature Id="Main" Title="SAPIE" Level="1">
+      <ComponentGroupRef Id="AppFiles"/>
+      <ComponentRef Id="SapieProtocol"/>
+      <ComponentRef Id="SapieShortcut"/>
+    </Feature>
+  </Product>
+</Wix>

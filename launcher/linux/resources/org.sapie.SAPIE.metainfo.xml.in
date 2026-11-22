@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.sapie.SAPIE</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LGPL-3.0-or-later</project_license>
+  <name>SAPIE for Linux</name>
+  <summary>Your games. Your server.</summary>
+  <description>
+    <p>Old Steam games, no Steam client. You own the game, the machine and the server.</p>
+    <p>Non-commercial. Built for games you already own.</p>
+  </description>
+  <launchable type="desktop-id">org.sapie.SAPIE.desktop</launchable>
+  <provides>
+    <binary>sapie-launcher</binary>
+    <mediatype>x-scheme-handler/sapie</mediatype>
+  </provides>
+  <url type="homepage">https://github.com/2kfi/SAPIE</url>
+  <url type="bugtracker">https://github.com/2kfi/SAPIE/issues</url>
+  <developer_name>SAPIE</developer_name>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="@SAPIE_VERSION@" date="@SAPIE_RELEASE_DATE@" type="stable">
+      <description>
+        <p>Qt 6 launcher for Linux with a local game library and a sapie link handler.</p>
+      </description>
+    </release>
+  </releases>
+</component>

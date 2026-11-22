@@ -32,6 +32,7 @@ type Props = {
 const primary: { route: ShellRoute; label: string; Icon: typeof FriendsIcon }[] = [
   { route: 'friends', label: 'Friends', Icon: FriendsIcon },
   { route: 'account', label: 'Profile', Icon: ProfileIcon },
+  { route: 'live', label: 'Live sessions', Icon: LiveIcon },
 ]
 
 function DetailPane({
@@ -146,12 +147,19 @@ export default function Shell({ route, session, onNavigate, onNotice, onSignOut 
 
   return (
     <div className="shell" ref={shellRef}>
-      <a className="skip-link" href="#main">Skip to content</a>
-      <nav className="rail glass" aria-label="Main navigation">
+      <button
+        type="button"
+        className="skip-link"
+        onClick={() => document.getElementById('main')?.focus()}
+      >
+        Skip to content
+      </button>
+      <nav className="rail" aria-label="Main navigation">
         <span className="rail__mark" aria-label="SAPIE">
           S
         </span>
         <div className="rail__group">
+          <span className="rail__label" aria-hidden="true">SAPIE</span>
           {primary.map(({ route: item, label, Icon }) => (
             <button
               key={item}
@@ -169,18 +177,7 @@ export default function Shell({ route, session, onNavigate, onNotice, onSignOut 
           ))}
         </div>
         <div className="rail__group rail__group--foot">
-          <button
-            type="button"
-            className={`rail__item${route === 'live' ? ' is-active' : ''}`}
-            aria-current={route === 'live' ? 'page' : undefined}
-            onClick={(event) => {
-              pulseIcon.current(event.currentTarget.querySelector('svg'))
-              onNavigate('live')
-            }}
-          >
-            <LiveIcon />
-            <span>Live sessions</span>
-          </button>
+          <span className="rail__label" aria-hidden="true">System</span>
           <button type="button" className="rail__item" onClick={onSignOut}>
             <SignOutIcon />
             <span>Sign out</span>
@@ -188,7 +185,7 @@ export default function Shell({ route, session, onNavigate, onNotice, onSignOut 
         </div>
       </nav>
 
-      <main className="workspace" id="main">
+      <main className="workspace" id="main" tabIndex={-1}>
         {needsSession ? (
           <section className="view">
             <header className="view__head">
@@ -220,7 +217,7 @@ export default function Shell({ route, session, onNavigate, onNotice, onSignOut 
         )}
       </main>
 
-      <aside className="detail glass" aria-label="Details">
+      <aside className="detail" aria-label="Details">
         <DetailPane
           route={route}
           session={session}

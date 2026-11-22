@@ -2,8 +2,8 @@
 
 SAPIE is a non-commercial project for running old Steam games without the Steam client. A Go server
 provides accounts, friends, lobbies and stats; a modified `steam_api` library in the game forwards
-calls to it. The launcher is a Tauri v2 app with a React UI, and the server also hosts a browser UI
-on the LAN.
+calls to it. The 0.5 launcher is a Qt 6 app with a Rust core and a Qt Quick UI, and the server also
+hosts a browser UI on the LAN. The launcher uses no webview.
 
 Friends can play directly with each other, and the server relays traffic when a direct connection is not possible.
 
@@ -14,8 +14,9 @@ are UNVERIFIED.
 ## Download
 
 Get the newest release archive from the
-[SAPIE releases page](https://github.com/2kfi/SAPIE/releases). The `0.4` work in this tree is a
-release candidate with no published archive yet.
+[SAPIE releases page](https://github.com/2kfi/SAPIE/releases). The `0.4` archive is published. The
+0.5 work in this tree is code-complete but unreleased; see [Upgrade](UPGRADE.md) for the documented
+0.4 to 0.5 path.
 
 Unpack the archive for your operating system. It contains the launcher `sapie-launcher`
 (`sapie-launcher.exe` on Windows), the server `sapie-server` (`sapie-server.exe` on Windows),
