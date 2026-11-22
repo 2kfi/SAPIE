@@ -202,7 +202,7 @@ void WindowsPlatform::setJumpList(const QVector<JumpTask>& tasks, QString* error
     ComPtr<IObjectArray> taskArray;
     if (FAILED(collection.get()->QueryInterface(IID_PPV_ARGS(taskArray.out())))
         || FAILED(destination.get()->AddUserTasks(taskArray.get()))
-        || FAILED(destination.get()->CommitList(&maximumSlots))) {
+        || FAILED(destination.get()->CommitList())) {
         destination.get()->AbortList();
         if (error) {
             *error = QStringLiteral("The Windows jump list could not be committed.");
@@ -358,7 +358,7 @@ void WindowsPlatform::onNewLocalConnection()
                 socket->disconnectFromServer();
                 return;
             }
-            if (buffer->isEmpty() || buffer->constLast() != '\0') {
+            if (buffer->isEmpty() || buffer->at(buffer->size() - 1) != '\0') {
                 return;
             }
 

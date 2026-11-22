@@ -146,6 +146,8 @@ jobs:
       - name: Configure and build Qt launcher
         run: |
           set -euo pipefail
+          # Git Bash's link.exe shadows MSVC's; give cargo the real one explicitly.
+          export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER="${VCToolsInstallDir}bin/Hostx64/x64/link.exe"
           cmake -S launcher -B build/windows-qt -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DSAPIE_VERSION="$VERSION" \
@@ -224,7 +226,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build libdbus-1-dev librsvg2-dev librsvg2-bin \
             libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libxrandr-dev \
-            libgl1-mesa-dev dpkg-dev flatpak flatpak-builder ostree curl
+            libgl1-mesa-dev dpkg-dev flatpak flatpak-builder ostree curl libfuse2
       - name: Install AppImage tools
         run: |
           set -euo pipefail
