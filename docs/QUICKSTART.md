@@ -85,13 +85,19 @@ older than 10 minutes.
 This is a manual check for two players on different networks. It needs two machines, two registered
 accounts, one server both can reach, and a friend link or the same lobby.
 
-1. Sign in on both machines and join the same game session.
-2. Confirm game traffic reaches both peers, for example both see each other move. Record each peer's
-   network type: full-cone, restricted-cone, symmetric NAT or carrier-grade NAT.
-3. Repeat with one peer on a mobile hotspot or another carrier-grade network. The server relay is the
-   expected path there. Do not report a direct path unless game DATA actually arrived from the peer.
+1. Sign in on both machines and add each other as friends, or join the same lobby.
+2. Record each peer's network type: full-cone, restricted-cone, symmetric NAT or carrier-grade NAT.
+   If you do not know it, write "unknown" rather than guessing.
+3. Start game traffic in both directions. Confirm both peers see each other move. That proves the
+   connection works, not which path it used.
+4. To claim a direct path, capture UDP on the game machine with Wireshark or `tcpdump` and show
+   inbound packets from the other peer's public IP and port. A server IP in the capture is the relay
+   path. A server hint alone is not proof of direct traffic.
+5. Repeat with one peer on a mobile hotspot or another carrier-grade network. Punching is expected to
+   fail there, so the server relay is the guaranteed path. Do not record a direct result on that run.
 
-SAPIE does not show the chosen path in the launcher UI. Record the network types, build and result in
+The launcher does not show the chosen path, and release builds do not write a debug log. Use the
+capture as evidence. Record the network types, build commit and result for both runs in
 `docs/verification/0.5-platform-gate.md`.
 
 ## Steamless
