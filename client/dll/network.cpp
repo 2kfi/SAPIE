@@ -415,6 +415,26 @@ static int receive_packet(sock_t sock, IP_PORT *ip_port, char *data, unsigned lo
     return -1;
 }
 
+static const char kPunchProbeMagic[] = "SAPIE-PUNCH-1";
+static const size_t kPunchProbeSize = sizeof(kPunchProbeMagic) - 1 + sizeof(uint64_t);
+
+static bool parse_punch_probe(const char *data, int len, uint64_t *peer_id)
+{
+    if (len != (int)kPunchProbeSize) return false;
+    if (memcmp(data, kPunchProbeMagic, sizeof(kPunchProbeMagic) - 1)) return false;
+    memcpy(peer_id, data + sizeof(kPunchProbeMagic) - 1, sizeof(*peer_id));
+    return true;
+}
+
+static void send_punch_probe(sock_t sock, IP_PORT endpoint, uint64_t peer_id)
+{
+    if (!is_socket_valid(sock)) return;
+    char payload[kPunchProbeSize];
+    memcpy(payload, kPunchProbeMagic, sizeof(kPunchProbeMagic) - 1);
+    memcpy(payload + sizeof(kPunchProbeMagic) - 1, &peer_id, sizeof(peer_id));
+    send_packet_to(sock, endpoint, payload, sizeof(payload));
+}
+
 static bool send_broadcasts(sock_t sock, uint16 port, char *data, unsigned long length, std::vector<IP_PORT> *custom_broadcasts)
 {
     static std::chrono::high_resolution_clock::time_point last_get_broadcast_info;
@@ -1102,6 +1122,7 @@ void Server_Connection::pump()
         } else if (frame.has_endpoint_signal()) {
             const auto &signal = frame.endpoint_signal();
             network->setPeerEndpoints(signal.steam_id(), signal.endpoints());
+            network->startPunch(signal.steam_id(), signal.endpoints());
         } else if (frame.has_stats_response()) {
             const auto &response = frame.stats_response();
             for (const auto &name : sapie::local_mirror().apply_stats_response(response, network->appid)) {
@@ -1309,6 +1330,8 @@ void Networking::Run()
         return;
     }
 
+    pumpPunching(std::chrono::steady_clock::now());
+
     //PRINT_DEBUG("Networking::Run() %lf\n", time_extra);
     PRINT_DEBUG("Networking::Run()\n");
     if (check_timedout(last_broadcast, BROADCAST_INTERVAL)) {
@@ -1322,9 +1345,18 @@ void Networking::Run()
     PRINT_DEBUG("RECV UDP\n");
     while((len = receive_packet(udp_socket, &ip_port, data, sizeof(data))) >= 0) {
         PRINT_DEBUG("recv %i %hhu.%hhu.%hhu.%hhu:%hu\n", len, ((unsigned char *)&ip_port.ip)[0], ((unsigned char *)&ip_port.ip)[1], ((unsigned char *)&ip_port.ip)[2], ((unsigned char *)&ip_port.ip)[3], htons(ip_port.port));
+        uint64_t probe_peer = 0;
+        if (parse_punch_probe(data, len, &probe_peer)) {
+            noteInboundProbe(probe_peer, ip_port, std::chrono::steady_clock::now());
+            continue;
+        }
         Common_Message msg;
         if (msg.ParseFromArray(data, len)) {
             if (msg.source_id()) {
+                if (msg.has_networking_sockets() && msg.networking_sockets().type() == Networking_Sockets::DATA) {
+                    noteInboundData(msg.source_id(), ip_port, std::chrono::steady_clock::now());
+                }
+
                 if (msg.has_announce()) {
                     handle_announce(&msg, ip_port);
                 } else
@@ -1714,8 +1746,8 @@ sapie::EndpointReport Networking::buildEndpointReport() const
 {
     sapie::EndpointReport report;
     if (!enabled || !udp_port) return report;
-    // shortcut: only an IPv4 UDP socket is bound today, so no IPv6 endpoint is
-    // reported until punching binds one; the server still carries both families.
+    // shortcut: punching uses only the IPv4 UDP socket, so no IPv6 endpoint is
+    // reported; the server still carries both families and we never invent one.
     uint32 ip = htonl(own_ip);
     report.set_ipv4(std::string(reinterpret_cast<const char *>(&ip), sizeof(ip)));
     report.set_ipv4_port(udp_port);
@@ -1733,4 +1765,80 @@ const sapie::EndpointReport *Networking::peerEndpoints(uint64_t steam_id) const
     std::lock_guard<std::recursive_mutex> lock(mutex);
     auto it = peer_endpoints.find(steam_id);
     return it == peer_endpoints.end() ? nullptr : &it->second;
+}
+
+void Networking::startPunch(uint64_t steam_id, const sapie::EndpointReport &report)
+{
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    Direct_Punch punch;
+    punch.started = std::chrono::steady_clock::now();
+    punch.next_probe = punch.started;
+    if (report.ipv4().size() == 4 && report.ipv4_port() > 0 && report.ipv4_port() <= 65535) {
+        uint32_t ip = 0;
+        memcpy(&ip, report.ipv4().data(), sizeof(ip));
+        if (ip) {
+            punch.hint.ip = ip; // report bytes are already in network order
+            punch.hint.port = htons((uint16_t)report.ipv4_port());
+            punch.has_hint = true;
+        }
+    }
+    punches[steam_id] = punch;
+}
+
+void Networking::pumpPunching(std::chrono::steady_clock::time_point now)
+{
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    if (ids.empty()) return;
+    const uint64_t own_id = ids.front().ConvertToUint64();
+    for (auto it = punches.begin(); it != punches.end();) {
+        Direct_Punch &punch = it->second;
+        if (punch.data_confirmed) {
+            if (now - punch.last_inbound_data > kDirectConfirmWindow) it = punches.erase(it);
+            else ++it;
+            continue;
+        }
+        if (now - punch.started > kPunchWindow) {
+            it = punches.erase(it);
+            continue;
+        }
+        if (now >= punch.next_probe && is_socket_valid(udp_socket)) {
+            if (punch.has_hint) send_punch_probe(udp_socket, punch.hint, own_id);
+            if (punch.has_endpoint && (!punch.has_hint || punch.endpoint.ip != punch.hint.ip || punch.endpoint.port != punch.hint.port)) {
+                send_punch_probe(udp_socket, punch.endpoint, own_id);
+            }
+            punch.next_probe = now + kPunchProbeInterval;
+        }
+        ++it;
+    }
+}
+
+void Networking::noteInboundProbe(uint64_t steam_id, IP_PORT endpoint, std::chrono::steady_clock::time_point now)
+{
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    auto it = punches.find(steam_id);
+    if (it == punches.end() || it->second.data_confirmed || ids.empty()) return;
+    it->second.endpoint = endpoint;
+    it->second.has_endpoint = true;
+    if (now < it->second.next_probe) return; // cap the probe exchange instead of ping-ponging
+    it->second.next_probe = now + kPunchProbeInterval;
+    send_punch_probe(udp_socket, endpoint, ids.front().ConvertToUint64());
+}
+
+void Networking::noteInboundData(uint64_t steam_id, IP_PORT endpoint, std::chrono::steady_clock::time_point now)
+{
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    auto it = punches.find(steam_id); // only peers named by an authenticated signal can confirm a path
+    if (it == punches.end()) return;
+    Direct_Punch &punch = it->second;
+    punch.endpoint = endpoint;
+    punch.has_endpoint = true;
+    punch.data_confirmed = true;
+    punch.last_inbound_data = now;
+}
+
+Direct_Punch Networking::punchState(uint64_t steam_id) const
+{
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    auto it = punches.find(steam_id);
+    return it == punches.end() ? Direct_Punch() : it->second;
 }
