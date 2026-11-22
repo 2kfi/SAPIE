@@ -177,6 +177,98 @@ func TestAchievementStore(t *testing.T) {
 	}
 }
 
+func TestLobbySteamIDLayout(t *testing.T) {
+	const accountID uint32 = 424242
+	id := LobbySteamID(accountID)
+	if !IsLobbySteamID(id) {
+		t.Fatalf("LobbySteamID(%d) = %#x is not a server lobby ID", accountID, id)
+	}
+	if uint32(id) != accountID {
+		t.Fatalf("low 32 bits = %d, want %d", uint32(id), accountID)
+	}
+	if id>>56 != steamUniversePublic || (id>>52)&0xF != steamAccountTypeChat ||
+		(id>>32)&0xFFFFF != steamChatInstanceFlags {
+		t.Fatalf("universe/type/instance of %#x do not match the Chat Lobby|MMSLobby layout", id)
+	}
+	if IsLobbySteamID(SteamIDBase+1) || IsLobbySteamID(1) || IsLobbySteamID(LobbySteamID(0)) {
+		t.Fatal("user and non-lobby IDs must not pass the lobby check")
+	}
+}
+
+func TestCreateLobbyUsesServerLobbySteamID(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	owner, err := store.CreateAccount("owner", "hashed", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateAccount("guest", "hashed", "Guest"); err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]uint64, 0, 3)
+	for i := 0; i < 3; i++ {
+		id, err := store.CreateLobby(owner, 480, LobbyTypePublic, 4)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !IsLobbySteamID(id) {
+			t.Fatalf("create %d: %#x is not a server lobby ID", i, id)
+		}
+		ids = append(ids, id)
+	}
+	for i := 1; i < len(ids); i++ {
+		if ids[i] == ids[i-1] || uint32(ids[i]) <= uint32(ids[i-1]) {
+			t.Fatalf("account IDs are not monotonic: %v", ids)
+		}
+	}
+	lobby, err := store.Lobby(ids[0])
+	if err != nil || lobby.LobbyID != ids[0] || lobby.Owner != owner {
+		t.Fatalf("stored lobby = %+v, %v", lobby, err)
+	}
+	if err := store.JoinLobby(ids[0], owner+1, 480); err != nil {
+		t.Fatal(err)
+	}
+	members, err := store.LobbyMembers(ids[0])
+	if err != nil || len(members) != 2 {
+		t.Fatalf("members = %v, %v", members, err)
+	}
+}
+
+func TestLobbyAccountIDSurvivesReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sapie.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.CreateAccount("owner", "hashed", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.CreateLobby(owner, 480, LobbyTypePublic, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	second, err := store.CreateLobby(owner, 480, LobbyTypePublic, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second == first || uint32(second) <= uint32(first) {
+		t.Fatalf("reopened account IDs collide: %#x then %#x", first, second)
+	}
+}
+
 func TestLegacyAchievementSchemaUpgrade(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	legacy, err := sql.Open("sqlite", "file:"+path)
