@@ -24,7 +24,7 @@ $stagePrefix = $Stage.TrimEnd('\') + '\'
 $template = Get-Content -Raw (Join-Path $PSScriptRoot 'msi/sapie.wxs')
 $template.Replace('$(var.Version)', $Version).Replace('$(var.IconFile)', $icon) | Set-Content -Path $wxs
 
-& $candle.Source -nologo -out (Join-Path $work '\') $wxs $appFiles
+& $candle.Source -nologo -arch x64 -out (Join-Path $work '\') $wxs $appFiles
 if ($LASTEXITCODE -ne 0) { throw 'WiX candle failed.' }
 
 $objects = Get-ChildItem -Path $work -Filter '*.wixobj' | ForEach-Object FullName
