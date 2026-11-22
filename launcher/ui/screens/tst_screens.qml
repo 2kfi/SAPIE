@@ -141,6 +141,20 @@ Item {
             compare(UI.FakeCoreBridge.lastAction, "restoreGame", "restore runs after confirm")
         }
 
+        function test_duplicate_view_existing_uses_detected_record() {
+            var b = UI.FakeCoreBridge
+            b.addState = "duplicate"
+            b.detection = { path: "test-2", arch: "x86", era: "modern", interfaces: 1,
+                appid: 0, duplicate: true }
+            root.app.currentScreen = "add"
+            var button = findChild(root.app, "viewExistingButton")
+            verify(button !== null, "view existing button exists")
+            b.lastAction = ""
+            button.clicked()
+            compare(b.lastAction, "getGame", "duplicate action reads a library record")
+            compare(b.game.id, "test-2", "the detected record opens, not a hard-coded id")
+        }
+
         function test_launch_failed_state_has_message_and_retry() {
             root.app.currentScreen = "game"
             UI.FakeCoreBridge.launchState = "failed"
