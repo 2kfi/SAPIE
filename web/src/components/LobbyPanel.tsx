@@ -2,15 +2,24 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   ApiError,
   createLobby,
+  createLobbyInvite,
   getLobbies,
   joinLobby,
   messageOf,
   type Lobby,
   type Session,
 } from '../api'
+import { parseInviteLink } from '../lib/invite'
 import { EmptyState, ErrorState, LoadingState } from './States'
 
 const REFRESH_MS = 15000
+
+type CopyState = {
+  lobbyId: string
+  ok: boolean
+  text: string
+  url?: string
+}
 
 type Props = {
   session: Session
@@ -24,6 +33,8 @@ export default function LobbyPanel({ session, onNotice }: Props) {
   const [formError, setFormError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [joiningId, setJoiningId] = useState<string | null>(null)
+  const [copyingId, setCopyingId] = useState<string | null>(null)
+  const [copyState, setCopyState] = useState<CopyState | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -104,6 +115,40 @@ export default function LobbyPanel({ session, onNotice }: Props) {
     }
   }
 
+  async function handleCopyInvite(lobby: Lobby) {
+    if (copyingId) return
+    const id = String(lobby.lobby_id)
+    setCopyingId(id)
+    setCopyState(null)
+    let url: string | undefined
+    try {
+      const data = await createLobbyInvite(session.server, session.token, lobby.lobby_id)
+      const parsed = parseInviteLink(String(data?.url ?? ''))
+      if (!parsed || parsed.lobbyId !== id) {
+        throw new Error('The server returned an invite for a different lobby.')
+      }
+      url = parsed.url
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard access is not available in this browser.')
+      }
+      await navigator.clipboard.writeText(url)
+      setCopyState({ lobbyId: id, ok: true, text: 'Invite link copied to clipboard.' })
+      onNotice('Invite link copied to clipboard.')
+    } catch (reason) {
+      const detail = reason instanceof ApiError && reason.status === 503
+        ? 'Invites are unavailable on this server.'
+        : messageOf(reason)
+      setCopyState({
+        lobbyId: id,
+        ok: false,
+        text: url ? 'Clipboard access failed. Select the link below to copy it.' : detail,
+        url,
+      })
+    } finally {
+      setCopyingId(null)
+    }
+  }
+
   return (
     <section className="stack" aria-labelledby="lobby-panel-title">
       <div className="section-head">
@@ -161,6 +206,7 @@ export default function LobbyPanel({ session, onNotice }: Props) {
           {lobbies.map((lobby) => {
             const id = String(lobby.lobby_id)
             const full = lobby.members.length >= lobby.member_limit
+            const member = lobby.members.some((value) => String(value) === String(session.steamId))
             const state = !lobby.joinable ? 'Closed' : full ? 'Full' : 'Joinable'
             const tone = lobby.joinable && !full ? 'online' : 'offline'
             return (
@@ -194,9 +240,25 @@ export default function LobbyPanel({ session, onNotice }: Props) {
                   >
                     Join
                   </button>
+                  {member && lobby.joinable ? (
+                    <button
+                      type="button"
+                      className="btn btn--quiet"
+                      disabled={copyingId === id || joiningId === id}
+                      onClick={() => void handleCopyInvite(lobby)}
+                    >
+                      {copyingId === id ? 'Preparing link…' : 'Copy invite link'}
+                    </button>
+                  ) : null}
                   {!lobby.joinable
                     ? <p className="muted">This lobby is closed to new members.</p>
                     : full ? <p className="muted">This lobby is full.</p> : null}
+                  {copyState?.lobbyId === id ? (
+                    <div>
+                      <p role={copyState.ok ? 'status' : 'alert'}>{copyState.text}</p>
+                      {copyState.url ? <code className="mono">{copyState.url}</code> : null}
+                    </div>
+                  ) : null}
                 </div>
               </li>
             )
