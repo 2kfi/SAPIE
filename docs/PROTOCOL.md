@@ -177,29 +177,32 @@ issued those bytes to that SteamID for that appid; it is not a Steam entitlement
 check. A real ownership gate would need a new table and a game-client check,
 neither of which is part of this wire contract.
 
-## P2P traffic (0.2)
+## P2P traffic (0.2, punching added in 0.5)
 
 Game traffic uses `Common_Message` with `Networking_Sockets` or
 `Networking_Messages` payloads. Two paths exist, and the client picks exactly
 one per frame so a packet is never sent twice:
 
-- **Direct UDP.** When a peer hint is available (`source_ip`/`source_port` from
-  the stamped `Networking_Sockets` signaling frame), the client sends DATA
-  straight to the peer via `sendToPeer()`. Direct is preferred. Reliable DATA
-  over UDP is best-effort; the server does not guarantee delivery. There is no
-  NAT hole punching, and IPv6 peers get no hint.
-- **Relay fallback.** When there is no hint, or no inbound DATA has been seen
-  within a 5-second window, the client sends the DATA frame to the server with
-  an explicit `dest_id`, and the server forwards it to that peer only.
+- **Direct UDP.** A peer hint (`source_ip`/`source_port` from the stamped
+  `Networking_Sockets` signaling frame) is only a probe target, not proof of a
+  route. Both peers send UDP probes every 250 ms for up to 2 seconds after the
+  signal. An inbound probe adds a candidate endpoint, but only inbound DATA from
+  a peer named by an authenticated signal confirms the path. A confirmed
+  endpoint stays direct while inbound DATA arrives within 2 seconds. Reliable
+  DATA over UDP is best-effort; the server does not guarantee delivery. IPv6
+  peers get no hint, and punching uses the IPv4 UDP socket only.
+- **Relay fallback.** Until a direct path is confirmed, and whenever confirmed
+  DATA has stopped for 2 seconds, the client sends the DATA frame to the server
+  with an explicit `dest_id`, and the server forwards it to that peer only.
   Authorization is the same friend/lobby gate used for signaling; there is no
-  broadcast and a frame addressed to self is dropped. The 5-second window is
-  measured from connection creation, so a slow handshake may pick the relay
-  even when a direct path would work.
+  broadcast and a frame addressed to self is dropped. Symmetric NAT and carrier
+  grade NAT are expected to fail the probe phase, so the relay is the guaranteed
+  path there. A direct path is never claimed from a hint or a probe alone.
 
-Relaying is rate-limited only by the existing per-session handling; there is no
-dedicated relay rate limit. A headless two-client C++ to Go session is recorded in
-`docs/verification/0.4-two-client.md`. Real NAT, direct UDP and relay path selection in a game are
-UNVERIFIED.
+Relay frames are rate-limited per sender to 200 packets per second. A headless
+two-client C++ to Go session is recorded in `docs/verification/0.4-two-client.md`;
+it predates the 0.5 punching work. Real NAT, direct UDP and relay path selection
+in a game are UNVERIFIED.
 
 ## Not supported yet
 

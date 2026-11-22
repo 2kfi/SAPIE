@@ -80,6 +80,20 @@ falls back to Goldberg LAN mode. Environment values are visible to other process
 OS account and in `/proc` on Linux. The DLL deletes the token file after one read and rejects files
 older than 10 minutes.
 
+## Two-peer NAT check
+
+This is a manual check for two players on different networks. It needs two machines, two registered
+accounts, one server both can reach, and a friend link or the same lobby.
+
+1. Sign in on both machines and join the same game session.
+2. Confirm game traffic reaches both peers, for example both see each other move. Record each peer's
+   network type: full-cone, restricted-cone, symmetric NAT or carrier-grade NAT.
+3. Repeat with one peer on a mobile hotspot or another carrier-grade network. The server relay is the
+   expected path there. Do not report a direct path unless game DATA actually arrived from the peer.
+
+SAPIE does not show the chosen path in the launcher UI. Record the network types, build and result in
+`docs/verification/0.5-platform-gate.md`.
+
 ## Steamless
 
 The launcher can unpack SteamStub-packed Windows executables. Steamless is an unmodified Windows-only sidecar. Its NOTICE is at `steamless/NOTICE.md` inside the Windows archive; in a source checkout the same file is `client/src-tauri/resources/steamless/NOTICE.md`. Do not modify it.
