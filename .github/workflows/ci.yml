@@ -124,7 +124,6 @@ jobs:
           host: linux
           target: desktop
           arch: gcc_64
-          modules: qtquickcontrols2 qtsvg
       - name: Install Qt build dependencies
         run: |
           sudo apt-get update
