@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QMutex>
 #include <QObject>
 #include <QTcpServer>
 #include <QVector>
@@ -14,6 +15,9 @@ public slots:
     void start();
     void stop();
 
+public:
+    QVector<QByteArray> requests() const;
+
 signals:
     void portReady(quint16 port);
 
@@ -23,6 +27,8 @@ private slots:
 private:
     QTcpServer m_server;
     QVector<QTcpSocket *> m_sockets;
+    mutable QMutex m_mutex;
+    QVector<QByteArray> m_requests;
 };
 
 class CoreBridgeTest : public QObject
@@ -34,5 +40,6 @@ private slots:
     void unknownAbiVersionHasClearError();
     void fakeCoreDrivesLoginDetectConfigureAndLaunch();
     void fakeCoreDrivesScreenMethods();
+    void fakeCoreDrivesServerSocialMethods();
     void fakePlatformRecordsNativeCalls();
 };

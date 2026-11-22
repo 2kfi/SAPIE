@@ -51,6 +51,12 @@ struct ThreadStopper {
 };
 } // namespace
 
+QVector<QByteArray> LoginServer::requests() const
+{
+    QMutexLocker locker(&m_mutex);
+    return m_requests;
+}
+
 void LoginServer::start()
 {
     if (!m_server.listen(QHostAddress::LocalHost, 0)) {
@@ -76,29 +82,83 @@ void LoginServer::onNewConnection()
     while (m_server.hasPendingConnections()) {
         QTcpSocket *socket = m_server.nextPendingConnection();
         m_sockets.append(socket);
-        connect(socket, &QTcpSocket::readyRead, socket, [socket]() {
+        connect(socket, &QTcpSocket::readyRead, socket, [this, socket]() {
             if (socket->property("sapieResponded").toBool()) {
                 return;
             }
             const QByteArray request = socket->readAll();
-            const bool isLogin = request.startsWith("POST ");
-            const bool isConfig = request.startsWith("GET ");
-            if (!isLogin && !isConfig) {
+            if (request.isEmpty()) {
                 return;
             }
             socket->setProperty("sapieResponded", true);
+            {
+                QMutexLocker locker(&m_mutex);
+                m_requests.append(request);
+            }
 
-            const QByteArray body = isConfig
-                    ? QByteArray(R"({"allow_register":false})")
-                    : QByteArray(R"({"session_token":"tok-123","steam_id":76561197960265731,"persona_name":"Tester"})");
-            const QByteArray response = QByteArray("HTTP/1.1 200 OK\r\n"
-                                                   "Content-Type: application/json\r\n"
-                                                   "Content-Length: ")
-                    + QByteArray::number(body.size())
-                    + QByteArray("\r\nConnection: close\r\n\r\n") + body;
-            socket->write(response);
-            socket->flush();
-            socket->disconnectFromHost();
+            const QByteArray requestLine = request.split('\n').value(0).trimmed();
+            const QList<QByteArray> parts = requestLine.split(' ');
+            const QByteArray method = parts.value(0);
+            const QByteArray path = parts.value(1);
+            auto respond = [socket](int code, const QByteArray &body) {
+                const char *text = code == 200 ? "OK" : code == 201 ? "Created"
+                        : code == 202 ? "Accepted" : code == 204 ? "No Content"
+                        : code == 401 ? "Unauthorized" : "Not Found";
+                const QByteArray response = QByteArray("HTTP/1.1 ")
+                        + QByteArray::number(code) + " " + text + "\r\n"
+                        + "Content-Type: application/json\r\n"
+                        + "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
+                        + "Connection: close\r\n\r\n" + body;
+                socket->write(response);
+                socket->flush();
+                socket->disconnectFromHost();
+            };
+
+            if (path == "/api/v1/config") {
+                respond(200, R"({"allow_register":false})");
+                return;
+            }
+            if (path == "/api/v1/login") {
+                respond(200, R"({"session_token":"tok-123","steam_id":76561197960265731,"persona_name":"Tester"})");
+                return;
+            }
+            if (!request.contains("Authorization: Bearer tok-123")) {
+                respond(401, "unauthorized");
+                return;
+            }
+
+            if (path == "/api/v1/friends" && method == "GET") {
+                respond(200, R"({"friends":[{"steam_id":76561197960265732,"persona_name":"Bob","persona_state":1,"appid":480,"rich_presence":{},"lobby_id":0,"connect_str":""}]})");
+            } else if (path == "/api/v1/friends/requests" && method == "GET") {
+                respond(200, R"({"incoming":[{"id":7,"from_steam_id":76561197960265732,"to_steam_id":76561197960265731,"persona_name":"Bob","message":"play?","created_at":1,"status":"pending"}],"outgoing":[{"id":9,"from_steam_id":76561197960265731,"to_steam_id":76561197960265733,"persona_name":"Carol","message":"hello","created_at":2,"status":"pending"}]})");
+            } else if (path == "/api/v1/friends/requests" && method == "POST") {
+                respond(201, R"({"id":10,"status":"pending","created_at":3})");
+            } else if (path.startsWith("/api/v1/friends/requests/") && method == "POST") {
+                respond(200, R"({"status":"ok"})");
+            } else if (path.startsWith("/api/v1/friends/requests/") && method == "DELETE") {
+                respond(204, {});
+            } else if (path == "/api/v1/friends/blocked" && method == "GET") {
+                respond(200, R"({"blocked":[{"steam_id":76561197960265734,"persona_name":"Dave","created_at":4}]})");
+            } else if (path.startsWith("/api/v1/friends/") && path.endsWith("/invite")
+                       && method == "POST") {
+                respond(202, {});
+            } else if (path.startsWith("/api/v1/friends/") && path.endsWith("/block")) {
+                respond(204, {});
+            } else if (path.startsWith("/api/v1/friends/") && method == "DELETE") {
+                respond(204, {});
+            } else if (path == "/api/v1/lobbies" && method == "GET") {
+                respond(200, R"({"lobbies":[{"lobby_id":55,"owner":76561197960265732,"appid":480,"member_limit":4,"type":2,"joinable":true,"members":[76561197960265732]}]})");
+            } else if (path.startsWith("/api/v1/lobbies/") && path.endsWith("/invite")
+                       && method == "POST") {
+                respond(200, R"({"url":"sapie://join/55?exp=1&sig=abc","expires_at":1})");
+            } else if (path.startsWith("/api/v1/lobbies/") && path.endsWith("/join")
+                       && method == "POST") {
+                respond(200, R"({"lobby_id":55})");
+            } else if (path == "/api/v1/logout" && method == "POST") {
+                respond(204, {});
+            } else {
+                respond(404, "not found");
+            }
         });
     }
 }
@@ -334,6 +394,88 @@ void CoreBridgeTest::fakeCoreDrivesScreenMethods()
     QCOMPARE(bridge.property("connectionState").toString(),
              QStringLiteral("signedOut"));
     QVERIFY(operationSpy.count() >= 20);
+}
+
+void CoreBridgeTest::fakeCoreDrivesServerSocialMethods()
+{
+    LoginServer loginServer;
+    QThread serverThread;
+    loginServer.moveToThread(&serverThread);
+    QSignalSpy portSpy(&loginServer, &LoginServer::portReady);
+    connect(&serverThread, &QThread::started, &loginServer, &LoginServer::start);
+    serverThread.start();
+    ThreadStopper stop{serverThread, loginServer};
+    QVERIFY(portSpy.wait(3000));
+    const quint16 port = portSpy.first().at(0).toUInt();
+    QVERIFY(port != 0);
+
+    CoreBridge bridge;
+    QSignalSpy operationSpy(&bridge, &CoreBridge::operationFinished);
+    QVERIFY(bridge.createCore(bridge.abiVersion(), true));
+    QVERIFY(bridge.signIn(QStringLiteral("127.0.0.1:%1").arg(port),
+                          QStringLiteral("tester"), QStringLiteral("pw"), true));
+    QCOMPARE(bridge.property("connectionState").toString(), QStringLiteral("signedIn"));
+
+    QVERIFY(bridge.listFriends());
+    QCOMPARE(bridge.property("friendsState").toString(), QStringLiteral("ready"));
+    const QVariantList friends = bridge.property("friends").toList();
+    QCOMPARE(friends.size(), 1);
+    const QVariantMap friendRecord = friends.first().toMap();
+    QCOMPARE(friendRecord.value(QStringLiteral("id")).toString(),
+             QStringLiteral("76561197960265732"));
+    QCOMPARE(friendRecord.value(QStringLiteral("name")).toString(), QStringLiteral("Bob"));
+    QCOMPARE(friendRecord.value(QStringLiteral("status")).toString(), QStringLiteral("online"));
+
+    const QVariantList requests = bridge.property("requests").toList();
+    QCOMPARE(requests.size(), 2);
+    QCOMPARE(requests.first().toMap().value(QStringLiteral("id")).toString(),
+             QStringLiteral("7"));
+    QCOMPARE(requests.first().toMap().value(QStringLiteral("direction")).toString(),
+             QStringLiteral("incoming"));
+    QCOMPARE(requests.last().toMap().value(QStringLiteral("direction")).toString(),
+             QStringLiteral("outgoing"));
+    QCOMPARE(bridge.property("blocked").toList().size(), 1);
+    const QVariantList lobbies = bridge.property("lobbies").toList();
+    QCOMPARE(lobbies.size(), 1);
+    const QVariantMap lobby = lobbies.first().toMap();
+    QCOMPARE(lobby.value(QStringLiteral("id")).toString(), QStringLiteral("55"));
+    QCOMPARE(lobby.value(QStringLiteral("members")).toInt(), 1);
+    QCOMPARE(lobby.value(QStringLiteral("capacity")).toInt(), 4);
+    QCOMPARE(lobby.value(QStringLiteral("lobbyState")).toString(),
+             QStringLiteral("joinable"));
+
+    const QString target = QStringLiteral("76561197960265732");
+    QVERIFY(bridge.addFriend(QStringLiteral("bob")));
+    QVERIFY(bridge.acceptRequest(QStringLiteral("7")));
+    QVERIFY(bridge.declineRequest(QStringLiteral("8")));
+    QVERIFY(bridge.cancelRequest(QStringLiteral("9")));
+    QVERIFY(bridge.removeFriend(target));
+    QVERIFY(bridge.blockFriend(target));
+    QVERIFY(bridge.unblockFriend(target));
+    QVERIFY(bridge.listLobbies());
+    QVERIFY(bridge.handleDeepLink(QStringLiteral("sapie://join/55?exp=1&sig=abc")));
+    QVERIFY(bridge.joinLobby(QStringLiteral("55")));
+    QVERIFY(bridge.inviteFriend(target, QString()));
+    QVERIFY(bridge.inviteFriend(target, QStringLiteral("55")));
+    QVERIFY(!bridge.joinLobby(QStringLiteral("not-a-number")));
+
+    QVERIFY(bridge.revokeToken());
+    QCOMPARE(bridge.property("connectionState").toString(), QStringLiteral("signedOut"));
+    QCOMPARE(bridge.property("friendsState").toString(), QStringLiteral("loading"));
+
+    const QVector<QByteArray> requestsMade = loginServer.requests();
+    bool sawBearer = false;
+    for (const QByteArray &request : requestsMade) {
+        if (request.startsWith("POST /api/v1/login")) {
+            QVERIFY(!request.contains("Authorization:"));
+            continue;
+        }
+        sawBearer = sawBearer || request.contains("Authorization: Bearer tok-123");
+        QVERIFY(!request.toLower().contains("password"));
+        QVERIFY(!request.contains("\"steam_id\""));
+    }
+    QVERIFY(sawBearer);
+    QVERIFY(operationSpy.count() >= 16);
 }
 
 void CoreBridgeTest::fakePlatformRecordsNativeCalls()

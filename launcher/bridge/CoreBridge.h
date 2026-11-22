@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QByteArray>
+#include <QJsonDocument>
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -164,6 +166,12 @@ private:
     static void handleEvent(void *userData, const char *step, const char *message);
 
     bool finish(const QString &operation, bool ok, const QString &message);
+    bool serverRequest(const QString &method, const QString &path,
+                       const QByteArray &body = {}, QJsonDocument *out = nullptr);
+    bool refreshSocial();
+    void applySocialState(bool ok);
+    bool finishAfterRefresh(const QString &operation, bool refreshed,
+                            const QString &success);
     void log(const QString &level, const QString &message);
     void refreshState();
     QVariantList readLibrary();

@@ -172,6 +172,13 @@ int main(void)
     CHECK(unpacked == NULL);
     CHECK(sapie_core_library_remove(core, exe) == SAPIE_OK);
 
+    CHECK(sapie_core_server_request(core, "GET", "/friends", NULL, &text)
+          == SAPIE_ERR_INVALID_ARGUMENT);
+    CHECK(text == NULL);
+    CHECK(sapie_core_server_request(core, "GET", "../logout", NULL, &text)
+          == SAPIE_ERR_INVALID_ARGUMENT);
+    CHECK(sapie_core_revoke_token(core) == SAPIE_OK);
+
     /* Every owned string and struct has an explicit free path. */
     strings = detected->interfaces;
     sapie_string_array_free(strings, detected->interface_count);

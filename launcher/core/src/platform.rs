@@ -93,9 +93,7 @@ impl FileSystem for SystemFileSystem {
 impl Paths for SystemPlatform {
     fn data_dir(&self) -> Result<PathBuf> {
         let dir = dirs::data_dir()
-            .ok_or_else(|| {
-                CommandError::new(ErrorKind::Io, "No per-user data directory found.")
-            })?
+            .ok_or_else(|| CommandError::new(ErrorKind::Io, "No per-user data directory found."))?
             .join(STATE_DIR);
         std::fs::create_dir_all(&dir)?;
         Ok(dir)
@@ -315,7 +313,10 @@ impl FakePlatform {
     }
 
     pub fn spawned(&self) -> Vec<SpawnCall> {
-        self.spawns.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.spawns
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn seed_file(&self, path: &Path, bytes: &[u8]) {
@@ -421,7 +422,12 @@ mod tests {
 
         let pid = fake
             .process()
-            .spawn(Path::new("game"), Path::new("dir"), &["a".into()], Some("lib.so"))
+            .spawn(
+                Path::new("game"),
+                Path::new("dir"),
+                &["a".into()],
+                Some("lib.so"),
+            )
             .unwrap();
         assert_eq!(pid, 4242);
         let calls = fake.spawned();
