@@ -44,7 +44,7 @@ def slug(text):
 
 
 def cargo_components(repo):
-    path = repo / "client/src-tauri/Cargo.lock"
+    path = repo / "launcher/Cargo.lock"
     if not path.is_file():
         return []
     data = tomllib.loads(path.read_text())
