@@ -110,6 +110,10 @@ target_compile_definitions(app_shell_test PRIVATE
   SAPIE_MAIN_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/app/main.cpp")
 add_test(NAME app_shell_test COMMAND app_shell_test)
 set_tests_properties(app_shell_test PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+if(WIN32)
+  # qt_standard_project_setup makes these GUI exes; Qt Test output would vanish.
+  set_target_properties(core_bridge_test app_shell_test PROPERTIES WIN32_EXECUTABLE FALSE)
+endif()
 
 if(WIN32)
   set(sapie_platform_dirs windows)

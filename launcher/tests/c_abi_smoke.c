@@ -64,7 +64,11 @@ static void make_game(char *dir, size_t dir_cap, char *exe, size_t exe_cap)
     snprintf(dir, dir_cap, "%ssapie-c-smoke-%ld", temp_root, (long)getpid());
     CreateDirectoryA(dir, NULL);
 #else
-    snprintf(dir, dir_cap, "/tmp/sapie-c-smoke-%ld", (long)getpid());
+    const char *tmp = getenv("TMPDIR");
+    if (tmp == NULL || tmp[0] == '\0') {
+        tmp = "/tmp";
+    }
+    snprintf(dir, dir_cap, "%s/sapie-c-smoke-%ld", tmp, (long)getpid());
     mkdir(dir, 0700);
 #endif
     memset(image, 0, sizeof(image));
@@ -132,6 +136,9 @@ int main(void)
     CHECK(strcmp(detected->arch, "x64") == 0);
     CHECK(strcmp(detected->era, "modern") == 0);
     CHECK(event_count > 0);
+    /* The library is keyed by the canonical path the core returns, not our input. */
+    CHECK(strlen(detected->exe_path) < sizeof(exe));
+    snprintf(exe, sizeof(exe), "%s", detected->exe_path);
 
     CHECK(sapie_core_library_add(core, exe, &record) == SAPIE_OK);
     CHECK(record != NULL);

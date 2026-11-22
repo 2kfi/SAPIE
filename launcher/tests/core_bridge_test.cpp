@@ -13,6 +13,8 @@
 #include <QTest>
 #include <QThread>
 
+#include <filesystem>
+
 namespace {
 void clearFakeState()
 {
@@ -29,6 +31,13 @@ bool writeBytes(const QString &path, const QByteArray &bytes)
         return false;
     }
     return file.write(bytes) == bytes.size();
+}
+
+// The core keys the library by canonical path; Windows adds a \\?\ prefix.
+QString canonicalExe(const QString &path)
+{
+    return QString::fromWCharArray(
+        std::filesystem::canonical(path.toStdWString()).wstring().c_str());
 }
 
 struct FakeDllSource {
@@ -193,7 +202,7 @@ void CoreBridgeTest::fakeCoreDrivesLoginDetectConfigureAndLaunch()
 
     QTemporaryDir gameDir;
     QVERIFY(gameDir.isValid());
-    const QString exe = gameDir.filePath(QStringLiteral("game.exe"));
+    const QString rawExe = gameDir.filePath(QStringLiteral("game.exe"));
     QByteArray image(0x100, '\0');
     image[0] = 'M';
     image[1] = 'Z';
@@ -202,7 +211,8 @@ void CoreBridgeTest::fakeCoreDrivesLoginDetectConfigureAndLaunch()
     image[0x81] = 'E';
     image[0x84] = static_cast<char>(0x64);
     image[0x85] = static_cast<char>(0x86);
-    QVERIFY(writeBytes(exe, image));
+    QVERIFY(writeBytes(rawExe, image));
+    const QString exe = canonicalExe(rawExe);
 
     QByteArray dll("SteamUser019", 12);
     dll.append('\0');
@@ -269,7 +279,7 @@ void CoreBridgeTest::fakeCoreDrivesScreenMethods()
 
     QTemporaryDir gameDir;
     QVERIFY(gameDir.isValid());
-    const QString exe = gameDir.filePath(QStringLiteral("game.exe"));
+    const QString rawExe = gameDir.filePath(QStringLiteral("game.exe"));
     QByteArray image(0x100, '\0');
     image[0] = 'M';
     image[1] = 'Z';
@@ -278,7 +288,8 @@ void CoreBridgeTest::fakeCoreDrivesScreenMethods()
     image[0x81] = 'E';
     image[0x84] = static_cast<char>(0x64);
     image[0x85] = static_cast<char>(0x86);
-    QVERIFY(writeBytes(exe, image));
+    QVERIFY(writeBytes(rawExe, image));
+    const QString exe = canonicalExe(rawExe);
     const QString backup = gameDir.filePath(QStringLiteral("steam_api64.dll.sapie-original.bak"));
     QByteArray dll("SteamUser019", 12);
     dll.append('\0');
