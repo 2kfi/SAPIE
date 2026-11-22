@@ -168,16 +168,18 @@ jobs:
           else
             cp "$SAPIE_UPDATE_PUBLIC_KEY" out/windows-package/public.pem
           fi
-          echo "PUBLIC_KEY_PATH=$PWD/out/windows-package/public.pem" >> "$GITHUB_ENV"
+          echo "PUBLIC_KEY_PATH=$(pwd -W)/out/windows-package/public.pem" >> "$GITHUB_ENV"
       - name: Package Windows launcher
         run: |
           set -euo pipefail
+          # Git Bash $PWD is POSIX; pwsh needs a Windows path.
+          win_root="$(pwd -W)"
           args=(
             -Version "$VERSION"
             -QtBin "$QT_ROOT_DIR/bin"
-            -Exe "$PWD/build/windows-qt/sapie_launcher.exe"
-            -RepoRoot "$PWD"
-            -OutputDir "$PWD/out/windows-package"
+            -Exe "$win_root/build/windows-qt/sapie_launcher.exe"
+            -RepoRoot "$win_root"
+            -OutputDir "$win_root/out/windows-package"
             -Channel stable
           )
           if [[ -n "${SAPIE_SIGNING_THUMBPRINT:-}" && -n "${SAPIE_UPDATE_SIGNING_KEY:-}" ]]; then
