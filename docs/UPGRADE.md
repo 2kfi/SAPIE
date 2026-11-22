@@ -1,9 +1,9 @@
 # Upgrading from 0.4 to 0.5
 
-This is the documented upgrade path. It is preparation only. No 0.5 tag, release or installer was
-published when this record was written, and no upgrade was performed for it. Every step marked NOT
-VERIFIED has no passing evidence in this tree. Those steps need a Windows host, signing secrets, a
-clean VM or a real game folder.
+This is the documented upgrade path. Tag `0.5` is published with `sapie-launcher-*` installers and
+`sapie-server-*` bundles, but no upgrade was performed for it. Every step marked NOT VERIFIED has no
+passing evidence in this tree. Those steps need a Windows host, signing secrets, a clean VM or a real
+game folder.
 
 ## What carries over
 

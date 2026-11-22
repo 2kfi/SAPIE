@@ -1,18 +1,20 @@
 # Changelog
 
-The `0.4` tag and its release assets are published. Tag `0.5` is published as an unsigned release,
-built by CI run `45028412891` from commit `732e0d3`. "Shipped in code" means the change is present
+The `0.4` tag and its release assets are published. Tag `0.5` is republished as an unsigned release,
+built by CI run `45032252255` from commit `fc3166a`. "Shipped in code" means the change is present
 and covered by checks that ran locally or in CI; it does not mean a clean VM install or a real game
 run was verified. The status of the 0.5 gates is in `docs/verification/`.
 
 ## 0.5 (published 2026-11-22)
 
-Tag `0.5` at commit `732e0d3` passed every CI job in run `45028412891`. The release carries 17
-assets: three versioned bundles, four installers (NSIS, MSI and two AppImages), `container.tar.gz`,
-six SBOMs, `SHA256SUMS`, `UNSIGNED-UPDATES.txt` and the update public key. All seven small assets
-covered by `SHA256SUMS` that were downloaded and checked matched; the full NSIS installer matched
-its recorded size. Update manifests are unsigned because no `SAPIE_UPDATE_SIGNING_KEY` is
-configured, so auto-update is disabled.
+Tag `0.5` at commit `fc3166a` passed every CI job in run `45032252255`. The release carries 17
+assets: three `sapie-server-*` bundles, four `sapie-launcher-*` installers (NSIS, MSI and two
+AppImages), `sapie-server-0.5-container.tar.gz`, six SBOMs, `SHA256SUMS`, `UNSIGNED-UPDATES.txt` and
+the update public key. All seven small assets covered by `SHA256SUMS` that were downloaded and
+checked matched. The x64 AppImage was unpacked and contains `QtQuick/Window/qmldir`,
+`libqwayland-egl.so` and `libqwayland-generic.so`; the arm64 AppImage was not unpacked locally
+because this host cannot execute it. Update manifests are unsigned because no
+`SAPIE_UPDATE_SIGNING_KEY` is configured, so auto-update is disabled.
 
 - Two launchers from one core: SAPIE for Windows and SAPIE for Linux. Shared Rust core behind a C ABI
   in `launcher/core`, shared Qt Quick UI in `launcher/ui`, platform code in `launcher/windows` and
@@ -20,6 +22,9 @@ configured, so auto-update is disabled.
 - Qt 6.8 is the pinned build target. Local checks used Qt 6.12.0.
 - Packaging scripts for per-user NSIS, per-machine MSI, portable zip, AppImage, deb and Flatpak, with
   signed update manifests and rollback helpers. The upgrade path is in `docs/UPGRADE.md`.
+- Standalone launcher downloads use `sapie-launcher-*`; full server bundles and the container use
+  `sapie-server-*`. The AppImage build now passes QML sources and Wayland plugins to linuxdeploy and
+  fails when either is missing.
 - 0.5 identity applied to the QML prototype: violet `#C5A4FF`, Manrope and IBM Plex Mono, no ember
   brand accent and no glass. Final mark art is still a G1 decision.
 - Local checks: 29 Rust core tests, server `go test ./...`, 34 Qt Quick Test cases across five suites,
@@ -33,6 +38,8 @@ configured, so auto-update is disabled.
   `UNSIGNED-UPDATES.txt` notice instead.
 - No clean VM install, 0.4 to 0.5 upgrade, downgrade, real game run or screen-reader pass was
   recorded.
+- No clean desktop launch of the repaired AppImage was recorded. Its x64 contents were checked, not
+  its runtime window. The arm64 AppImage was not unpacked locally.
 - No two-peer NAT or CGNAT punching evidence was recorded.
 - `SHA256SUMS` covers bundles, SBOMs, the container and the update public key. The standalone
   installer assets are not listed in it.

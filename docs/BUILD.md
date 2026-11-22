@@ -239,9 +239,10 @@ Repository secrets used by these jobs:
 - `SAPIE_UPDATE_SIGNING_KEY`: the signing key for the final release manifests,
   already used by the release job.
 
-No value for these secrets is stored in the tree. Windows runner, MSVC, signing
-secrets, linuxdeploy, appimagetool and the Flatpak SDK were not available
-locally, so both jobs are NOT VERIFIED here.
+No value for these secrets is stored in the tree. Windows runner, MSVC, signing secrets and the
+Flatpak SDK were not available locally, so those jobs are NOT VERIFIED here. linuxdeploy and
+appimagetool were fetched to a temporary directory for a local AppImage content check; the shipped
+AppImage comes from CI.
 
 The 0.1 release is published and frozen at tag `0.1` (`62007f5`) at
 https://github.com/2kfi/SAPIE/releases/tag/0.1 with the assets
