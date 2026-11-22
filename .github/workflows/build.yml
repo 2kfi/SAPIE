@@ -158,14 +158,15 @@ jobs:
       - name: Resolve update public key
         run: |
           set -euo pipefail
-          : "${SAPIE_UPDATE_PUBLIC_KEY:?SAPIE_UPDATE_PUBLIC_KEY secret is required}"
           mkdir -p out/windows-package
-          if [[ "$SAPIE_UPDATE_PUBLIC_KEY" == *"BEGIN PUBLIC KEY"* ]]; then
+          if [[ -z "${SAPIE_UPDATE_PUBLIC_KEY:-}" ]]; then
+            cp tools/update-signing-public.pem out/windows-package/public.pem
+          elif [[ "$SAPIE_UPDATE_PUBLIC_KEY" == *"BEGIN PUBLIC KEY"* ]]; then
             printf '%s\n' "$SAPIE_UPDATE_PUBLIC_KEY" > out/windows-package/public.pem
-            echo "PUBLIC_KEY_PATH=$PWD/out/windows-package/public.pem" >> "$GITHUB_ENV"
           else
-            echo "PUBLIC_KEY_PATH=$SAPIE_UPDATE_PUBLIC_KEY" >> "$GITHUB_ENV"
+            cp "$SAPIE_UPDATE_PUBLIC_KEY" out/windows-package/public.pem
           fi
+          echo "PUBLIC_KEY_PATH=$PWD/out/windows-package/public.pem" >> "$GITHUB_ENV"
       - name: Package Windows launcher
         run: |
           set -euo pipefail
