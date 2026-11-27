@@ -335,11 +335,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: release-artifacts
           pattern: '{client,launcher,server,web}-*'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: installers
           pattern: installer-*
